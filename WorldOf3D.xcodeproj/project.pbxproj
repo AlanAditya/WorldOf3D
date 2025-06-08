@@ -1,0 +1,1670 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 73;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AB00143C2C70E83F00BB0A24 /* File.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB00143B2C70E83F00BB0A24 /* File.swift */; };
+		AB00143E2C70F18100BB0A24 /* ViewImporter.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB00143D2C70F18100BB0A24 /* ViewImporter.mm */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
+		AB0014412C70F71A00BB0A24 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB0014402C70F71A00BB0A24 /* Cocoa.framework */; };
+		AB0329C32D44DBDE004729F2 /* libavcodec.61.19.100.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AB0329C22D44DBDE004729F2 /* libavcodec.61.19.100.dylib */; };
+		AB0329C52D44DC27004729F2 /* libavformat.61.7.100.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AB0329C42D44DC27004729F2 /* libavformat.61.7.100.dylib */; };
+		AB0729B92D44F5C10075BC49 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE782C1B841A00D0A599 /* AppKit.framework */; };
+		AB0729BA2D44F5C60075BC49 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB0014402C70F71A00BB0A24 /* Cocoa.framework */; };
+		AB0729BB2D44F5CE0075BC49 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB6E161B2D2D122C00A3C685 /* CoreFoundation.framework */; };
+		AB08DEAD2D15E8F9000548CF /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242F2C103798006EB7B6 /* Metal.framework */; };
+		AB08DEAE2D15E8FF000548CF /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE7D2C1C76DF00D0A599 /* MetalKit.framework */; };
+		AB08DEAF2D15E96A000548CF /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE782C1B841A00D0A599 /* AppKit.framework */; };
+		AB22E9352D46210C00194BBC /* libavformat.61.7.100.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AB0329C42D44DC27004729F2 /* libavformat.61.7.100.dylib */; };
+		AB300BAE2C5FB5690098A5A5 /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AB300BAD2C5FB5690098A5A5 /* main.cpp */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
+		AB300BB22C5FB5940098A5A5 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE782C1B841A00D0A599 /* AppKit.framework */; };
+		AB300BB32C5FB59B0098A5A5 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242F2C103798006EB7B6 /* Metal.framework */; };
+		AB300BB42C5FB5A20098A5A5 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE7D2C1C76DF00D0A599 /* MetalKit.framework */; };
+		AB300BB62C5FB8D60098A5A5 /* Filters.metal in Sources */ = {isa = PBXBuildFile; fileRef = AB300BB52C5FB8D60098A5A5 /* Filters.metal */; };
+		AB3EBC692D5BA402009D32BA /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242F2C103798006EB7B6 /* Metal.framework */; };
+		AB3EBC6A2D5BA402009D32BA /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE7D2C1C76DF00D0A599 /* MetalKit.framework */; };
+		AB3EBC6B2D5BA412009D32BA /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE782C1B841A00D0A599 /* AppKit.framework */; };
+		AB46E8C52D1B144300AAAB22 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB46E8C42D1B144300AAAB22 /* Accelerate.framework */; };
+		AB54357F2D48D87300506A97 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242F2C103798006EB7B6 /* Metal.framework */; };
+		AB5435802D48D87300506A97 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE7D2C1C76DF00D0A599 /* MetalKit.framework */; };
+		AB5435AC2D4E3C4600506A97 /* GLKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB5435AA2D4E3C4600506A97 /* GLKit.framework */; };
+		AB5435AD2D4E3C4600506A97 /* OpenGL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB5435AB2D4E3C4600506A97 /* OpenGL.framework */; };
+		AB5435AF2D4E3FF400506A97 /* libglfw.3.4.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AB5435AE2D4E3FF400506A97 /* libglfw.3.4.dylib */; };
+		AB6E161A2D2D121500A3C685 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB6E16192D2D121500A3C685 /* CoreGraphics.framework */; };
+		AB6E161C2D2D122C00A3C685 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB6E161B2D2D122C00A3C685 /* CoreFoundation.framework */; };
+		AB6E161E2D2D129100A3C685 /* ImageIO.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB6E161D2D2D129100A3C685 /* ImageIO.framework */; };
+		AB6E16202D2D12EF00A3C685 /* CoreServices.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB6E161F2D2D12EF00A3C685 /* CoreServices.framework */; };
+		AB6E16212D2D169300A3C685 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242B2C103782006EB7B6 /* Foundation.framework */; };
+		AB6E16232D2D220300A3C685 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB6E16222D2D220300A3C685 /* AVFoundation.framework */; };
+		AB6E16432D2D2EAB00A3C685 /* Carbon.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB6E16422D2D2EAB00A3C685 /* Carbon.framework */; };
+		AB6E16522D32BAFF00A3C685 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE7D2C1C76DF00D0A599 /* MetalKit.framework */; };
+		AB6E16532D32BB0600A3C685 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242F2C103798006EB7B6 /* Metal.framework */; };
+		AB6E16542D32BB1A00A3C685 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB6E161B2D2D122C00A3C685 /* CoreFoundation.framework */; };
+		AB6E16552D32BB1A00A3C685 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242B2C103782006EB7B6 /* Foundation.framework */; };
+		AB6E16562D32BB2300A3C685 /* Quartz.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABEFCF192D2CEFE0008D50B4 /* Quartz.framework */; };
+		AB6E16572D32BB2300A3C685 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242D2C10378F006EB7B6 /* QuartzCore.framework */; };
+		AB6E165C2D32BCCC00A3C685 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE782C1B841A00D0A599 /* AppKit.framework */; };
+		AB7692952D57FD3000BCD030 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB6E16222D2D220300A3C685 /* AVFoundation.framework */; };
+		AB7692972D57FD4C00BCD030 /* CoreVideo.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB7692962D57FD4C00BCD030 /* CoreVideo.framework */; };
+		AB7692992D57FD5800BCD030 /* CoreMedia.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB7692982D57FD5800BCD030 /* CoreMedia.framework */; };
+		AB76C1582D46177300C6B3CF /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE782C1B841A00D0A599 /* AppKit.framework */; };
+		AB76C1592D46177A00C6B3CF /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB0014402C70F71A00BB0A24 /* Cocoa.framework */; };
+		AB84117B2C75094700497691 /* ViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB84117A2C75094700497691 /* ViewModel.swift */; };
+		AB84631F2D723E0D00FC6B24 /* Vision.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB84631E2D723E0D00FC6B24 /* Vision.framework */; };
+		ABB242392C0DFECE005A1498 /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABB242382C0DFECE005A1498 /* main.cpp */; };
+		ABB242402C0F7133005A1498 /* Add.metal in Sources */ = {isa = PBXBuildFile; fileRef = ABB2423F2C0F7133005A1498 /* Add.metal */; };
+		ABC09D8D2C38450000A6C4D8 /* SceneShader.metal in Sources */ = {isa = PBXBuildFile; fileRef = ABC09D8C2C38450000A6C4D8 /* SceneShader.metal */; };
+		ABCB242C2C103782006EB7B6 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242B2C103782006EB7B6 /* Foundation.framework */; };
+		ABCB242E2C10378F006EB7B6 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242D2C10378F006EB7B6 /* QuartzCore.framework */; };
+		ABCB24302C103798006EB7B6 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242F2C103798006EB7B6 /* Metal.framework */; };
+		ABCB24972C104D2D006EB7B6 /* StringConverter.mm in Sources */ = {isa = PBXBuildFile; fileRef = ABCB24962C104D2D006EB7B6 /* StringConverter.mm */; };
+		ABCDF7012C206CBC005FFFE1 /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABCDF7002C206CBC005FFFE1 /* main.cpp */; };
+		ABCDF7052C206D60005FFFE1 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242F2C103798006EB7B6 /* Metal.framework */; };
+		ABCDF7062C206D60005FFFE1 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE7D2C1C76DF00D0A599 /* MetalKit.framework */; };
+		ABCDF7072C206D66005FFFE1 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE782C1B841A00D0A599 /* AppKit.framework */; };
+		ABCDF7092C208F0E005FFFE1 /* CubeShader.metal in Sources */ = {isa = PBXBuildFile; fileRef = ABCDF7082C208F0E005FFFE1 /* CubeShader.metal */; };
+		ABCDF7112C22D6F2005FFFE1 /* main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABCDF7102C22D6F2005FFFE1 /* main.cpp */; };
+		ABCDF7152C22D756005FFFE1 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE7D2C1C76DF00D0A599 /* MetalKit.framework */; };
+		ABCDF7162C22D75E005FFFE1 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242F2C103798006EB7B6 /* Metal.framework */; };
+		ABCDF7172C22D768005FFFE1 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE782C1B841A00D0A599 /* AppKit.framework */; };
+		ABDA94CC2C732425007A8485 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABDA94CB2C732425007A8485 /* CoreAudio.framework */; };
+		ABDA94CF2C74EAD7007A8485 /* ImageProcessing-Bridging-Header.h in Sources */ = {isa = PBXBuildFile; fileRef = ABEE64B42C6F4601005DFA65 /* ImageProcessing-Bridging-Header.h */; };
+		ABE324242C18AD3000C59653 /* GPU_Compute.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABE324232C18AD3000C59653 /* GPU_Compute.cpp */; };
+		ABEE64B32C6F3F09005DFA65 /* ImgProc.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABEE64B22C6F3F09005DFA65 /* ImgProc.swift */; };
+		ABEFCF1A2D2CEFE0008D50B4 /* Quartz.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABEFCF192D2CEFE0008D50B4 /* Quartz.framework */; };
+		ABFBBE772C1B772500D0A599 /* unoptomisedCode.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABFBBE762C1B772500D0A599 /* unoptomisedCode.cpp */; };
+		ABFBBE792C1B841A00D0A599 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE782C1B841A00D0A599 /* AppKit.framework */; };
+		ABFBBE7E2C1C76DF00D0A599 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE7D2C1C76DF00D0A599 /* MetalKit.framework */; };
+		ABFBBE812C1C7E2C00D0A599 /* Triangle.metal in Sources */ = {isa = PBXBuildFile; fileRef = ABFBBE802C1C7E2C00D0A599 /* Triangle.metal */; };
+		ABFBBE832C1DAFE900D0A599 /* Shape.metal in Sources */ = {isa = PBXBuildFile; fileRef = ABFBBE822C1DAFE900D0A599 /* Shape.metal */; };
+		ABFBBE852C1E1BCD00D0A599 /* MathOperations.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ABFBBE842C1E1BCD00D0A599 /* MathOperations.cpp */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AB08DEA42D15E869000548CF /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		AB300BA92C5FB5690098A5A5 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		AB6E16492D32BADE00A3C685 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		ABB242332C0DFECE005A1498 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		ABCDF6FC2C206CBC005FFFE1 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		ABCDF70C2C22D6F2005FFFE1 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		ABD334DF2CD50BB500D7C1CC /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+		ABE716CB2D3E519A00B18BEE /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = /usr/share/man/man1/;
+			dstSubfolderSpec = 0;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 1;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		AB00143B2C70E83F00BB0A24 /* File.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = File.swift; sourceTree = "<group>"; };
+		AB00143D2C70F18100BB0A24 /* ViewImporter.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ViewImporter.mm; sourceTree = "<group>"; };
+		AB00143F2C70F20300BB0A24 /* ViewImporterBridge.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = ViewImporterBridge.hpp; sourceTree = "<group>"; };
+		AB0014402C70F71A00BB0A24 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
+		AB0329C22D44DBDE004729F2 /* libavcodec.61.19.100.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libavcodec.61.19.100.dylib; path = ../../../../../opt/homebrew/Cellar/ffmpeg/7.1_4/lib/libavcodec.61.19.100.dylib; sourceTree = "<group>"; };
+		AB0329C42D44DC27004729F2 /* libavformat.61.7.100.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libavformat.61.7.100.dylib; path = ../../../../../opt/homebrew/Cellar/ffmpeg/7.1_4/lib/libavformat.61.7.100.dylib; sourceTree = "<group>"; };
+		AB08DEA62D15E869000548CF /* Aditya_Intelligence */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Aditya_Intelligence; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB1BE7252D7DE4DB00D29037 /* AdityaIntelligenceProMax.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AdityaIntelligenceProMax.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB22E9332D4620C000194BBC /* libavfilter.10.4.100.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libavfilter.10.4.100.dylib; path = ../../../../../opt/homebrew/Cellar/ffmpeg/7.1_4/lib/libavfilter.10.4.100.dylib; sourceTree = "<group>"; };
+		AB300BAB2C5FB5690098A5A5 /* ImageProcessing */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = ImageProcessing; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB300BAD2C5FB5690098A5A5 /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
+		AB300BB52C5FB8D60098A5A5 /* Filters.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Filters.metal; sourceTree = "<group>"; };
+		AB46E8C42D1B144300AAAB22 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
+		AB5435AA2D4E3C4600506A97 /* GLKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = GLKit.framework; path = System/Library/Frameworks/GLKit.framework; sourceTree = SDKROOT; };
+		AB5435AB2D4E3C4600506A97 /* OpenGL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenGL.framework; path = System/Library/Frameworks/OpenGL.framework; sourceTree = SDKROOT; };
+		AB5435AE2D4E3FF400506A97 /* libglfw.3.4.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libglfw.3.4.dylib; path = ../../../../../opt/homebrew/Cellar/glfw/3.4/lib/libglfw.3.4.dylib; sourceTree = "<group>"; };
+		AB6E16192D2D121500A3C685 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		AB6E161B2D2D122C00A3C685 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
+		AB6E161D2D2D129100A3C685 /* ImageIO.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ImageIO.framework; path = System/Library/Frameworks/ImageIO.framework; sourceTree = SDKROOT; };
+		AB6E161F2D2D12EF00A3C685 /* CoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreServices.framework; path = System/Library/Frameworks/CoreServices.framework; sourceTree = SDKROOT; };
+		AB6E16222D2D220300A3C685 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		AB6E16422D2D2EAB00A3C685 /* Carbon.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Carbon.framework; path = System/Library/Frameworks/Carbon.framework; sourceTree = SDKROOT; };
+		AB6E164B2D32BADE00A3C685 /* test */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = test; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB748F572D46158900D85275 /* Video Editor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Video Editor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB7692962D57FD4C00BCD030 /* CoreVideo.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreVideo.framework; path = System/Library/Frameworks/CoreVideo.framework; sourceTree = SDKROOT; };
+		AB7692982D57FD5800BCD030 /* CoreMedia.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMedia.framework; path = System/Library/Frameworks/CoreMedia.framework; sourceTree = SDKROOT; };
+		AB76929F2D5B9D7500BCD030 /* ParticleSystem.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ParticleSystem.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB84117A2C75094700497691 /* ViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModel.swift; sourceTree = "<group>"; };
+		AB84631E2D723E0D00FC6B24 /* Vision.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Vision.framework; path = System/Library/Frameworks/Vision.framework; sourceTree = SDKROOT; };
+		ABB242352C0DFECE005A1498 /* WorldOf3D */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = WorldOf3D; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABB242382C0DFECE005A1498 /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
+		ABB2423F2C0F7133005A1498 /* Add.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Add.metal; sourceTree = "<group>"; };
+		ABC09D8C2C38450000A6C4D8 /* SceneShader.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = SceneShader.metal; sourceTree = "<group>"; };
+		ABCB242B2C103782006EB7B6 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		ABCB242D2C10378F006EB7B6 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		ABCB242F2C103798006EB7B6 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		ABCB24962C104D2D006EB7B6 /* StringConverter.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = StringConverter.mm; sourceTree = "<group>"; };
+		ABCB24982C104DBA006EB7B6 /* StringConverter.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = StringConverter.hpp; sourceTree = "<group>"; };
+		ABCDF6FE2C206CBC005FFFE1 /* RotatingCube */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = RotatingCube; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABCDF7002C206CBC005FFFE1 /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
+		ABCDF7082C208F0E005FFFE1 /* CubeShader.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = CubeShader.metal; sourceTree = "<group>"; };
+		ABCDF70E2C22D6F2005FFFE1 /* Scene2D */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Scene2D; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABCDF7102C22D6F2005FFFE1 /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
+		ABD334E12CD50BB500D7C1CC /* Algorithms */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Algorithms; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABDA94C92C7323FC007A8485 /* CoreAudioTypes.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudioTypes.framework; path = System/Library/Frameworks/CoreAudioTypes.framework; sourceTree = SDKROOT; };
+		ABDA94CB2C732425007A8485 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
+		ABDA94CD2C739C43007A8485 /* Test.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Test.hpp; sourceTree = "<group>"; };
+		ABDA94CE2C74E2F8007A8485 /* MySwiftUIViewControllerBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MySwiftUIViewControllerBridge.h; sourceTree = "<group>"; };
+		ABE324232C18AD3000C59653 /* GPU_Compute.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = GPU_Compute.cpp; sourceTree = "<group>"; };
+		ABE716CD2D3E519A00B18BEE /* VideoEditor */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = VideoEditor; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABE716D52D3E5BD700B18BEE /* libavformat.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavformat.a; path = ../../../../../opt/homebrew/Cellar/ffmpeg/7.1_4/lib/libavformat.a; sourceTree = "<group>"; };
+		ABE716D72D3E5D7A00B18BEE /* libswscale.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libswscale.a; path = ../../../../../opt/homebrew/Cellar/ffmpeg/7.1_4/lib/libswscale.a; sourceTree = "<group>"; };
+		ABE716D82D3E5D7A00B18BEE /* libavcodec.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libavcodec.a; path = ../../../../../opt/homebrew/Cellar/ffmpeg/7.1_4/lib/libavcodec.a; sourceTree = "<group>"; };
+		ABEE64B22C6F3F09005DFA65 /* ImgProc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImgProc.swift; sourceTree = "<group>"; };
+		ABEE64B42C6F4601005DFA65 /* ImageProcessing-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "ImageProcessing-Bridging-Header.h"; sourceTree = "<group>"; };
+		ABEFCF192D2CEFE0008D50B4 /* Quartz.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Quartz.framework; path = System/Library/Frameworks/Quartz.framework; sourceTree = SDKROOT; };
+		ABFBBE762C1B772500D0A599 /* unoptomisedCode.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = unoptomisedCode.cpp; sourceTree = "<group>"; };
+		ABFBBE782C1B841A00D0A599 /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
+		ABFBBE7D2C1C76DF00D0A599 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		ABFBBE802C1C7E2C00D0A599 /* Triangle.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Triangle.metal; sourceTree = "<group>"; };
+		ABFBBE822C1DAFE900D0A599 /* Shape.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shape.metal; sourceTree = "<group>"; };
+		ABFBBE842C1E1BCD00D0A599 /* MathOperations.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = MathOperations.cpp; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		AB06EBFE2D72F952000D81D0 /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = AB08DEA22D15E869000548CF /* Sources */;
+			membershipExceptions = (
+				Extensions/shapeExtension.hpp,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		AB08DEA72D15E869000548CF /* Aditya_Intelligence */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AB06EBFE2D72F952000D81D0 /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Aditya_Intelligence; sourceTree = "<group>"; };
+		AB1BE7262D7DE4DB00D29037 /* AdityaIntelligenceProMax */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {11_7_2024.usdz = archive.zip; output.usda = text.xml; }; explicitFolders = (); path = AdityaIntelligenceProMax; sourceTree = "<group>"; };
+		AB6E164C2D32BADE00A3C685 /* test */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = test; sourceTree = "<group>"; };
+		AB748F582D46158900D85275 /* Video Editor */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Video Editor"; sourceTree = "<group>"; };
+		AB7692A02D5B9D7500BCD030 /* ParticleSystem */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ParticleSystem; sourceTree = "<group>"; };
+		ABD334E22CD50BB500D7C1CC /* Algorithms */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Algorithms; sourceTree = "<group>"; };
+		ABE716CE2D3E519A00B18BEE /* VideoEditor */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = VideoEditor; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AB08DEA32D15E869000548CF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB7692992D57FD5800BCD030 /* CoreMedia.framework in Frameworks */,
+				AB7692972D57FD4C00BCD030 /* CoreVideo.framework in Frameworks */,
+				AB7692952D57FD3000BCD030 /* AVFoundation.framework in Frameworks */,
+				AB08DEAF2D15E96A000548CF /* AppKit.framework in Frameworks */,
+				AB84631F2D723E0D00FC6B24 /* Vision.framework in Frameworks */,
+				AB46E8C52D1B144300AAAB22 /* Accelerate.framework in Frameworks */,
+				AB08DEAE2D15E8FF000548CF /* MetalKit.framework in Frameworks */,
+				AB08DEAD2D15E8F9000548CF /* Metal.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB1BE7222D7DE4DB00D29037 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB300BA82C5FB5690098A5A5 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABDA94CC2C732425007A8485 /* CoreAudio.framework in Frameworks */,
+				AB0014412C70F71A00BB0A24 /* Cocoa.framework in Frameworks */,
+				AB300BB42C5FB5A20098A5A5 /* MetalKit.framework in Frameworks */,
+				AB300BB32C5FB59B0098A5A5 /* Metal.framework in Frameworks */,
+				AB300BB22C5FB5940098A5A5 /* AppKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB6E16482D32BADE00A3C685 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB6E165C2D32BCCC00A3C685 /* AppKit.framework in Frameworks */,
+				AB6E16562D32BB2300A3C685 /* Quartz.framework in Frameworks */,
+				AB6E16572D32BB2300A3C685 /* QuartzCore.framework in Frameworks */,
+				AB6E16542D32BB1A00A3C685 /* CoreFoundation.framework in Frameworks */,
+				AB6E16552D32BB1A00A3C685 /* Foundation.framework in Frameworks */,
+				AB6E16532D32BB0600A3C685 /* Metal.framework in Frameworks */,
+				AB6E16522D32BAFF00A3C685 /* MetalKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB748F542D46158900D85275 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB54357F2D48D87300506A97 /* Metal.framework in Frameworks */,
+				AB5435802D48D87300506A97 /* MetalKit.framework in Frameworks */,
+				AB22E9352D46210C00194BBC /* libavformat.61.7.100.dylib in Frameworks */,
+				AB76C1592D46177A00C6B3CF /* Cocoa.framework in Frameworks */,
+				AB76C1582D46177300C6B3CF /* AppKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB76929C2D5B9D7500BCD030 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB3EBC6B2D5BA412009D32BA /* AppKit.framework in Frameworks */,
+				AB3EBC692D5BA402009D32BA /* Metal.framework in Frameworks */,
+				AB3EBC6A2D5BA402009D32BA /* MetalKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABB242322C0DFECE005A1498 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABFBBE7E2C1C76DF00D0A599 /* MetalKit.framework in Frameworks */,
+				ABFBBE792C1B841A00D0A599 /* AppKit.framework in Frameworks */,
+				ABCB24302C103798006EB7B6 /* Metal.framework in Frameworks */,
+				ABCB242E2C10378F006EB7B6 /* QuartzCore.framework in Frameworks */,
+				ABCB242C2C103782006EB7B6 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABCDF6FB2C206CBC005FFFE1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABCDF7072C206D66005FFFE1 /* AppKit.framework in Frameworks */,
+				ABCDF7052C206D60005FFFE1 /* Metal.framework in Frameworks */,
+				ABCDF7062C206D60005FFFE1 /* MetalKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABCDF70B2C22D6F2005FFFE1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABCDF7172C22D768005FFFE1 /* AppKit.framework in Frameworks */,
+				ABCDF7162C22D75E005FFFE1 /* Metal.framework in Frameworks */,
+				ABCDF7152C22D756005FFFE1 /* MetalKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABD334DE2CD50BB500D7C1CC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB6E16432D2D2EAB00A3C685 /* Carbon.framework in Frameworks */,
+				AB6E16232D2D220300A3C685 /* AVFoundation.framework in Frameworks */,
+				AB6E16212D2D169300A3C685 /* Foundation.framework in Frameworks */,
+				AB6E16202D2D12EF00A3C685 /* CoreServices.framework in Frameworks */,
+				AB6E161E2D2D129100A3C685 /* ImageIO.framework in Frameworks */,
+				AB6E161C2D2D122C00A3C685 /* CoreFoundation.framework in Frameworks */,
+				AB6E161A2D2D121500A3C685 /* CoreGraphics.framework in Frameworks */,
+				ABEFCF1A2D2CEFE0008D50B4 /* Quartz.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABE716CA2D3E519A00B18BEE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB5435AF2D4E3FF400506A97 /* libglfw.3.4.dylib in Frameworks */,
+				AB5435AC2D4E3C4600506A97 /* GLKit.framework in Frameworks */,
+				AB5435AD2D4E3C4600506A97 /* OpenGL.framework in Frameworks */,
+				AB0729BB2D44F5CE0075BC49 /* CoreFoundation.framework in Frameworks */,
+				AB0729BA2D44F5C60075BC49 /* Cocoa.framework in Frameworks */,
+				AB0729B92D44F5C10075BC49 /* AppKit.framework in Frameworks */,
+				AB0329C52D44DC27004729F2 /* libavformat.61.7.100.dylib in Frameworks */,
+				AB0329C32D44DBDE004729F2 /* libavcodec.61.19.100.dylib in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AB300BAC2C5FB5690098A5A5 /* ImageProcessing */ = {
+			isa = PBXGroup;
+			children = (
+				AB300BAD2C5FB5690098A5A5 /* main.cpp */,
+				AB300BB52C5FB8D60098A5A5 /* Filters.metal */,
+				ABEE64B22C6F3F09005DFA65 /* ImgProc.swift */,
+				ABEE64B42C6F4601005DFA65 /* ImageProcessing-Bridging-Header.h */,
+				AB00143B2C70E83F00BB0A24 /* File.swift */,
+				AB00143D2C70F18100BB0A24 /* ViewImporter.mm */,
+				AB00143F2C70F20300BB0A24 /* ViewImporterBridge.hpp */,
+				ABDA94CD2C739C43007A8485 /* Test.hpp */,
+				ABDA94CE2C74E2F8007A8485 /* MySwiftUIViewControllerBridge.h */,
+				AB84117A2C75094700497691 /* ViewModel.swift */,
+			);
+			path = ImageProcessing;
+			sourceTree = "<group>";
+		};
+		ABB2422C2C0DFECE005A1498 = {
+			isa = PBXGroup;
+			children = (
+				ABB242372C0DFECE005A1498 /* WorldOf3D */,
+				ABCDF6FF2C206CBC005FFFE1 /* RotatingCube */,
+				ABCDF70F2C22D6F2005FFFE1 /* Scene2D */,
+				AB300BAC2C5FB5690098A5A5 /* ImageProcessing */,
+				ABD334E22CD50BB500D7C1CC /* Algorithms */,
+				AB08DEA72D15E869000548CF /* Aditya_Intelligence */,
+				AB6E164C2D32BADE00A3C685 /* test */,
+				ABE716CE2D3E519A00B18BEE /* VideoEditor */,
+				AB748F582D46158900D85275 /* Video Editor */,
+				AB7692A02D5B9D7500BCD030 /* ParticleSystem */,
+				AB1BE7262D7DE4DB00D29037 /* AdityaIntelligenceProMax */,
+				ABB242362C0DFECE005A1498 /* Products */,
+				ABCB242A2C103782006EB7B6 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		ABB242362C0DFECE005A1498 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				ABB242352C0DFECE005A1498 /* WorldOf3D */,
+				ABCDF6FE2C206CBC005FFFE1 /* RotatingCube */,
+				ABCDF70E2C22D6F2005FFFE1 /* Scene2D */,
+				AB300BAB2C5FB5690098A5A5 /* ImageProcessing */,
+				ABD334E12CD50BB500D7C1CC /* Algorithms */,
+				AB08DEA62D15E869000548CF /* Aditya_Intelligence */,
+				AB6E164B2D32BADE00A3C685 /* test */,
+				ABE716CD2D3E519A00B18BEE /* VideoEditor */,
+				AB748F572D46158900D85275 /* Video Editor.app */,
+				AB76929F2D5B9D7500BCD030 /* ParticleSystem.app */,
+				AB1BE7252D7DE4DB00D29037 /* AdityaIntelligenceProMax.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		ABB242372C0DFECE005A1498 /* WorldOf3D */ = {
+			isa = PBXGroup;
+			children = (
+				ABFBBE7F2C1C7D8E00D0A599 /* Shaders */,
+				ABB242382C0DFECE005A1498 /* main.cpp */,
+				ABB2423F2C0F7133005A1498 /* Add.metal */,
+				ABCB24962C104D2D006EB7B6 /* StringConverter.mm */,
+				ABCB24982C104DBA006EB7B6 /* StringConverter.hpp */,
+				ABE324232C18AD3000C59653 /* GPU_Compute.cpp */,
+				ABFBBE762C1B772500D0A599 /* unoptomisedCode.cpp */,
+				ABFBBE842C1E1BCD00D0A599 /* MathOperations.cpp */,
+			);
+			path = WorldOf3D;
+			sourceTree = "<group>";
+		};
+		ABCB242A2C103782006EB7B6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				AB84631E2D723E0D00FC6B24 /* Vision.framework */,
+				AB7692982D57FD5800BCD030 /* CoreMedia.framework */,
+				AB7692962D57FD4C00BCD030 /* CoreVideo.framework */,
+				AB5435AE2D4E3FF400506A97 /* libglfw.3.4.dylib */,
+				AB5435AA2D4E3C4600506A97 /* GLKit.framework */,
+				AB5435AB2D4E3C4600506A97 /* OpenGL.framework */,
+				AB22E9332D4620C000194BBC /* libavfilter.10.4.100.dylib */,
+				AB0329C42D44DC27004729F2 /* libavformat.61.7.100.dylib */,
+				AB0329C22D44DBDE004729F2 /* libavcodec.61.19.100.dylib */,
+				ABE716D82D3E5D7A00B18BEE /* libavcodec.a */,
+				ABE716D72D3E5D7A00B18BEE /* libswscale.a */,
+				ABE716D52D3E5BD700B18BEE /* libavformat.a */,
+				AB6E16422D2D2EAB00A3C685 /* Carbon.framework */,
+				AB6E16222D2D220300A3C685 /* AVFoundation.framework */,
+				AB6E161F2D2D12EF00A3C685 /* CoreServices.framework */,
+				AB6E161D2D2D129100A3C685 /* ImageIO.framework */,
+				AB6E161B2D2D122C00A3C685 /* CoreFoundation.framework */,
+				AB6E16192D2D121500A3C685 /* CoreGraphics.framework */,
+				ABEFCF192D2CEFE0008D50B4 /* Quartz.framework */,
+				AB46E8C42D1B144300AAAB22 /* Accelerate.framework */,
+				ABDA94CB2C732425007A8485 /* CoreAudio.framework */,
+				ABDA94C92C7323FC007A8485 /* CoreAudioTypes.framework */,
+				AB0014402C70F71A00BB0A24 /* Cocoa.framework */,
+				ABFBBE7D2C1C76DF00D0A599 /* MetalKit.framework */,
+				ABFBBE782C1B841A00D0A599 /* AppKit.framework */,
+				ABCB242F2C103798006EB7B6 /* Metal.framework */,
+				ABCB242D2C10378F006EB7B6 /* QuartzCore.framework */,
+				ABCB242B2C103782006EB7B6 /* Foundation.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		ABCDF6FF2C206CBC005FFFE1 /* RotatingCube */ = {
+			isa = PBXGroup;
+			children = (
+				ABCDF7002C206CBC005FFFE1 /* main.cpp */,
+				ABCDF7082C208F0E005FFFE1 /* CubeShader.metal */,
+			);
+			path = RotatingCube;
+			sourceTree = "<group>";
+		};
+		ABCDF70F2C22D6F2005FFFE1 /* Scene2D */ = {
+			isa = PBXGroup;
+			children = (
+				ABCDF7102C22D6F2005FFFE1 /* main.cpp */,
+				ABC09D8C2C38450000A6C4D8 /* SceneShader.metal */,
+			);
+			path = Scene2D;
+			sourceTree = "<group>";
+		};
+		ABFBBE7F2C1C7D8E00D0A599 /* Shaders */ = {
+			isa = PBXGroup;
+			children = (
+				ABFBBE802C1C7E2C00D0A599 /* Triangle.metal */,
+				ABFBBE822C1DAFE900D0A599 /* Shape.metal */,
+			);
+			path = Shaders;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AB08DEA52D15E869000548CF /* Aditya_Intelligence */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB08DEAA2D15E869000548CF /* Build configuration list for PBXNativeTarget "Aditya_Intelligence" */;
+			buildPhases = (
+				AB08DEA22D15E869000548CF /* Sources */,
+				AB08DEA32D15E869000548CF /* Frameworks */,
+				AB08DEA42D15E869000548CF /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AB08DEA72D15E869000548CF /* Aditya_Intelligence */,
+			);
+			name = Aditya_Intelligence;
+			packageProductDependencies = (
+			);
+			productName = Aditya_Intelligence;
+			productReference = AB08DEA62D15E869000548CF /* Aditya_Intelligence */;
+			productType = "com.apple.product-type.tool";
+		};
+		AB1BE7242D7DE4DB00D29037 /* AdityaIntelligenceProMax */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB1BE7332D7DE4DC00D29037 /* Build configuration list for PBXNativeTarget "AdityaIntelligenceProMax" */;
+			buildPhases = (
+				AB1BE7212D7DE4DB00D29037 /* Sources */,
+				AB1BE7222D7DE4DB00D29037 /* Frameworks */,
+				AB1BE7232D7DE4DB00D29037 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AB1BE7262D7DE4DB00D29037 /* AdityaIntelligenceProMax */,
+			);
+			name = AdityaIntelligenceProMax;
+			packageProductDependencies = (
+			);
+			productName = AdityaIntelligenceProMax;
+			productReference = AB1BE7252D7DE4DB00D29037 /* AdityaIntelligenceProMax.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AB300BAA2C5FB5690098A5A5 /* ImageProcessing */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB300BB12C5FB5690098A5A5 /* Build configuration list for PBXNativeTarget "ImageProcessing" */;
+			buildPhases = (
+				AB300BA72C5FB5690098A5A5 /* Sources */,
+				AB300BA82C5FB5690098A5A5 /* Frameworks */,
+				AB300BA92C5FB5690098A5A5 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ImageProcessing;
+			productName = ImageProcessing;
+			productReference = AB300BAB2C5FB5690098A5A5 /* ImageProcessing */;
+			productType = "com.apple.product-type.tool";
+		};
+		AB6E164A2D32BADE00A3C685 /* test */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB6E164F2D32BADE00A3C685 /* Build configuration list for PBXNativeTarget "test" */;
+			buildPhases = (
+				AB6E16472D32BADE00A3C685 /* Sources */,
+				AB6E16482D32BADE00A3C685 /* Frameworks */,
+				AB6E16492D32BADE00A3C685 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AB6E164C2D32BADE00A3C685 /* test */,
+			);
+			name = test;
+			packageProductDependencies = (
+			);
+			productName = test;
+			productReference = AB6E164B2D32BADE00A3C685 /* test */;
+			productType = "com.apple.product-type.tool";
+		};
+		AB748F562D46158900D85275 /* Video Editor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB748F692D46158A00D85275 /* Build configuration list for PBXNativeTarget "Video Editor" */;
+			buildPhases = (
+				AB748F532D46158900D85275 /* Sources */,
+				AB748F542D46158900D85275 /* Frameworks */,
+				AB748F552D46158900D85275 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AB748F582D46158900D85275 /* Video Editor */,
+			);
+			name = "Video Editor";
+			packageProductDependencies = (
+			);
+			productName = "Video Editor";
+			productReference = AB748F572D46158900D85275 /* Video Editor.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AB76929E2D5B9D7500BCD030 /* ParticleSystem */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB7692AF2D5B9D7600BCD030 /* Build configuration list for PBXNativeTarget "ParticleSystem" */;
+			buildPhases = (
+				AB76929B2D5B9D7500BCD030 /* Sources */,
+				AB76929C2D5B9D7500BCD030 /* Frameworks */,
+				AB76929D2D5B9D7500BCD030 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AB7692A02D5B9D7500BCD030 /* ParticleSystem */,
+			);
+			name = ParticleSystem;
+			packageProductDependencies = (
+			);
+			productName = ParticleSystem;
+			productReference = AB76929F2D5B9D7500BCD030 /* ParticleSystem.app */;
+			productType = "com.apple.product-type.application";
+		};
+		ABB242342C0DFECE005A1498 /* WorldOf3D */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ABB2423C2C0DFECE005A1498 /* Build configuration list for PBXNativeTarget "WorldOf3D" */;
+			buildPhases = (
+				ABB242312C0DFECE005A1498 /* Sources */,
+				ABB242322C0DFECE005A1498 /* Frameworks */,
+				ABB242332C0DFECE005A1498 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WorldOf3D;
+			productName = WorldOf3D;
+			productReference = ABB242352C0DFECE005A1498 /* WorldOf3D */;
+			productType = "com.apple.product-type.tool";
+		};
+		ABCDF6FD2C206CBC005FFFE1 /* RotatingCube */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ABCDF7042C206CBC005FFFE1 /* Build configuration list for PBXNativeTarget "RotatingCube" */;
+			buildPhases = (
+				ABCDF6FA2C206CBC005FFFE1 /* Sources */,
+				ABCDF6FB2C206CBC005FFFE1 /* Frameworks */,
+				ABCDF6FC2C206CBC005FFFE1 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RotatingCube;
+			productName = RotatingCube;
+			productReference = ABCDF6FE2C206CBC005FFFE1 /* RotatingCube */;
+			productType = "com.apple.product-type.tool";
+		};
+		ABCDF70D2C22D6F2005FFFE1 /* Scene2D */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ABCDF7122C22D6F2005FFFE1 /* Build configuration list for PBXNativeTarget "Scene2D" */;
+			buildPhases = (
+				ABCDF70A2C22D6F2005FFFE1 /* Sources */,
+				ABCDF70B2C22D6F2005FFFE1 /* Frameworks */,
+				ABCDF70C2C22D6F2005FFFE1 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Scene2D;
+			productName = Scene2D;
+			productReference = ABCDF70E2C22D6F2005FFFE1 /* Scene2D */;
+			productType = "com.apple.product-type.tool";
+		};
+		ABD334E02CD50BB500D7C1CC /* Algorithms */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ABD334E52CD50BB500D7C1CC /* Build configuration list for PBXNativeTarget "Algorithms" */;
+			buildPhases = (
+				ABD334DD2CD50BB500D7C1CC /* Sources */,
+				ABD334DE2CD50BB500D7C1CC /* Frameworks */,
+				ABD334DF2CD50BB500D7C1CC /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				ABD334E22CD50BB500D7C1CC /* Algorithms */,
+			);
+			name = Algorithms;
+			packageProductDependencies = (
+			);
+			productName = Algorithms;
+			productReference = ABD334E12CD50BB500D7C1CC /* Algorithms */;
+			productType = "com.apple.product-type.tool";
+		};
+		ABE716CC2D3E519A00B18BEE /* VideoEditor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ABE716D32D3E519A00B18BEE /* Build configuration list for PBXNativeTarget "VideoEditor" */;
+			buildPhases = (
+				ABE716C92D3E519A00B18BEE /* Sources */,
+				ABE716CA2D3E519A00B18BEE /* Frameworks */,
+				ABE716CB2D3E519A00B18BEE /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				ABE716CE2D3E519A00B18BEE /* VideoEditor */,
+			);
+			name = VideoEditor;
+			packageProductDependencies = (
+			);
+			productName = VideoEditor;
+			productReference = ABE716CD2D3E519A00B18BEE /* VideoEditor */;
+			productType = "com.apple.product-type.tool";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		ABB2422D2C0DFECE005A1498 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				KnownAssetTags = (
+					New,
+				);
+				LastSwiftUpdateCheck = 1610;
+				LastUpgradeCheck = 1610;
+				TargetAttributes = {
+					AB08DEA52D15E869000548CF = {
+						CreatedOnToolsVersion = 16.1;
+					};
+					AB1BE7242D7DE4DB00D29037 = {
+						CreatedOnToolsVersion = 16.1;
+						LastSwiftMigration = 1610;
+					};
+					AB300BAA2C5FB5690098A5A5 = {
+						CreatedOnToolsVersion = 15.4;
+						LastSwiftMigration = 1540;
+					};
+					AB6E164A2D32BADE00A3C685 = {
+						CreatedOnToolsVersion = 16.1;
+					};
+					AB748F562D46158900D85275 = {
+						CreatedOnToolsVersion = 16.1;
+						LastSwiftMigration = 1610;
+					};
+					AB76929E2D5B9D7500BCD030 = {
+						CreatedOnToolsVersion = 16.1;
+					};
+					ABB242342C0DFECE005A1498 = {
+						CreatedOnToolsVersion = 15.4;
+					};
+					ABCDF6FD2C206CBC005FFFE1 = {
+						CreatedOnToolsVersion = 15.4;
+					};
+					ABCDF70D2C22D6F2005FFFE1 = {
+						CreatedOnToolsVersion = 15.4;
+					};
+					ABD334E02CD50BB500D7C1CC = {
+						CreatedOnToolsVersion = 16.1;
+					};
+					ABE716CC2D3E519A00B18BEE = {
+						CreatedOnToolsVersion = 16.1;
+					};
+				};
+			};
+			buildConfigurationList = ABB242302C0DFECE005A1498 /* Build configuration list for PBXProject "WorldOf3D" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = ABB2422C2C0DFECE005A1498;
+			preferredProjectObjectVersion = 56;
+			productRefGroup = ABB242362C0DFECE005A1498 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				ABB242342C0DFECE005A1498 /* WorldOf3D */,
+				ABCDF6FD2C206CBC005FFFE1 /* RotatingCube */,
+				ABCDF70D2C22D6F2005FFFE1 /* Scene2D */,
+				AB300BAA2C5FB5690098A5A5 /* ImageProcessing */,
+				ABD334E02CD50BB500D7C1CC /* Algorithms */,
+				AB08DEA52D15E869000548CF /* Aditya_Intelligence */,
+				AB6E164A2D32BADE00A3C685 /* test */,
+				ABE716CC2D3E519A00B18BEE /* VideoEditor */,
+				AB748F562D46158900D85275 /* Video Editor */,
+				AB76929E2D5B9D7500BCD030 /* ParticleSystem */,
+				AB1BE7242D7DE4DB00D29037 /* AdityaIntelligenceProMax */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AB1BE7232D7DE4DB00D29037 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB748F552D46158900D85275 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB76929D2D5B9D7500BCD030 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AB08DEA22D15E869000548CF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB1BE7212D7DE4DB00D29037 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB300BA72C5FB5690098A5A5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABDA94CF2C74EAD7007A8485 /* ImageProcessing-Bridging-Header.h in Sources */,
+				AB00143E2C70F18100BB0A24 /* ViewImporter.mm in Sources */,
+				AB300BAE2C5FB5690098A5A5 /* main.cpp in Sources */,
+				AB00143C2C70E83F00BB0A24 /* File.swift in Sources */,
+				ABEE64B32C6F3F09005DFA65 /* ImgProc.swift in Sources */,
+				AB300BB62C5FB8D60098A5A5 /* Filters.metal in Sources */,
+				AB84117B2C75094700497691 /* ViewModel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB6E16472D32BADE00A3C685 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB748F532D46158900D85275 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AB76929B2D5B9D7500BCD030 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABB242312C0DFECE005A1498 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABE324242C18AD3000C59653 /* GPU_Compute.cpp in Sources */,
+				ABFBBE852C1E1BCD00D0A599 /* MathOperations.cpp in Sources */,
+				ABFBBE812C1C7E2C00D0A599 /* Triangle.metal in Sources */,
+				ABCB24972C104D2D006EB7B6 /* StringConverter.mm in Sources */,
+				ABFBBE772C1B772500D0A599 /* unoptomisedCode.cpp in Sources */,
+				ABFBBE832C1DAFE900D0A599 /* Shape.metal in Sources */,
+				ABB242392C0DFECE005A1498 /* main.cpp in Sources */,
+				ABB242402C0F7133005A1498 /* Add.metal in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABCDF6FA2C206CBC005FFFE1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABCDF7012C206CBC005FFFE1 /* main.cpp in Sources */,
+				ABCDF7092C208F0E005FFFE1 /* CubeShader.metal in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABCDF70A2C22D6F2005FFFE1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABCDF7112C22D6F2005FFFE1 /* main.cpp in Sources */,
+				ABC09D8D2C38450000A6C4D8 /* SceneShader.metal in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABD334DD2CD50BB500D7C1CC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABE716C92D3E519A00B18BEE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AB08DEAB2D15E869000548CF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Aditya_Intelligence/Aditya_Intelligence.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				OTHER_LDFLAGS = "-Wl,-stack_size,0x10000000";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		AB08DEAC2D15E869000548CF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Aditya_Intelligence/Aditya_Intelligence.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				OTHER_LDFLAGS = "-Wl,-stack_size,0x10000000";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		AB1BE7312D7DE4DC00D29037 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = AdityaIntelligenceProMax/AdityaIntelligenceProMax.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "\"AdityaIntelligenceProMax/Preview Content\"";
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "To use duh";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "To use duh";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.1;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Aditya.AdityaIntelligenceProMax;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(SWIFT_MODULE_NAME)/MatrixH.mm";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 2.1;
+			};
+			name = Debug;
+		};
+		AB1BE7322D7DE4DC00D29037 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = AdityaIntelligenceProMax/AdityaIntelligenceProMax.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_ASSET_PATHS = "\"AdityaIntelligenceProMax/Preview Content\"";
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "To use duh";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "To use duh";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.1;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Aditya.AdityaIntelligenceProMax;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "$(SWIFT_MODULE_NAME)/MatrixH.mm";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 2.1;
+			};
+			name = Release;
+		};
+		AB300BAF2C5FB5690098A5A5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = ImageProcessing/MySwiftUIViewControllerBridge.h;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AB300BB02C5FB5690098A5A5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				OTHER_LDFLAGS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = ImageProcessing/MySwiftUIViewControllerBridge.h;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		AB6E16502D32BADE00A3C685 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		AB6E16512D32BADE00A3C685 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		AB748F672D46158A00D85275 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = "Video Editor/Video_Editor.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = /opt/homebrew/include;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					/opt/homebrew/lib,
+				);
+				LIBRARY_SEARCH_PATHS = (
+					/opt/homebrew/lib,
+					/opt/homebrew/Cellar/ffmpeg/7.1_4/lib,
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-lavformat",
+					"-lswresample",
+					"-lavfilter",
+					"-lswscale",
+					"-lavutil",
+					"-lavcodec",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.Aditya.Video-Editor";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REEXPORTED_LIBRARY_PATHS = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Video Editor/Video Editor-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		AB748F682D46158A00D85275 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = "Video Editor/Video_Editor.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = /opt/homebrew/include;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					/opt/homebrew/lib,
+				);
+				LIBRARY_SEARCH_PATHS = (
+					/opt/homebrew/lib,
+					/opt/homebrew/Cellar/ffmpeg/7.1_4/lib,
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"-lavformat",
+					"-lswresample",
+					"-lavfilter",
+					"-lswscale",
+					"-lavutil",
+					"-lavcodec",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.Aditya.Video-Editor";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REEXPORTED_LIBRARY_PATHS = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Video Editor/Video Editor-Bridging-Header.h";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		AB7692B02D5B9D7600BCD030 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ParticleSystem/ParticleSystem.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Aditya.ParticleSystem;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		AB7692B12D5B9D7600BCD030 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = ParticleSystem/ParticleSystem.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.Aditya.ParticleSystem;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+		ABB2423A2C0DFECE005A1498 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.5;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/ImageProcessing/ImageProcessing-Bridging-Header.h";
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+			};
+			name = Debug;
+		};
+		ABB2423B2C0DFECE005A1498 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.5;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OBJC_BRIDGING_HEADER = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/ImageProcessing/ImageProcessing-Bridging-Header.h";
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+			};
+			name = Release;
+		};
+		ABB2423D2C0DFECE005A1498 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GCC_INPUT_FILETYPE = automatic;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				USER_HEADER_SEARCH_PATHS = "";
+			};
+			name = Debug;
+		};
+		ABB2423E2C0DFECE005A1498 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GCC_INPUT_FILETYPE = automatic;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				USER_HEADER_SEARCH_PATHS = "";
+			};
+			name = Release;
+		};
+		ABCDF7022C206CBC005FFFE1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		ABCDF7032C206CBC005FFFE1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		ABCDF7132C22D6F2005FFFE1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		ABCDF7142C22D6F2005FFFE1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		ABD334E62CD50BB500D7C1CC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		ABD334E72CD50BB500D7C1CC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/metal-cpp";
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		ABE716D12D3E519A00B18BEE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = VideoEditor/VideoEditor.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = /opt/homebrew/include;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"@executable_path/../Frameworks",
+					/opt/homebrew/lib,
+				);
+				LIBRARY_SEARCH_PATHS = (
+					/opt/homebrew/lib,
+					/opt/homebrew/Cellar/ffmpeg/7.1_4/lib,
+					/opt/homebrew/Cellar/glfw/3.4/lib,
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				OTHER_LDFLAGS = (
+					"-lavformat",
+					"-lswresample",
+					"-lavfilter",
+					"-lswscale",
+					"-lavutil",
+					"-lavcodec",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		ABE716D22D3E519A00B18BEE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = VideoEditor/VideoEditor.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3MHBFL6A6H;
+				ENABLE_HARDENED_RUNTIME = YES;
+				HEADER_SEARCH_PATHS = /opt/homebrew/include;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"@executable_path/../Frameworks",
+					/opt/homebrew/lib,
+				);
+				LIBRARY_SEARCH_PATHS = (
+					/opt/homebrew/lib,
+					/opt/homebrew/Cellar/ffmpeg/7.1_4/lib,
+					/opt/homebrew/Cellar/glfw/3.4/lib,
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.1;
+				OTHER_LDFLAGS = (
+					"-lavformat",
+					"-lswresample",
+					"-lavfilter",
+					"-lswscale",
+					"-lavutil",
+					"-lavcodec",
+				);
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AB08DEAA2D15E869000548CF /* Build configuration list for PBXNativeTarget "Aditya_Intelligence" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB08DEAB2D15E869000548CF /* Debug */,
+				AB08DEAC2D15E869000548CF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB1BE7332D7DE4DC00D29037 /* Build configuration list for PBXNativeTarget "AdityaIntelligenceProMax" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB1BE7312D7DE4DC00D29037 /* Debug */,
+				AB1BE7322D7DE4DC00D29037 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB300BB12C5FB5690098A5A5 /* Build configuration list for PBXNativeTarget "ImageProcessing" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB300BAF2C5FB5690098A5A5 /* Debug */,
+				AB300BB02C5FB5690098A5A5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB6E164F2D32BADE00A3C685 /* Build configuration list for PBXNativeTarget "test" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB6E16502D32BADE00A3C685 /* Debug */,
+				AB6E16512D32BADE00A3C685 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB748F692D46158A00D85275 /* Build configuration list for PBXNativeTarget "Video Editor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB748F672D46158A00D85275 /* Debug */,
+				AB748F682D46158A00D85275 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB7692AF2D5B9D7600BCD030 /* Build configuration list for PBXNativeTarget "ParticleSystem" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB7692B02D5B9D7600BCD030 /* Debug */,
+				AB7692B12D5B9D7600BCD030 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ABB242302C0DFECE005A1498 /* Build configuration list for PBXProject "WorldOf3D" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ABB2423A2C0DFECE005A1498 /* Debug */,
+				ABB2423B2C0DFECE005A1498 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ABB2423C2C0DFECE005A1498 /* Build configuration list for PBXNativeTarget "WorldOf3D" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ABB2423D2C0DFECE005A1498 /* Debug */,
+				ABB2423E2C0DFECE005A1498 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ABCDF7042C206CBC005FFFE1 /* Build configuration list for PBXNativeTarget "RotatingCube" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ABCDF7022C206CBC005FFFE1 /* Debug */,
+				ABCDF7032C206CBC005FFFE1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ABCDF7122C22D6F2005FFFE1 /* Build configuration list for PBXNativeTarget "Scene2D" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ABCDF7132C22D6F2005FFFE1 /* Debug */,
+				ABCDF7142C22D6F2005FFFE1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ABD334E52CD50BB500D7C1CC /* Build configuration list for PBXNativeTarget "Algorithms" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ABD334E62CD50BB500D7C1CC /* Debug */,
+				ABD334E72CD50BB500D7C1CC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ABE716D32D3E519A00B18BEE /* Build configuration list for PBXNativeTarget "VideoEditor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ABE716D12D3E519A00B18BEE /* Debug */,
+				ABE716D22D3E519A00B18BEE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = ABB2422D2C0DFECE005A1498 /* Project object */;
+}
