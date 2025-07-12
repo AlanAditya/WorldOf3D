@@ -12,6 +12,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <Vision/Vision.h>
 #import <ModelIO/ModelIO.h>
+#import <MLCompute/MLCTensor.h>
 #if !TARGET_OS_IPHONE
 #import <Cocoa/Cocoa.h>
 #endif
@@ -209,6 +210,33 @@ CMSampleBufferRef createSampleBuffer(CVPixelBufferRef pixelBuffer, CMTime pts) {
     return sampleBuffer;
 }
 
+enum class DType {
+    Float = 0,
+    Half = 1,
+    Int = 2,
+    UInt = 3,
+    Char = 4,
+    UChar = 5,
+    Short = 6,
+    UShort = 7,
+    // Add more as needed
+};
+
+const char* DTypeName(DType type) {
+    switch (type) {
+        case DType::Float: return "float";
+        case DType::Half: return "half";
+        case DType::Int: return "int";
+        case DType::UInt: return "uint";
+        case DType::Char: return "char"; // Metal uses char/uchar for 8-bit
+        case DType::UChar: return "uchar";
+        case DType::Short: return "short";
+        case DType::UShort: return "ushort";
+        default: return "void"; // Should not happen
+    }
+}
+
+
 class GPUManager {
 public:
     id<MTLDevice> metalDevice = MTLCreateSystemDefaultDevice();
@@ -244,6 +272,15 @@ public:
 
     id<MTLComputePipelineState> ConversionAll;
     bool ConversionAllInit = false;
+    
+    bool typeCastingInit[3][3];
+    id<MTLComputePipelineState> typeCasting[3][3];
+    GPUManager() {
+        for (int i = 0; i < 3; i++) {
+            typeCastingInit[i][i] = false;
+        }
+        
+    }
     
     id<MTLComputePipelineState> DerivativeAll;
     bool DerivativeAllInit = false;
@@ -322,6 +359,14 @@ public:
         ConversionAll = [metalDevice newComputePipelineStateWithFunction:func error:&error];
         ConversionAllInit = true;
     }
+    
+    void initTypeCasting(int i, int j) {
+        NSError* error = nil;
+        id<MTLFunction> func = [library newFunctionWithName:[NSString stringWithFormat:@"TypeCastingGPU_%i_%i", i,j]];
+        typeCasting[i][j] = [metalDevice newComputePipelineStateWithFunction:func error:&error];
+        typeCastingInit[i][j] = true;
+    }
+    
     void initDerivativeAll() {
         NSError* error = nil;
         id<MTLFunction> func = [library newFunctionWithName:@"DerivativeGPU_All"];
@@ -1436,6 +1481,7 @@ public:
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
     }
+    
     explicit operator MatrixH<dims, float>() const {
         MatrixH<dims, float> result;
         result.total_size = total_size;
@@ -1536,6 +1582,7 @@ public:
             }
             computeState = GlobalGPUManager.AddFloatCompute;
         } else {
+            std::cerr << "MatrixH: Type not supported" << "\n";
         }
         
 
@@ -5173,6 +5220,7 @@ public:
 - (void) updateCamProjection:(bool) OrthoPara;
 -(void) TeselatorTester;
 -(void) TextTesselator;
+-(void) MatTester;
 @end
 
 @implementation Intelligence
@@ -5440,6 +5488,16 @@ public:
     }];
 }
 
+-(void) MatTester {
+    GlobalGPUManager.initTypeCasting(0, 0);
+    MatrixH<1, float> a = MatrixH<1, float>::Range(0, {20});
+    (a+a).print();
+    float fValue = -176.0;
+    auto tValue = (uint32_t)(fValue);
+    std::cout << tValue;
+    
+}
+
 - (void) TextTesselator {
     Shape<uint16> HelloWorldText = Text3D();
 //    for (int i = 0; i < pts.total_size; i++) {
@@ -5451,6 +5509,8 @@ public:
 }
 
 -(void) TeselatorTester {
+
+    
     MatrixH<1, simd_float2> pts = {
         simd_make_float2(0.0f, 0.0f),
         simd_make_float2(1.0f, 0.0f),

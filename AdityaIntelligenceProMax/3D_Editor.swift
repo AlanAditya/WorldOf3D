@@ -35,7 +35,7 @@ struct _3D_Editor: View {
 //                inteligence!.updateCamOLD(1);
 //            }))
             .onAppear {
-                inteligence?.textTesselator()
+                inteligence?.matTester()
 //                scrollEvent = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel ) { scroll in
 //                    inteligence!.updateCam(CGSize(width: scroll.scrollingDeltaX, height: scroll.scrollingDeltaY), TransformationMode.Translate, 1)
 //                    return scroll
