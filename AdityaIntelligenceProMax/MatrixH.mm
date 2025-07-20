@@ -105,6 +105,15 @@ std::ostream& operator<<(std::ostream& os, const simd::float2& matrix) {
     std::cout << "{ " << matrix.x << ", " << matrix.y  << " }";
     return os;
 }
+template <typename T>
+void printArray(T* pointer, uint32_t size) {
+    std::cout << "{ ";
+    for (uint32_t i = 0; i < size; i++) {
+        std::cout << pointer[i] << ", ";
+    }
+    std::cout << "} \n";
+}
+
 typedef char simd_packed_char3 __attribute__((ext_vector_type(3)));
 
 float CosOfVec(simd_float2 a, simd_float2 b, bool& orientation) {
