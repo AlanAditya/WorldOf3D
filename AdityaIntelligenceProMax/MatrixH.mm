@@ -382,6 +382,20 @@ public:
         DerivativeAll = [metalDevice newComputePipelineStateWithFunction:func error:&error];
         DerivativeAllInit = true;
     }
+    
+    void initTransposeAll(int i) {
+        NSError* error = nil;
+        id<MTLFunction> func = [library newFunctionWithName:[NSString stringWithFormat:@"TransposeGPU_%i", i]];
+        TransposeComputeState[i] = [metalDevice newComputePipelineStateWithFunction:func error:&error];
+        TransposeInit[i] = true;
+    }
+    
+    void initGEMMA_All(int i) {
+        NSError* error = nil;
+        id<MTLFunction> func = [library newFunctionWithName:[NSString stringWithFormat:@"MatMulGPU_%i", i]];
+        GEMMAComputeState[i] = [metalDevice newComputePipelineStateWithFunction:func error:&error];
+        GEMMAInit[i] = true;
+    }
 };
 
 static GPUManager GlobalGPUManager = GPUManager();
