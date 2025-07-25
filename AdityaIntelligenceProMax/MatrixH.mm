@@ -142,7 +142,13 @@ int ring(int index, int size) {
     }
 }
 
-
+template <typename T>
+void reverseBuffer(const T* src, T* des, size_t len) {
+    for (int i = 0; i < len / 2; i++) {
+        des[i] = src[len-1-i];
+        des[len-1-i] = src[i];
+    }
+}
 
 void PatternFill(void* destination, void* pattern, size_t patternSize, uint32_t n) {
     uint32_t exp = 0;
