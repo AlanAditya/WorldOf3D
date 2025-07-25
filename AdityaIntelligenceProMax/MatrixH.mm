@@ -290,11 +290,24 @@ public:
     
     bool typeCastingInit[3][3];
     id<MTLComputePipelineState> typeCasting[3][3];
+    
+    bool TransposeInit[3];
+    id<MTLComputePipelineState> TransposeComputeState[3];
+    
+    bool GEMMAInit[3];
+    id<MTLComputePipelineState> GEMMAComputeState[3];
     GPUManager() {
         for (int i = 0; i < 3; i++) {
-            typeCastingInit[i][i] = false;
+            for (int j = 0; j < 3; j++) {
+                typeCastingInit[i][j] = false;
+            }
         }
-        
+        for (int i = 0; i < 3; i++) {
+            TransposeInit[i] = false;
+        }
+        for (int i = 0; i < 3; i++) {
+            GEMMAInit[i] = false;
+        }
     }
     
     id<MTLComputePipelineState> DerivativeAll;
