@@ -623,13 +623,24 @@ public:
         return result;
     }
     
-    void printShape() {
+    void printShape() const {
         std::cout << "Shape is { ";
         for (int i=0; i<dims; i++) {
             std::cout << shape[i] << ", ";
         }
         std::cout << "}\n";
     }
+    
+    void printShape(bool verbose) const {
+        if (verbose == true) { std::cout << "Shape is { "; }
+        
+        for (int i=0; i<dims; i++) {
+            std::cout << shape[i] << ", ";
+        }
+        if (verbose == true) { std::cout << "}\n"; }
+        
+    }
+    
     CGColorRef createCGColor(float r, float g, float b, float a) {
         CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
         CGFloat components[] = {r, g, b, a};
