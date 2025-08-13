@@ -1,0 +1,34 @@
+void Slice(MatrixH<dims, Type>& slicedMat, std::initializer_list<std::optional<std::pair<size_t, size_t>>> slice) {
+        uint index = 0;
+        size_t offsets[dims];
+        bool firstNonNullStrideFound = false;
+        memset(offsets, 0, dims * sizeof(size_t));
+        memcpy(slicedMat.shape, shape, dims * sizeof(size_t));
+        Type* MemArena;
+        
+        for (auto i : slice) {
+            if (i.has_value()) {
+                offsets[index] = i->first;
+                
+                slicedMat.shape[index] = i->second - i->first;
+                
+                if (!firstNonNullStrideFound) {
+                    MemArena = new Type[slicedMat.accumul(index, dims)];
+                    size_t stride = index == 0 ? slicedMat.accumul(index+1, dims) : slicedMat.accumul(0, index);
+                    
+                    SliceBuffer(MemArena, buffer + offsets[index] * stride, stride, slicedMat.accumul(index+1, dims), slicedMat.shape[index]);
+                    firstNonNullStrideFound = true;
+                    index++;
+                    continue;
+                }
+                size_t stride = accumul(index, dims);
+                size_t size = slicedMat.accumul(index, dims);
+                uint noOfOp = slicedMat.accumul(0, index);
+                /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////;[
+                SliceBuffer(MemArena, buffer + offsets[index] * stride, stride, size, noOfOp);
+            }
+            index++;
+        }
+        slicedMat.total_size= slicedMat.accumul(0, dims);
+        memcpy(slicedMat.buffer, MemArena, sizeof(Type) * slicedMat.total_size);
+    }
