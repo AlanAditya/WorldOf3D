@@ -26,8 +26,12 @@ typedef uint16_t uint16;
 #include <iostream>
 #include <vector>
 #include <chrono>
+#include <mlx/mlx.h>
+#include <span>
 
+#define SAFE_MODE
 
+constexpr auto null = std::nullopt;
 
 simd::float4x4 Identity() {
     simd_float4 row0 = {1.0f, 0.0f, 0.0f, 0.0f};
@@ -1054,7 +1058,51 @@ public:
         
         return output;
     }
+    static MatrixH<dims, Type> zeros(std::initializer_list<size_t> shapeI) {
+        if (shapeI.size() != dims) {std::cerr << "MatrixH: dimensions in provided shape must match the dims of " << dims << "\n"; throw;}
+        MatrixH<dims, Type> output;
+        memcpy(output.shape, shapeI.begin(), dims * sizeof(size_t));
+        output.total_size = output.accumul(0, dims);
+        output.buffer = new Type[output.total_size];
+        output.buildMetalBuffer();
+        memset(output.buffer, 0, output.total_size * sizeof(Type));
+        return output;
+    }
     
+    static MatrixH<dims, Type> withShape(std::initializer_list<size_t> shapeI) {
+        if (shapeI.size() != dims) {std::cerr << "MatrixH: dimensions in provided shape must match the dims of " << dims << "\n"; throw;}
+        MatrixH<dims, Type> output;
+        memcpy(output.shape, shapeI.begin(), dims * sizeof(size_t));
+        output.total_size = output.accumul(0, dims);
+        output.buffer = new Type[output.total_size];
+        output.buildMetalBuffer();
+        return output;
+    }
+    
+//    template <typename = std::enable_if_t<(dims == 2)>>
+    static MatrixH<2, Type> eye(uint m, uint n, int k) {
+        MatrixH<2, Type> output = MatrixH<2, Type>::zeros({m, n});
+        uint iteration = MIN(m, n-abs(k));
+        if (0 <= k) {
+            for (int i = 0; i < iteration; i++) {
+                // [i, j+k]
+                output.buffer[i * output.shape[1] + i + k] = 1;
+            }
+
+        } else {
+            for (int i = 0; i < iteration; i++) {
+                // [i, i-abs(k)] => same as shifting it down => [i+abs(k), i]
+                // Since k is -ve => [i-k, i]
+                // Moving the Diagnol Left is Same as moving it above as y = (x + k) ==> (y - k) = x
+                output.buffer[(i - k) * output.shape[1] + i] = 1;
+            }
+        }
+        return output;
+    }
+    
+    static MatrixH<2, Type> eye(uint m) {
+        return eye(m, m, 0);
+    }
     
     void drawRect(simd_int4 rect, MatrixH<dims-2, Type> element) {
         int X = rect[0];
@@ -1743,13 +1791,15 @@ public:
     }
     
     template <size_t D = dims, typename = std::enable_if_t<(D == 1)>>
-    Type operator[] (int i) const {
+    Type& operator[] (int i) const {
+    #ifdef SAFE_MODE
         if (i < 0) {
             i = shape[0] + i;
         }
         if (i >= shape[0]) {
             throw std::invalid_argument( "Index Out Of range" );
         }
+    #endif
         return buffer[i];
     }
     
