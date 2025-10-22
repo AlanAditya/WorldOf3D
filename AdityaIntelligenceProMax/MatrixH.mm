@@ -495,7 +495,15 @@ public:
         
     };
     
-    MatrixH(size_t reserveCapacity) {
+    MatrixH(Type value) requires (dims == 0) {
+        buffer = new Type[1];
+        *buffer = value;
+        total_size = 1;
+        metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+        }];
+    }
+    
+    MatrixH(size_t reserveCapacity) requires (dims != 0) {
         buffer = new Type[reserveCapacity];
         shape[0] = reserveCapacity;
         total_size = reserveCapacity;
