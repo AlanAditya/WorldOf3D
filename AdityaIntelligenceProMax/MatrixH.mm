@@ -856,6 +856,15 @@ public:
         return result;
     }
     
+    template <int i>
+    MatrixH<dims+i, Type> unsqueeze() {
+        MatrixH<dims+i, Type> output(total_size);
+        std::fill(output.shape, output.shape+i, 1);
+        memcpy(output.shape+i, shape, dims * sizeof(size_m));
+        memcpy(output.buffer, buffer, total_size * sizeof(Type));
+        return output;
+    }
+    
     MatrixH<dims, Type> MulConst(Type constant) {
         MatrixH<dims, Type> result;
         result.buffer = new Type[total_size];
@@ -1790,6 +1799,12 @@ public:
     }
     
     
+    
+    
+    template <int dimsNew>
+    explicit operator MatrixH<dimsNew, Type>() {
+        return this->unsqueeze<dimsNew-dims>();
+    }
     
     
         
