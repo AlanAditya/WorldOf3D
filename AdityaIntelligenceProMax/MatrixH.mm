@@ -440,7 +440,8 @@ template <int dims, typename Type>
 class MatrixH {
 public:
     Type* buffer;
-    size_t shape[dims];
+    size_m shape[dims];
+    size_m strides[dims];
     size_t total_size;
     id<MTLBuffer> metalBuffer = nil;
     uint8_t flags = 0;
@@ -982,9 +983,10 @@ public:
                 output.shape[i] = Mat1.shape[i];
             }
         }
+        output.calcStrides();
         output.total_size = output.accumul(0, dims);
         output.buffer = new Type[output.total_size];
-        
+        output.buildMetalBuffer();
         size_t noOfOpp = output.accumul(0, axis);
         size_t stride = output.accumul(axis, dims);
         
@@ -1042,6 +1044,7 @@ public:
             delete [] output.buffer;
             output.total_size = output.accumul(0, dims);
             output.buffer = new Type[output.total_size];
+            output.buildMetalBuffer();
         }
 
         size_t noOfOpp = output.accumul(0, axis);
@@ -1058,10 +1061,42 @@ public:
         
         return output;
     }
-    static MatrixH<dims, Type> zeros(std::initializer_list<size_t> shapeI) {
+    
+    static MatrixH<dims+1, Type> concatID(MatrixH<dims, Type>& Mat1, MatrixH<dims, Type>& Mat2) {
+        MatrixH<dims+1, Type> output;
+        int axis = dims+1;
+        for (int i = 0; i < dims; i++) {
+            if (i == axis) {
+                output.shape[i] = Mat1.shape[i] + Mat2.shape[i];
+            } else {
+                output.shape[i] = Mat1.shape[i];
+            }
+        }
+        output.calcStrides();
+        output.total_size = output.accumul(0, dims);
+        output.buffer = new Type[output.total_size];
+        output.buildMetalBuffer();
+
+        size_t noOfOpp = output.accumul(0, axis);
+        size_t stride = output.accumul(axis, dims);
+        
+        size_t strideMat1 = Mat1.accumul(axis, dims);
+        
+        size_t strideMat2 = Mat2.accumul(axis, dims);
+        
+        for (int i = 0; i < noOfOpp; i++) {
+            memcpy(output.buffer + i * stride, Mat1.buffer + i * strideMat1, strideMat1 * sizeof(Type));
+            memcpy(output.buffer + strideMat1 + i * stride, Mat2.buffer + i * strideMat2, strideMat2 * sizeof(Type));
+        }
+        
+        return output;
+    }
+    
+    static MatrixH<dims, Type> zeros(std::initializer_list<size_m> shapeI) {
         if (shapeI.size() != dims) {std::cerr << "MatrixH: dimensions in provided shape must match the dims of " << dims << "\n"; throw;}
         MatrixH<dims, Type> output;
-        memcpy(output.shape, shapeI.begin(), dims * sizeof(size_t));
+        memcpy(output.shape, shapeI.begin(), dims * sizeof(size_m));
+        output.calcStrides();
         output.total_size = output.accumul(0, dims);
         output.buffer = new Type[output.total_size];
         output.buildMetalBuffer();
@@ -1069,10 +1104,45 @@ public:
         return output;
     }
     
-    static MatrixH<dims, Type> withShape(std::initializer_list<size_t> shapeI) {
+    static MatrixH<dims, Type> ones(std::initializer_list<size_m> shapeI) {
         if (shapeI.size() != dims) {std::cerr << "MatrixH: dimensions in provided shape must match the dims of " << dims << "\n"; throw;}
         MatrixH<dims, Type> output;
-        memcpy(output.shape, shapeI.begin(), dims * sizeof(size_t));
+        memcpy(output.shape, shapeI.begin(), dims * sizeof(size_m));
+        output.calcStrides();
+        output.total_size = output.accumul(0, dims);
+        output.buffer = new Type[output.total_size];
+        output.buildMetalBuffer();
+        std::fill(output.buffer, output.buffer + output.total_size, 1);
+        return output;
+    }
+    
+    MatrixH<dims, Type> ones() {
+        MatrixH<dims, Type> output;
+        memcpy(output.shape, shape, dims * sizeof(size_m));
+        output.calcStrides();
+        output.total_size = output.accumul(0, dims);
+        output.buffer = new Type[output.total_size];
+        output.buildMetalBuffer();
+        std::fill(output.buffer, output.buffer + output.total_size, 1);
+        return output;
+    }
+    
+    MatrixH<dims, Type> zeros() {
+        MatrixH<dims, Type> output;
+        memcpy(output.shape, shape, dims * sizeof(size_m));
+        output.calcStrides();
+        output.total_size = output.accumul(0, dims);
+        output.buffer = new Type[output.total_size];
+        output.buildMetalBuffer();
+        memset(output.buffer, 0, output.total_size * sizeof(Type));
+        return output;
+    }
+    
+    static MatrixH<dims, Type> withShape(std::initializer_list<size_m> shapeI) {
+        if (shapeI.size() != dims) {std::cerr << "MatrixH: dimensions in provided shape must match the dims of " << dims << "\n"; throw;}
+        MatrixH<dims, Type> output;
+        memcpy(output.shape, shapeI.begin(), dims * sizeof(size_m));
+        output.calcStrides();
         output.total_size = output.accumul(0, dims);
         output.buffer = new Type[output.total_size];
         output.buildMetalBuffer();
