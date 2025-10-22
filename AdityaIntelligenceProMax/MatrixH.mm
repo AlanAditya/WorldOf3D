@@ -622,7 +622,8 @@ public:
         return result;
     }
     
-    static MatrixH<dims, Type> Range(Type start, std::initializer_list<size_t> shapeI) {
+    static MatrixH<dims, Type> Range(Type start, std::initializer_list<size_m> shapeI) {
+        if (shapeI.size() != dims) {std::cerr << "MatrixH: Shape should not excede dim of matrix"; throw;}
         MatrixH<dims, Type> result;
         std::copy(shapeI.begin(), shapeI.end(), result.shape);
         result.total_size = result.accumul(0, dims);
