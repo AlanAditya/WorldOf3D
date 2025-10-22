@@ -1867,6 +1867,126 @@ public:
     }
     
     
+    
+    static MatrixH<dims, Type> sin(MatrixH<dims, Type>& mat) {
+        
+        
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        if (!GlobalGPUManager.SinInit[typeCode]) {
+            GlobalGPUManager.initSin_All(typeCode);
+        }
+        
+        MatrixH<dims, Type> output;
+        output.total_size = mat.total_size;
+        output.buffer = new Type[mat.total_size];
+        output.buildMetalBuffer();
+        memcpy(output.shape, mat.shape, sizeof(size_m) * dims);
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(mat.total_size, 1, 1);
+        
+        [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
+        [commandEncoder setBuffer:mat.metalBuffer offset:0 atIndex:1];
+
+        [commandEncoder setComputePipelineState:GlobalGPUManager.SinComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        
+        return output;
+    }
+    
+    MatrixH<dims-1, Type> Sum(int axis) {
+        if (axis < 0){
+            axis += dims;
+        }
+        if ((dims-1 < axis)) {
+            std::cerr << "MatrixH: Axis should not excede Dims of " << dims << "\n";
+            throw;
+        }
+        
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        if (!GlobalGPUManager.SumInit[typeCode]) {
+            GlobalGPUManager.initSum_All(typeCode);
+        }
+        
+        MatrixH<dims-1, Type> output;
+        memcpy(output.shape, shape, axis * sizeof(size_m));
+        memcpy(output.shape + axis, shape + axis + 1, (dims-axis) * sizeof(size_m));
+        
+        output.total_size = output.accumul(0, dims-1);
+        output.buffer = new Type[output.total_size];
+        memset(output.buffer, 0, output.total_size * sizeof(Type));
+        output.buildMetalBuffer();
+        std::cout << output.total_size << "\n";
+        
+        size_t ElStride = accumul(axis+1, dims);
+        
+        size_t noOfOpp = shape[axis];
+        size_t axisStride;
+        if (axis != dims-1) {
+            axisStride = 1;
+        }
+        else {
+            axisStride = shape[axis];
+        }
+        
+        size_t inputStrides[dims-1];
+        size_t acc = 1;
+        for (int i = dims-2; i >= 0; i--) {
+            inputStrides[i] = acc;
+            acc *= output.shape[i];
+        }
+        
+        size_t maskedStrides[dims-1];
+        memcpy(maskedStrides, inputStrides, sizeof(size_m) * (dims-1));
+        
+        acc = 1;
+        for (int i = 0; i < axis; i++) {
+            maskedStrides[i] *= shape[axis];
+        }
+//        std::cout << "AxStride: " << axisStride << " ElStride: " << ElStride << " noOfOpp: " << noOfOpp << "\n";
+//        printArray(inputStrides, dims-1);
+//        printArray(maskedStrides, dims-1);
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(output.total_size, 1, 1);
+         
+        size_t outputDims = dims -1;
+        [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
+        [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        [commandEncoder setBytes:&axisStride length: sizeof(size_m) atIndex:2];
+        [commandEncoder setBytes:&ElStride length: sizeof(size_m) atIndex:3];
+        [commandEncoder setBytes:&noOfOpp length: sizeof(size_m) atIndex:4];
+        [commandEncoder setBytes:&inputStrides length: (dims-1) * sizeof(size_m) atIndex:5];
+        [commandEncoder setBytes:&maskedStrides length: (dims-1)* sizeof(size_m) atIndex:6];
+        [commandEncoder setBytes:&outputDims length:  sizeof(size_m) atIndex:7];
+        [commandEncoder setComputePipelineState:GlobalGPUManager.SumComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        
+
+        
+        return output;
+    }
+    
+    
     MatrixH<dims, Type> T() const {
         size_t axis[dims];
         
