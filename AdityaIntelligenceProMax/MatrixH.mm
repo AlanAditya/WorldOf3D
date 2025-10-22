@@ -1807,6 +1807,128 @@ public:
     }
     
     
+    MatrixH<dims, Type> Transpose(const std::initializer_list<size_m>& axis) {
+        if (axis.size() != dims) {
+            std::cerr << "MatrixH: Axis size should be equal to Dims of " << dims << "\n";
+        }
+        
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        if (!GlobalGPUManager.TransposeInit[typeCode]) {
+            GlobalGPUManager.initTransposeAll(typeCode);
+        }
+        
+        MatrixH<dims, Type> output;
+        output.total_size = total_size;
+        output.buffer = new Type[total_size];
+        output.buildMetalBuffer();
+        
+
+        
+        size_m inputStrides[dims];
+        size_t acc = 1;
+        for (int i = dims-1; i >= 0; i--) {
+            inputStrides[i] = acc;
+            acc *= shape[i];
+        }
+        
+        acc = 1;
+        size_m outputStrides[dims];
+        for (int i = dims-1; i >= 0; i--) {
+            outputStrides[*(axis.begin() + i)] = acc;
+            if (*(axis.begin() + i) >= dims) {std::cerr << "MatrixH: Rearranged axis should not increase dims" << "\n"; }
+            acc *= shape[*(axis.begin() + i)];
+            output.shape[i] = shape[*(axis.begin() + i)];
+        }
+        
+        int dimensions = dims;
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(total_size, 1, 1);
+        
+        [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
+        [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        [commandEncoder setBytes:inputStrides length:dims * sizeof(size_m) atIndex:2];
+        [commandEncoder setBytes:outputStrides length:dims * sizeof(size_m) atIndex:3];
+        [commandEncoder setBytes:&dimensions length: sizeof(dims) atIndex:4];
+        [commandEncoder setComputePipelineState:GlobalGPUManager.TransposeComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        
+        return output;
+    }
+    
+    
+    MatrixH<dims, Type> T() const {
+        size_t axis[dims];
+        
+        
+        uint8_t typeCode = get_dtype_code<Type>();
+
+        if (!GlobalGPUManager.TransposeInit[typeCode]) {
+            GlobalGPUManager.initTransposeAll(typeCode);
+        }
+        
+        MatrixH<dims, Type> output;
+        output.total_size = total_size;
+        output.buffer = new Type[total_size];
+        output.buildMetalBuffer();
+        
+
+        
+        size_t inputStrides[dims];
+        size_t acc = 1;
+        for (int i = dims-1; i >= 0; i--) {
+            inputStrides[i] = acc;
+            acc *= shape[i];
+            axis[dims-1-i]=i;
+        }
+        
+        
+        acc = 1;
+        size_t outputStrides[dims];
+        for (int i = dims-1; i >= 0; i--) {
+            outputStrides[axis[i]] = acc;
+            if (*(axis + i) >= dims) {std::cerr << "MatrixH: Rearranged axis should not increase dims" << "\n"; }
+            acc *= shape[axis[i]];
+            output.shape[i] = shape[axis[i]];
+        }
+        
+        int dimensions = dims;
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(total_size, 1, 1);
+        
+        [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
+        [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        [commandEncoder setBytes:inputStrides length:dims * sizeof(size_t) atIndex:2];
+        [commandEncoder setBytes:outputStrides length:dims * sizeof(size_t) atIndex:3];
+        [commandEncoder setBytes:&dimensions length: sizeof(dims) atIndex:4];
+        [commandEncoder setComputePipelineState:GlobalGPUManager.TransposeComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        
+
+        
+        return output;
+    }
+    
         
         id<MTLComputePipelineState> computeState;
         if constexpr (std::is_integral<Type>::value) {
