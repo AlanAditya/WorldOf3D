@@ -1598,9 +1598,29 @@ public:
     
     template <int Newdims, typename OutType>
     void To(MatrixH<Newdims, OutType>& output, int type) const {
+        int valuesIn = 1;
+        int valuesOut = 1;
+        int currentTypeCode = get_dtype_code<Type>();
+        int OutTypeCode = get_dtype_code<OutType>();
         
-        if (!GlobalGPUManager.ConversionAllInit) {
-            GlobalGPUManager.initConversionAll();
+        if (currentTypeCode > valueLimit) {
+            auto typeInfo = get_dtype_info<Type>();
+            valuesIn = typeInfo.values;
+            currentTypeCode = typeInfo.baseType;
+        }
+        
+        if (OutTypeCode > valueLimit) {
+            auto typeInfo = get_dtype_info<OutType>();
+            valuesOut = typeInfo.values;
+            OutTypeCode = typeInfo.baseType;
+        }
+        
+        if (output.total_size * valuesOut != total_size * valuesIn) {
+            std::cerr << "MatrixH: Invalid Dims, cannot convert from (" << total_size <<", " << valuesIn << "(imp)) To (" << output.total_size <<", " << valuesOut << ") \n";
+        }
+        
+        if (!GlobalGPUManager.typeCasting[currentTypeCode][OutTypeCode]) {
+            GlobalGPUManager.initTypeCasting(currentTypeCode, OutTypeCode);
         }
         
         id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
@@ -1608,7 +1628,7 @@ public:
         id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
         
         auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
-        auto _dispatchExecutionSize =  MTLSizeMake(total_size ,1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(total_size * valuesIn, 1, 1);
         
         
 //        id<MTLBuffer> buffer1 = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:output.buffer length:output.total_size*sizeof(OutType) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
@@ -1619,8 +1639,8 @@ public:
         
         [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
         [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
-        [commandEncoder setBytes:&type length:sizeof(int) atIndex:2];
-        [commandEncoder setComputePipelineState:GlobalGPUManager.ConversionAll];
+//        [commandEncoder setBytes:&type length:sizeof(int) atIndex:2];
+        [commandEncoder setComputePipelineState:GlobalGPUManager.typeCasting[currentTypeCode][OutTypeCode]];
         [commandEncoder dispatchThreads:_dispatchExecutionSize
                   threadsPerThreadgroup:_threadsPerThreadgroup];
         
@@ -1631,9 +1651,28 @@ public:
     
     template <typename OutType>
     void To(MatrixH<dims, OutType>& output, int type) const {
+        int valuesIn = 1;
+        int valuesOut = 1;
+        int currentTypeCode = get_dtype_code<Type>();
+        int OutTypeCode = get_dtype_code<OutType>();
         
-        if (!GlobalGPUManager.ConversionAllInit) {
-            GlobalGPUManager.initConversionAll();
+        if (currentTypeCode > valueLimit) {
+            auto typeInfo = get_dtype_info<Type>();
+            valuesIn = typeInfo.values;
+            currentTypeCode = typeInfo.baseType;
+        }
+        
+        if (OutTypeCode > valueLimit) {
+            auto typeInfo = get_dtype_info<OutType>();
+            valuesOut = typeInfo.values;
+            OutTypeCode = typeInfo.baseType;
+        }
+        
+        if (output.total_size * valuesOut != total_size * valuesIn) {
+            std::cerr << "MatrixH: Invalid Dims, cannot convert from (" << total_size <<", " << valuesIn << "(imp)) To (" << output.total_size <<", " << valuesOut << ") \n";
+        }
+        if (!GlobalGPUManager.typeCasting[currentTypeCode][OutTypeCode]) {
+            GlobalGPUManager.initTypeCasting(currentTypeCode, OutTypeCode);
         }
         
         id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
@@ -1641,7 +1680,7 @@ public:
         id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
         
         auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
-        auto _dispatchExecutionSize =  MTLSizeMake(total_size ,1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(total_size * valuesIn ,1, 1);
         
         
 //        id<MTLBuffer> buffer1 = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:output.buffer length:output.total_size*sizeof(OutType) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
@@ -1649,11 +1688,9 @@ public:
 //        id<MTLBuffer> buffer2 = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size*sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
 //        }];
         
-        
         [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
         [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
-        [commandEncoder setBytes:&type length:sizeof(int) atIndex:2];
-        [commandEncoder setComputePipelineState:GlobalGPUManager.ConversionAll];
+        [commandEncoder setComputePipelineState:GlobalGPUManager.typeCasting[currentTypeCode][OutTypeCode]];
         [commandEncoder dispatchThreads:_dispatchExecutionSize
                   threadsPerThreadgroup:_threadsPerThreadgroup];
         
@@ -1662,93 +1699,99 @@ public:
         [commandBuffer waitUntilCompleted];
     }
     
-    explicit operator MatrixH<dims, float>() const {
-        MatrixH<dims, float> result;
-        result.total_size = total_size;
-        result.buffer = new float[total_size];
-        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:result.total_size * sizeof(float) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-        }];
-        std::memcpy(result.shape, shape, sizeof(size_t) * dims);
+//    explicit operator MatrixH<dims, float>() const {
+//        MatrixH<dims, float> result;
+//        result.total_size = total_size;
+//        result.buffer = new float[total_size];
+//        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:result.total_size * sizeof(float) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+//        }];
+//        std::memcpy(result.shape, shape, sizeof(size_m) * dims);
+//        
+//        this->To<float>(result, 0);
+//
+//        return result;
+//    }
+    
+    template <typename OutType>
+    explicit operator MatrixH<dims, OutType>() const {
+        int valuesIn = 1;
+        int valuesOut = 1;
+        int currentTypeCode = get_dtype_code<Type>();
+        int OutTypeCode = get_dtype_code<OutType>();
         
-        this->To<float>(result, 0);
-
+        if (valuesIn != valuesOut) {
+            std::cerr << "MatrixH: increase dims" << "\n";
+        }
+        
+        if (currentTypeCode > valueLimit) {
+            auto typeInfo = get_dtype_info<Type>();
+            valuesIn = typeInfo.values;
+            currentTypeCode = typeInfo.baseType;
+        }
+        
+        if (OutTypeCode > valueLimit) {
+            auto typeInfo = get_dtype_info<OutType>();
+            valuesOut = typeInfo.values;
+            OutTypeCode = typeInfo.baseType;
+        }
+        
+        MatrixH<dims, OutType> result;
+        result.total_size = total_size ;
+        result.buffer = new OutType[total_size];
+        result.buildMetalBuffer();
+        std::memcpy(result.shape, shape, sizeof(size_m) * dims);
+        this->To<OutType>(result, 0);
         return result;
     }
     
-    template<int DimsNew>
-    explicit operator MatrixH<DimsNew, float>() const {
-        MatrixH<DimsNew, float> result;
+    template <typename OutType, int DimsNew>
+    explicit operator MatrixH<DimsNew, OutType>() const {
+        int valuesIn = 1;
+        int valuesOut = 1;
+        int currentTypeCode = get_dtype_code<Type>();
+        int OutTypeCode = get_dtype_code<OutType>();
         uint8_t dimBias = 0;
-        int code = 00;
-        if (std::is_same<Type, simd_float2>::value) {
-            result.total_size = total_size * 2;
-            result.shape[DimsNew-1] = 2;
-            dimBias = 1;
-        } else if (std::is_same<Type, simd_float3>::value) {
-            result.total_size = total_size * 3;
-            result.shape[DimsNew-1] = 3;
-            dimBias = 1;
-        } else if (std::is_same<Type, simd_float4>::value) {
-            result.total_size = total_size * 4;
-            result.shape[DimsNew-1] = 4;
-            dimBias = 1;
-        } else if (std::is_same<Type, simd_float2x2>::value) {
-            result.total_size = total_size * 4;
-            result.shape[DimsNew-1] = 2;
-            result.shape[DimsNew-2] = 2;
-            dimBias = 2;
-        } else if (std::is_same<Type, simd_float3x3>::value) {
-            result.total_size = total_size * 9;
-            result.shape[DimsNew-1] = 3;
-            result.shape[DimsNew-2] = 3;
-            dimBias = 2;
-        } else if (std::is_same<Type, simd_float4x4>::value) {
-            result.total_size = total_size * 16;
-            result.shape[DimsNew-1] = 4;
-            result.shape[DimsNew-2] = 4;
-            dimBias = 2;
-        }
-        else {
-            result.total_size = total_size;
+        
+        
+        
+        if (currentTypeCode > valueLimit) {
+            auto typeInfo = get_dtype_info<Type>();
+            valuesIn = typeInfo.values;
+            currentTypeCode = typeInfo.baseType;
         }
         
-        result.buffer = new float[total_size];
-        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:result.total_size * sizeof(uint8_t) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-        }];
-        std::memcpy(result.shape + (DimsNew - dims) - dimBias, shape, sizeof(size_t) * dims);
-        std::fill(result.shape, result.shape + (DimsNew - dims) - dimBias, 1);
-        
-        this->To<DimsNew, float>(result, 1);
-        
-
-        return result;
-    }
-    
-    template<int DimsNew>
-    explicit operator MatrixH<DimsNew, uint8_t>() const {
-        MatrixH<DimsNew, uint8_t> result;
-        result.total_size = total_size;
-        result.buffer = new uint8_t[total_size];
-        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:result.total_size * sizeof(uint8_t) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-        }];
-        std::memcpy(result.shape, shape, sizeof(size_t) * dims);
-        std::fill(result.shape + dims, result.shape + DimsNew, 1);
-        
-        if (std::is_same<Type, uint8_t>::value) {
-            this->To<DimsNew, uint8_t>(result, 1);
+        if (OutTypeCode > valueLimit) {
+            auto typeInfo = get_dtype_info<OutType>();
+            valuesOut = typeInfo.values;
+            OutTypeCode = typeInfo.baseType;
         }
-        else if (std::is_same<Type, int16_t>::value) {
-            this->To<DimsNew, uint8_t>(result, 3);
+        
+        MatrixH<DimsNew, OutType> result;
+        result.total_size = (total_size * valuesIn) / valuesOut;
+        result.buffer = new OutType[result.total_size];
+        result.buildMetalBuffer();
+        
+        if (DimsNew - dims == 1){
+            result.shape[DimsNew-1] = valuesIn;
+            std::memcpy(result.shape, shape, sizeof(size_m) * dims);
+        } else if (dims - DimsNew == 1) {
+            if (shape[dims-1] != valuesOut) {
+                std::cerr << "MatrixH: For conversion last dim should be " << valuesOut << "\n";
+            }
+            std::memcpy(result.shape, shape, sizeof(size_m) * DimsNew);
+        } else {
+            std::cerr << "MatrixH: not supported as of yet" << "\n";
         }
-        else {
-            std::cerr << "MatrixH: Type Not Suported Yet" << "\n";
-        }
+        
+        
+        this->To(result, 0);
 
         return result;
     }
     
     
-    void Add(MatrixH<dims, Type>& result, MatrixH<dims, Type> &other) {
+    
+    
         
         id<MTLComputePipelineState> computeState;
         if constexpr (std::is_integral<Type>::value) {
