@@ -12,6 +12,7 @@
 #include <iostream>
 #include <random>
 #include <simd/simd.h>
+#include <chrono>
 
 void generateMatrixConst(float* mat, int m, int n, float num);
 void generateMatrixRandFloat(float* mat, int m, int n, float minVal, float maxVal);

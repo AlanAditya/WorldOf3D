@@ -4501,10 +4501,890 @@ public:
 };
 
 
-#import <CoreText/CoreText.h>
-#import <CoreGraphics/CoreGraphics.h>
-#include <vector>
-#include <map>
+
+
+using GeometryNodeHalf = GeometryNode<uint16>;
+
+class TriangleNode: public GeometryNode<uint16> {
+public:
+    Vertex3D verticesL[3] = {
+        {{0,0,0}, {1,1,1,1}},
+        {{1,0,0}, {1,1,1,1}},
+        {{0,1,0}, {1,1,1, 1}}
+    };
+    uint16 indicesL[3] = {0, 1, 2};
+    TriangleNode(float side, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(new Vertex3D[3], 3, new uint16[3]{0, 1, 2}, 3) {  // Allocate indices dynamically
+        Verticies[0] = {{0, 0, 0}, colour.toSimdFloat4()};
+        Verticies[1] = {{side, 0, 0}, colour.toSimdFloat4()};
+        Verticies[2] = {{0, side, 0}, colour.toSimdFloat4()};
+    }
+    
+    TriangleNode(float base, float height,MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(new Vertex3D[3], 3, new uint16[3]{0, 1, 2}, 3) {  // Allocate indices dynamically
+        Verticies[0] = {{-base/2, 0, 0}, colour.toSimdFloat4()};
+        Verticies[1] = {{base/2, 0, 0}, colour.toSimdFloat4()};
+        Verticies[2] = {{0, height, 0}, colour.toSimdFloat4()};
+    }
+};
+
+class QuadNode: public GeometryNode<uint16> {
+public:
+    QuadNode(float l, float h, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}, uint8_t centre = 0): GeometryNode<uint16>(new Vertex3D[4], 4, new uint16[6], 6) {
+        if (centre == 0) {
+            Verticies[0]  = { { -l/2, -h/2, 0 },  colour.toSimdFloat4(), {0, 0}, { 0.f,  0.f,  1.f } };
+            Verticies[1]  = { { +l/2, -h/2, 0 },  colour.toSimdFloat4(), {1, 0}, { 0.f,  0.f,  1.f } };
+            Verticies[2]  = { { +l/2, +h/2, 0 },  colour.toSimdFloat4(), {1, 1}, { 0.f,  0.f,  1.f } };
+            Verticies[3]  = { { -l/2, +h/2, 0 },  colour.toSimdFloat4(), {0, 1}, { 0.f,  0.f,  1.f } };
+        } else if (centre == 1) {
+            Verticies[0]  = { { 0, -h/2, 0 },  colour.toSimdFloat4(), {0, 0}, { 0.f,  0.f,  1.f } };
+            Verticies[1]  = { { +l, -h/2, 0 },  colour.toSimdFloat4(), {1, 0}, { 0.f,  0.f,  1.f } };
+            Verticies[2]  = { { +l, +h/2, 0 },  colour.toSimdFloat4(), {1, 1}, { 0.f,  0.f,  1.f } };
+            Verticies[3]  = { { 0, +h/2, 0 },  colour.toSimdFloat4(), {0, 1}, { 0.f,  0.f,  1.f } };
+        } else if (centre == 2) {
+            Verticies[0]  = { { -l/2, 0, 0 },  colour.toSimdFloat4(), {0, 0}, { 0.f,  0.f,  1.f } };
+            Verticies[1]  = { { +l/2, 0, 0 },  colour.toSimdFloat4(), {1, 0}, { 0.f,  0.f,  1.f } };
+            Verticies[2]  = { { +l/2, +h, 0 },  colour.toSimdFloat4(), {1, 1}, { 0.f,  0.f,  1.f } };
+            Verticies[3]  = { { -l/2, +h, 0 },  colour.toSimdFloat4(), {0, 1}, { 0.f,  0.f,  1.f } };
+        }
+        
+        uint16_t indicesC[] = {
+             0,  1,  2,  2,  3,  0, /* front */
+        };
+        memcpy(indices, indicesC, sizeof(uint16_t) * 6);
+    }
+    
+};
+
+class ArrowNode: public GeometryNode<uint16> {
+public:
+    MatrixH<1, float> start;
+    MatrixH<1, float> vec;
+    float mlength;
+    float mwidth;
+    
+    ArrowNode(MatrixH<1, float> _vec, MatrixH<1, float> _start = {0.0, 0.0, 0.0}, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): vec(_vec), start(_start), GeometryNode<uint16>(nil, 0, nil, 0)  {
+        mwidth = 0.1;
+        auto TriangleObj = TriangleNode(2* mwidth * 1.415, 2*mwidth* (1/1.415), colour);
+        TriangleObj.position.y += 1-2*mwidth* (1/1.415);
+        
+        TriangleObj.buildModelMatrix();
+        
+        auto QuadObj = QuadNode(mwidth, 1-2*mwidth* (1/1.415), colour, 2);
+        
+        MatrixH<2, float> transformMat = MatrixH<2, float>::eye(4);
+        transformMat.Slice({ {{0,1}}, {{0,3}} }) = -1 * simd_matH(simd_cross(vec.toSimdFloat3(), simd_make_float3(0, 0, 1)));
+        transformMat.Slice({ {{1,2}}, {{0,3}} }) = vec;
+        transformMat.Slice({ {{2,3}}, {{0,3}} }) = simd_matH(simd_cross(vec.toSimdFloat3(), transformMat.Slice({ {{0,1}}, {{0,3}} }).toSimdFloat3(0)));
+        transformMat.Slice({ {{3,4}}, {{0,3}} }) = start;
+        
+        
+        AddNodes(std::move(TriangleObj), std::move(QuadObj));
+        memcpy((float*)&modelMatrix, transformMat.buffer, transformMat.total_size * sizeof(float));
+        BuildInstances();
+    }
+    
+    void updateNode(MatrixH<1, float> _vec, MatrixH<1, float> _start = {0.0, 0.0, 0.0}, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}) {
+        vec = _vec;
+        start = _start;
+        MatrixH<2, float> transformMat = MatrixH<2, float>::eye(4);
+//        transformMat.Slice({ {{0,1}}, {{0,3}} }) = -1 * vec.cross({0.0, 0.0, 1.0});
+//        transformMat.Slice({ {{1,2}}, {{0,3}} }) = _vec;
+//        transformMat.Slice({ {{2,3}}, {{0,3}} }) = vec.cross(transformMat.Slice({ {{0,1}}, {{0,3}} }).squeeze<1>());
+//        transformMat.Slice({ {{3,4}}, {{0,3}} }) = _start;
+        transformMat.Slice({ {{0,1}}, {{0,3}} }) = -1 * simd_matH(simd_cross(vec.toSimdFloat3(), simd_make_float3(0, 0, 1)));
+        transformMat.Slice({ {{1,2}}, {{0,3}} }) = vec;
+        transformMat.Slice({ {{2,3}}, {{0,3}} }) = simd_matH(simd_cross(vec.toSimdFloat3(), transformMat.Slice({ {{0,1}}, {{0,3}} }).toSimdFloat3(0)));
+        transformMat.Slice({ {{3,4}}, {{0,3}} }) = start;
+        
+
+        memcpy((float*)&modelMatrix, transformMat.buffer, transformMat.total_size * sizeof(float));
+        BuildInstances();
+    }
+    
+    ArrowNode(float length, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(nil, 0, nil, 0) {
+        mlength = length;
+        mwidth = 0.5;
+        auto TriangleObj = TriangleNode(1.415, (1/1.415), colour);
+        TriangleObj.position.y += mlength*0.5 ;
+        
+        TriangleObj.buildModelMatrix();
+        auto QuadObj = QuadNode(mwidth, mlength);
+        
+        
+        AddNodes(std::move(TriangleObj), std::move(QuadObj));
+    }
+    
+    ArrowNode(float length, float width, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(nil, 0, nil, 0) {
+        mlength = length;
+        mwidth = width;
+        
+        auto TriangleObj = TriangleNode(mwidth*1.9*1.415, (2.5*mwidth/1.415), colour);
+        TriangleObj.position.y += mlength*0.5 ;
+        
+        TriangleObj.buildModelMatrix();
+        auto QuadObj = QuadNode(mwidth, mlength, colour);
+        
+        AddNodes(std::move(TriangleObj), std::move(QuadObj));
+    }
+    
+    ArrowNode(simd_float2 vec, float width, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(nil, 0, nil, 0) {
+        mlength = simd_length(vec);
+        mwidth = width;
+        
+        auto TriangleObj = TriangleNode(mwidth*1.9*1.415, (2.5*mwidth/1.415), colour);
+        TriangleObj.position.y += mlength*0.5 ;
+        
+        TriangleObj.buildModelMatrix();
+        auto QuadObj = QuadNode(mwidth, mlength, colour);
+        QuadObj.buildModelMatrix();
+        
+        AddNodes(std::move(TriangleObj), std::move(QuadObj));
+
+        auto row1 = simd_make_float4( vec.y, vec.x, 0, 0);
+        auto row2 = simd_make_float4(-vec.x, vec.y, 0, 0);
+        auto row3 = simd_make_float4(0     ,     0, 1, 0);
+        auto row4 = simd_make_float4(0     , 0    , 0, 1);
+        
+        auto mat1 = simd_matrix_from_rows(row1, row2, row3, row4);
+        
+        modelMatrix = mat1;
+        BuildInstances();
+        setTailAt(ORIGIN); // includes the
+    }
+    
+    void setTailAt(simd_float3 tail) {
+//        setPos(tail + simd_make_float3(0, mlength/2, 0));
+        auto col1 = simd_make_float4(1, 0, 0, 0);
+        auto col2 = simd_make_float4(0, 1, 0, 0);
+        auto col3 = simd_make_float4(0, 0, 1, 0);
+        auto col4 = simd_make_float4(tail + simd_make_float3(0, mlength/2, 0), 1);
+        
+        auto mat1 = simd_matrix(col1, col2, col3, col4);
+        modelMatrix = simd_mul(modelMatrix, mat1);
+        buildGlobalMatrix();
+    }
+};
+
+class CircleNode: public GeometryNode<uint16> {
+public:
+    CircleNode(float r, int n, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(new Vertex3D[ n + 1], n + 1, new uint16[3 * n], 3 * n) {
+        Verticies[0] = {{0, 0, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, 1.0}};
+        std::cout << Verticies[0] << "\n";
+        float theta = 0;
+        float stride = 2 * M_PI / n;
+        for (int i = 0; i < n; i++) {
+            Verticies[1+i] = {{r * cos(theta), r * sin(theta), 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, 1.0}};
+            theta += stride;
+        }
+        
+        for (int i = 0; i < n-1; i++) {
+            indices[3 * i + 0] = 0;
+            indices[3 * i + 1] = 1+ i;
+            indices[3 * i + 2] = 1+ i+1;
+        }
+        indices[3 * (n - 1) + 0] = 0;
+        indices[3 * (n - 1) + 1] = 1+ n-1;
+        indices[3 * (n - 1) + 2] = 1+ 0;
+        drawType = MTLPrimitiveTypeTriangle;
+    }
+};
+
+class SphereNode: public GeometryNode<uint16> {
+public:
+    SphereNode(float r, int rS, int lS, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(new Vertex3D[rS * lS + 2 ], rS * lS + 2, new uint16[rS * 3 + 6*rS*(lS-1) + rS * 3],rS * 3 + 6*rS*(lS-1) + rS * 3) {
+        // ls Linear subdivisions
+        // rs radial subdivisions
+        Verticies[0] = {{0, r, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, 1.0}};
+        Verticies[vertexCount - 1] = {{0, -r, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, -1.0}};
+        float theta = 0;
+        float stride = 2 * M_PI / rS;
+        float polarAngle = M_PI / (lS + 1);
+//        simd_float3 yV = simd_make_float3(0, r - (2*r/(lS+1)), 0);
+        for (int h = 0; h < lS; h++) {
+//            float rMag = sqrt(r*r - simd_dot(yV, yV));
+            float rMag = r * sin(polarAngle);
+            for (int i = 0; i < rS; i++) {
+                simd_float3 rV = rMag * simd_make_float3(cos(theta), 0, sin(theta));
+                simd_float3 yV = simd_make_float3(0, r * cos(polarAngle), 0);
+                Verticies[1+h*rS + i] = {yV + rV, colour.toSimdFloat4(), {1, 0}, (yV+rV)/r};
+                theta += stride;
+            }
+//            yV -= simd_make_float3(0, (2*r/(lS+1)), 0);
+            polarAngle += M_PI / (lS + 1);
+        }
+        
+        MatrixH<3, uint16> indiciesStridedView;
+        indiciesStridedView.buffer = indices + 3 * rS;
+        indiciesStridedView.shape[0] = lS-1;
+        indiciesStridedView.shape[1] = rS;
+        indiciesStridedView.shape[2] = 6;
+        indiciesStridedView.total_size = 6*rS*(lS-1);
+        indiciesStridedView.flags |= OWNERSHIP_FLAG;
+        indiciesStridedView.calcStrides();
+        
+        MatrixH<2, uint16> vertexIndexStridedView = MatrixH<2, uint16>::Range(1, { (unsigned)lS, (unsigned)rS }); // for no. of verticies range starts like 1, 2,3 in a shape shape[0] is latitudes so ican get help in no. verticies during index buffer
+
+        for ( int j=0; j < lS-1; j++ ) {
+            
+
+            
+            for (int i = 0; i < rS-1; i++) {
+                // Top Fan Cap
+                indices[3 * i + 0] = 0;
+                indices[3 * i + 1] = 1+ i;
+                indices[3 * i + 2] = 1+ i+1;
+                
+                // Quads in the middle
+                indiciesStridedView[j, i, 0] = vertexIndexStridedView[j, i];
+                indiciesStridedView[j, i, 1] = vertexIndexStridedView[j+1, i];
+                indiciesStridedView[j, i, 2] = vertexIndexStridedView[j+1, i+1];
+                indiciesStridedView[j, i, 3] = vertexIndexStridedView[j, i];
+                indiciesStridedView[j, i, 4] = vertexIndexStridedView[j, i+1];
+                indiciesStridedView[j, i, 5] = vertexIndexStridedView[j+1, i+1];
+                
+                
+                // Bottom Fan Cap
+                indices[rS * 3 + 6*rS*(lS-1) + 3 * i + 0] = vertexCount-1;
+                indices[rS * 3 + 6*rS*(lS-1) + 3 * i + 1] = rS * (lS-1) + 1 + i;
+                indices[rS * 3 + 6*rS*(lS-1) + 3 * i + 2] = rS * (lS-1) + 1 + i+1;
+            }
+            indiciesStridedView[j, rS-1, 0] = vertexIndexStridedView[j   , rS-1];
+            indiciesStridedView[j, rS-1, 1] = vertexIndexStridedView[j +1, rS-1];
+            indiciesStridedView[j, rS-1, 2] = vertexIndexStridedView[j +1, 0];
+            indiciesStridedView[j, rS-1, 3] = vertexIndexStridedView[j   , rS-1];
+            indiciesStridedView[j, rS-1, 4] = vertexIndexStridedView[j   , 0];
+            indiciesStridedView[j, rS-1, 5] = vertexIndexStridedView[j +1, 0];
+            
+            
+
+        }
+        
+
+        indices[3 * (rS - 1) + 0] = 0;
+        indices[3 * (rS - 1) + 1] = 1+ rS-1;
+        indices[3 * (rS - 1) + 2] = 1+ 0;
+        
+        indices[rS * 3 + 6*rS*(lS-1) + 3 * (rS - 1) + 0] = vertexCount-1;
+        indices[rS * 3 + 6*rS*(lS-1) + 3 * (rS - 1) + 1] = rS * (lS-1) + 1 + rS-1;
+        indices[rS * 3 + 6*rS*(lS-1) + 3 * (rS - 1) + 2] = rS * (lS-1) + 1 + 0;
+        
+        drawType = MTLPrimitiveTypeTriangle;
+    }
+};
+
+class IcosphereNode: public GeometryNode<uint16> {
+public:
+    IcosphereNode(float r, int subdivisions, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}):
+        GeometryNode<uint16>(
+            new Vertex3D[calculateVertexCount(subdivisions)],
+            calculateVertexCount(subdivisions),
+            new uint16[calculateIndexCount(subdivisions)],
+            calculateIndexCount(subdivisions)
+        ) {
+        
+        // Golden ratio for icosahedron construction
+        const float t = (1.0f + sqrtf(5.0f)) / 2.0f;
+        const float scale = r / sqrtf(1.0f + t * t);
+        
+        // Create initial 12 vertices of icosahedron
+        simd_float3 baseVertices[12] = {
+            {-1,  t,  0}, { 1,  t,  0}, {-1, -t,  0}, { 1, -t,  0},
+            { 0, -1,  t}, { 0,  1,  t}, { 0, -1, -t}, { 0,  1, -t},
+            { t,  0, -1}, { t,  0,  1}, {-t,  0, -1}, {-t,  0,  1}
+        };
+        
+        // Normalize and scale base vertices
+        for (int i = 0; i < 12; i++) {
+            baseVertices[i] = simd_normalize(baseVertices[i]) * r;
+        }
+        
+        // Create initial 20 triangular faces of icosahedron
+        uint16 baseFaces[20][3] = {
+            {0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11},
+            {1, 5, 9}, {5, 11, 4}, {11, 10, 2}, {10, 7, 6}, {7, 1, 8},
+            {3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8}, {3, 8, 9},
+            {4, 9, 5}, {2, 4, 11}, {6, 2, 10}, {8, 6, 7}, {9, 8, 1}
+        };
+        
+        // Store vertices and indices for subdivision
+        std::vector<simd_float3> vertices;
+        std::vector<uint16> faceIndices;
+        
+        for (int i = 0; i < 12; i++) {
+            vertices.push_back(baseVertices[i]);
+        }
+        
+        for (int i = 0; i < 20; i++) {
+            faceIndices.push_back(baseFaces[i][0]);
+            faceIndices.push_back(baseFaces[i][1]);
+            faceIndices.push_back(baseFaces[i][2]);
+        }
+        
+        // Subdivide triangles
+        for (int sub = 0; sub < subdivisions; sub++) {
+            std::vector<uint16> newFaces;
+            std::map<std::pair<uint16, uint16>, uint16> midpointCache;
+            
+            for (size_t i = 0; i < faceIndices.size(); i += 3) {
+                uint16 v1 = faceIndices[i];
+                uint16 v2 = faceIndices[i + 1];
+                uint16 v3 = faceIndices[i + 2];
+                
+                // Get or create midpoint vertices
+                uint16 a = getMidpoint(v1, v2, vertices, midpointCache, r);
+                uint16 b = getMidpoint(v2, v3, vertices, midpointCache, r);
+                uint16 c = getMidpoint(v3, v1, vertices, midpointCache, r);
+                
+                // Create 4 new triangles
+                newFaces.push_back(v1); newFaces.push_back(a); newFaces.push_back(c);
+                newFaces.push_back(v2); newFaces.push_back(b); newFaces.push_back(a);
+                newFaces.push_back(v3); newFaces.push_back(c); newFaces.push_back(b);
+                newFaces.push_back(a);  newFaces.push_back(b); newFaces.push_back(c);
+            }
+            
+            faceIndices = newFaces;
+        }
+        
+        // Copy vertices to geometry buffer
+        for (size_t i = 0; i < vertices.size(); i++) {
+            simd_float3 pos = vertices[i];
+            simd_float3 normal = simd_normalize(pos);
+            
+            // Simple spherical UV mapping
+            float u = 0.5f + atan2f(normal.z, normal.x) / (2.0f * M_PI);
+            float v = 0.5f - asinf(normal.y) / M_PI;
+            
+            Verticies[i] = {
+                pos,
+                colour.toSimdFloat4(),
+                {u, v},
+                normal
+            };
+        }
+        
+        // Copy indices
+        for (size_t i = 0; i < faceIndices.size(); i++) {
+            indices[i] = faceIndices[i];
+        }
+        
+        drawType = MTLPrimitiveTypeTriangle;
+    }
+    
+private:
+    static int calculateVertexCount(int subdivisions) {
+        int faces = 20;
+        for (int i = 0; i < subdivisions; i++) {
+            faces *= 4;
+        }
+        // Using Euler's formula for closed mesh: V - E + F = 2
+        // For triangulated sphere: E = 3F/2, so V = F/2 + 2
+        return faces / 2 + 2;
+    }
+    
+    static int calculateIndexCount(int subdivisions) {
+        int faces = 20;
+        for (int i = 0; i < subdivisions; i++) {
+            faces *= 4;
+        }
+        return faces * 3;
+    }
+    
+    uint16 getMidpoint(uint16 i1, uint16 i2, std::vector<simd_float3>& vertices,
+                       std::map<std::pair<uint16, uint16>, uint16>& cache, float r) {
+        // Order indices consistently for cache lookup
+        std::pair<uint16, uint16> key = i1 < i2 ? std::make_pair(i1, i2) : std::make_pair(i2, i1);
+        
+        auto it = cache.find(key);
+        if (it != cache.end()) {
+            return it->second;
+        }
+        
+        // Calculate midpoint and project to sphere surface
+        simd_float3 mid = (vertices[i1] + vertices[i2]) * 0.5f;
+        mid = simd_normalize(mid) * r;
+        
+        uint16 index = (uint16)vertices.size();
+        vertices.push_back(mid);
+        cache[key] = index;
+        
+        return index;
+    }
+};
+
+class CylinderNode: public GeometryNode<uint16> {
+public:
+    CylinderNode(float r, float l, int rS, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(new Vertex3D[rS * 2 + 2 ], rS * 2 + 2, new uint16[rS * 3 + 6*rS + rS * 3], rS * 3 + 6*rS + rS * 3) {
+        
+        Verticies[0] = {{0, 0, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, -1.0}};
+        Verticies[vertexCount - 1] = {{0, l, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, 1.0}};
+        float theta = 0;
+        float stride = 2 * M_PI / rS;
+        simd_float3 axisVec = {0, l, 0};
+        for (int i = 0; i < rS; i++) {
+            simd_float3 rVhat = r * simd_make_float3(cos(theta), 0, sin(theta));
+            Verticies[1 + i] = {rVhat * r, colour.toSimdFloat4(), {1, 0}, simd_normalize(rVhat + simd_make_float3(0, 1, 0))};
+            Verticies[1 + rS + i] = {rVhat * r + axisVec, colour.toSimdFloat4(), {1, 0}, simd_normalize(rVhat + simd_make_float3(0, 1, 0))};
+            theta += stride;
+        }
+
+        MatrixH<2, uint16> indiciesStridedView;
+        indiciesStridedView.buffer = indices + 3 * rS;
+        indiciesStridedView.shape[0] = rS;
+        indiciesStridedView.shape[1] = 6;
+        indiciesStridedView.total_size = 6*rS;
+        indiciesStridedView.flags |= OWNERSHIP_FLAG;
+        indiciesStridedView.calcStrides();
+        
+        MatrixH<2, uint16> vertexIndexStridedView = MatrixH<2, uint16>::Range(1, { 2, (unsigned)rS });
+
+
+        for (int i = 0; i < rS-1; i++) {
+            indices[3 * i + 0] = 0;
+            indices[3 * i + 1] = 1+ i;
+            indices[3 * i + 2] = 1+ i+1;
+            
+            indiciesStridedView[i, 0] = vertexIndexStridedView[0, i];
+            indiciesStridedView[i, 1] = vertexIndexStridedView[1, i];
+            indiciesStridedView[i, 2] = vertexIndexStridedView[1, i+1];
+            indiciesStridedView[i, 3] = vertexIndexStridedView[0, i];
+            indiciesStridedView[i, 4] = vertexIndexStridedView[0, i+1];
+            indiciesStridedView[i, 5] = vertexIndexStridedView[1, i+1];
+            
+            indices[rS * 3 + 6*rS + 3 * i + 0] = vertexCount-1;
+            indices[rS * 3 + 6*rS + 3 * i + 1] = 1+rS + i;
+            indices[rS * 3 + 6*rS + 3 * i + 2] = 1+rS + i+1;
+        }
+        
+        // Cylinder Rec face loop back
+        indiciesStridedView[rS-1, 0] = vertexIndexStridedView[0 , rS-1];
+        indiciesStridedView[rS-1, 1] = vertexIndexStridedView[1, rS-1];
+        indiciesStridedView[rS-1, 2] = vertexIndexStridedView[1, 0];
+        indiciesStridedView[rS-1, 3] = vertexIndexStridedView[0, rS-1];
+        indiciesStridedView[rS-1, 4] = vertexIndexStridedView[0, 0];
+        indiciesStridedView[rS-1, 5] = vertexIndexStridedView[1, 0];
+        
+        // Top Fan Loop Triangle
+        indices[3 * (rS - 1) + 0] = 0;
+        indices[3 * (rS - 1) + 1] = 1+ rS-1;
+        indices[3 * (rS - 1) + 2] = 1+ 0;
+        
+        // Bottom Fan Loop Back
+        indices[rS * 3 + 6*rS + 3 * (rS - 1) + 0] = vertexCount-1;
+        indices[rS * 3 + 6*rS + 3 * (rS - 1) + 1] = rS + 1 + rS-1;
+        indices[rS * 3 + 6*rS + 3 * (rS - 1) + 2] = rS + 1 + 0;
+        
+        drawType = MTLPrimitiveTypeTriangle;
+    }
+};
+
+class LineNode: public GeometryNode<uint16> {
+public:
+    LineNode(MatrixH<2, float> points): GeometryNode<uint16>(new Vertex3D[2 * points.shape[0]], 2 * points.shape[0], new uint16[(points.shape[0] - 1) * 6], (points.shape[0] - 1) * 6) {
+        MatrixH<2, float> vecs;
+        points.Derivative(vecs, 0, 3);
+//        vecs.print();
+        
+        auto vecs_normalised = vecs / (vecs * vecs).SumNoRed(1).sqrt();
+//        vecs_normalised.print();
+
+        
+        MatrixH<2, float> perp = {{0, 1}, {-1, 0}};
+        MatrixH<2, float> normals;
+        
+        normals = perp.Dot(vecs_normalised, true).T();
+//        normals.print();
+        
+        MatrixH<2, float> convNormals = MatrixH<2, float>::zeros({normals.shape[0] + 1, normals.shape[1]});
+        normals.conv<1>(convNormals, {1, 1}, 1, ConvMode::Full, ConvModeFull::Extend);
+//        convNormals.print();
+        
+//        (convNormals * convNormals).Sum(1).sqrt().print();
+        
+        auto convNormals_normalised = convNormals / (convNormals * convNormals).SumNoRed(1);
+//        convNormals_normalised.print();
+        
+        auto verts = MatrixH<2, float>::concat(points, points + convNormals_normalised * 0.1, 1);
+        verts.shape[0] = points.shape[0] * 2;
+        verts.shape[1] = 2;
+        
+        verts = MatrixH<2, float>::concat(verts, MatrixH<2, float>::zeros({points.shape[0] * 2, 1}), 1);
+//        verts.print();
+        
+        MatrixH<2, float> VertexBufferView;
+        VertexBufferView.buffer = (float*)Verticies;
+        VertexBufferView.shape[0] = points.shape[0] * 2;
+        VertexBufferView.shape[1] = 3;
+        VertexBufferView.strides[0] = sizeof(Vertex3D) / sizeof(float);
+        VertexBufferView.strides[1] = 1;
+        VertexBufferView.flags |= OWNERSHIP_FLAG;
+        VertexBufferView.flags |= NON_CONTIGUOUS_FLAG;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
+        
+        VertexBufferView = verts;
+        
+        VertexBufferView.buffer = (float*)Verticies + offsetof(Vertex3D, colour) / sizeof(float);
+        VertexBufferView.shape[1] = 4;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
+        
+        VertexBufferView = MatrixH<2, float>::repeating({points.shape[0] * 2}, BLUE);
+        
+        VertexBufferView.buffer = (float*)Verticies + offsetof(Vertex3D, normal) / sizeof(float);
+        VertexBufferView.shape[1] = 3;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
+        
+        VertexBufferView = MatrixH<2, float>::repeating({points.shape[0] * 2}, MatrixH<1, float>{0.0, 0.0, 1.0});
+
+        MatrixH<2, uint16> indexBufferRange = MatrixH<2, uint16>::Range(0, {points.shape[0], 2});
+        MatrixH<2, uint16> indexBufferView;
+        indexBufferView.buffer = (uint16*)indices;
+        indexBufferView.shape[0] = points.shape[0] - 1;
+        indexBufferView.shape[1] = 6;
+        indexBufferView.calcStrides();
+        indexBufferView.flags |= OWNERSHIP_FLAG;
+        
+        for (int i = 0; i < points.shape[0] - 1; i++) {
+            indexBufferView[i, 0] = indexBufferRange[i, 0];
+            indexBufferView[i, 1] = indexBufferRange[i, 1];
+            indexBufferView[i, 2] = indexBufferRange[i+1, 1];
+            indexBufferView[i, 3] = indexBufferRange[i, 0];
+            indexBufferView[i, 4] = indexBufferRange[i+1, 0];
+            indexBufferView[i, 5] = indexBufferRange[i+1, 1];
+        }
+        drawType = MTLPrimitiveTypeTriangle;
+    }
+    
+    void UpdatePoints(MatrixH<2, float> points) {
+        if (points.shape[0] * 2 != vertexCount) {
+            delete [] Verticies;
+            delete [] indices;
+            
+            Verticies = new Vertex3D[points.shape[0] * 2];
+            indices = new uint16[(points.shape[0] - 1) * 6];
+            
+            vertexCount =  2 * points.shape[0];
+            indexCount = (points.shape[0] - 1) * 6;
+            update = true;
+            
+            MatrixH<2, uint16> indexBufferRange = MatrixH<2, uint16>::Range(0, {points.shape[0], 2});
+            MatrixH<2, uint16> indexBufferView;
+            indexBufferView.buffer = (uint16*)indices;
+            indexBufferView.shape[0] = points.shape[0] - 1;
+            indexBufferView.shape[1] = 6;
+            indexBufferView.calcStrides();
+            indexBufferView.flags |= OWNERSHIP_FLAG;
+            
+            for (int i = 0; i < points.shape[0] - 1; i++) {
+                indexBufferView[i, 0] = indexBufferRange[i, 0];
+                indexBufferView[i, 1] = indexBufferRange[i, 1];
+                indexBufferView[i, 2] = indexBufferRange[i+1, 1];
+                indexBufferView[i, 3] = indexBufferRange[i, 0];
+                indexBufferView[i, 4] = indexBufferRange[i+1, 0];
+                indexBufferView[i, 5] = indexBufferRange[i+1, 1];
+            }
+        }
+        MatrixH<2, float> vecs;
+        points.Derivative(vecs, 0, 3);
+        auto vecs_normalised = vecs / (vecs * vecs).SumNoRed(1).sqrt();
+        MatrixH<2, float> perp = {{0, 1}, {-1, 0}};
+        auto normals = perp.Dot(vecs_normalised, true).T();
+
+        MatrixH<2, float> convNormals = MatrixH<2, float>::zeros({normals.shape[0] + 1, normals.shape[1]});
+        normals.conv<1>(convNormals, {1, 1}, 1, ConvMode::Full, ConvModeFull::Extend);
+        auto convNormals_normalised = convNormals / (convNormals * convNormals).SumNoRed(1);
+        auto verts = MatrixH<2, float>::concat(points, points + convNormals_normalised * 0.1, 1);
+        verts.shape[0] = points.shape[0] * 2;
+        verts.shape[1] = 2;
+        
+        verts = MatrixH<2, float>::concat(verts, MatrixH<2, float>::zeros({points.shape[0] * 2, 1}), 1);
+        MatrixH<2, float> VertexBufferView;
+        VertexBufferView.buffer = (float*)Verticies;
+        VertexBufferView.shape[0] = points.shape[0] * 2;
+        VertexBufferView.shape[1] = 3;
+        VertexBufferView.strides[0] = sizeof(Vertex3D) / sizeof(float);
+        VertexBufferView.strides[1] = 1;
+        VertexBufferView.flags |= OWNERSHIP_FLAG;
+        VertexBufferView.flags |= NON_CONTIGUOUS_FLAG;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
+        
+        VertexBufferView = verts;
+        
+        VertexBufferView.buffer = (float*)Verticies + offsetof(Vertex3D, colour) / sizeof(float);
+        VertexBufferView.shape[1] = 4;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
+        
+        VertexBufferView = MatrixH<2, float>::repeating({points.shape[0] * 2}, BLUE);
+        
+        VertexBufferView.buffer = (float*)Verticies + offsetof(Vertex3D, normal) / sizeof(float);
+        VertexBufferView.shape[1] = 3;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
+        
+        VertexBufferView = MatrixH<2, float>::repeating({points.shape[0] * 2}, MatrixH<1, float>{0.0, 0.0, 1.0});
+    }
+};
+
+class LineNode3D: public GeometryNode<uint16> {
+public:
+    LineNode3D(MatrixH<2, float> path, MatrixH<2, float> points): GeometryNode<uint16>(new Vertex3D[points.shape[0] * path.shape[0]], points.shape[0] * path.shape[0], new uint16[points.shape[0] * (path.shape[0] - 1) * 6], points.shape[0] * (path.shape[0] - 1) * 6) {
+
+        MatrixH<2, float> vecs;
+        path.Derivative(vecs, 0, 3);
+        
+
+        auto vecs_normalised = vecs / (vecs * vecs).SumNoRed(1).sqrt();
+
+
+        MatrixH<2, float> iHat = MatrixH<2, float>::zeros({path.shape[0] - 1, 3});
+        MatrixH<2, float> jHat = MatrixH<2, float>::zeros({path.shape[0] - 1, 3});
+        iHat[0] = simd_normalize( simd_cross(vecs_normalised.toSimdFloat3(0), simd_make_float3(0, 0, 1)) );
+
+        for (int i = 1; i < path.shape[0]-1; i++) {
+            float sign =  simd_dot(iHat.toSimdFloat3(i-1), (vecs_normalised.toSimdFloat3(i) - vecs_normalised.toSimdFloat3(i-1))) > 0 ? 1: -1;
+            MatrixH<1, float> diff = simd_matH(simd_reflect((vecs_normalised[i] - vecs_normalised[i-1]).toSimdFloat3(), iHat[i-1].toSimdFloat3()));
+            iHat[i] = iHat[i-1] + 1 * sign * diff;
+            //            iHat[i] =  iHat[i] / (iHat[i] * iHat[i]).SumNoRed(0).sqrt();
+            iHat[i] = simd_matH(simd_normalize(iHat.toSimdFloat3(i)));
+        }
+        
+        // FASTER USING SIMD about 40 us faster
+//        for (int i = 1; i < path.shape[0]-1; i++) {
+//            float sign =  simd_dot(iHat.toSimdFloat3(i-1), (vecs_normalised.toSimdFloat3(i) - vecs_normalised.toSimdFloat3(i-1))) > 0 ? 1: -1;
+//            simd_float3 diff = (simd_reflect((vecs_normalised.toSimdFloat3(i) - vecs_normalised.toSimdFloat3(i-1)), iHat.toSimdFloat3(i-1)));
+//            iHat[i] = simd_matH(iHat.toSimdFloat3(i-1) + 1 * sign * diff);
+//            iHat[i] = simd_matH(simd_normalize(iHat.toSimdFloat3(i)));
+//        }
+    //    iHat = iHat / (iHat * iHat).SumNoRed(1).sqrt();
+        
+        for (int i = 0; i < path.shape[0] - 1; i++) {
+            jHat[i] = simd_normalize(simd_cross(iHat.toSimdFloat3(i), vecs_normalised.toSimdFloat3(i)));
+        }
+        for (int i = 0; i < path.shape[0] - 1; i++) {
+            iHat[i] = simd_normalize(simd_cross(jHat.toSimdFloat3(i), vecs_normalised.toSimdFloat3(i)));
+        }
+
+        MatrixH<2, float> conviHat = MatrixH<2, float>::zeros({iHat.shape[0] + 1, iHat.shape[1]});
+        iHat.conv<1>(conviHat, {1, 1}, 1, ConvMode::Full, ConvModeFull::Extend);
+        
+        MatrixH<2, float> convjHat = MatrixH<2, float>::zeros({jHat.shape[0] + 1, jHat.shape[1]});
+        jHat.conv<1>(convjHat, {1, 1}, 1, ConvMode::Full, ConvModeFull::Extend);
+        
+        conviHat = conviHat / (conviHat * conviHat).SumNoRed(1);
+        convjHat = convjHat / (convjHat * convjHat).SumNoRed(1);
+        
+        
+        MatrixH<3, float> transforms = MatrixH<3, float>::repeating({path.shape[0]}, MatrixH<2, float>::eye(3));
+        transforms.Slice({null, {{0, 1}} }) = conviHat.unsqueeze<1>();
+        transforms.Slice({null, {{1, 2}} }) = convjHat.unsqueeze<1>();
+        transforms.Slice({null, {{2, 3}} }) = MatrixH<2, float>::concat(vecs_normalised, vecs_normalised[vecs_normalised.shape[0]-1].unsqueeze<1>(), 0).unsqueeze<1>();
+        
+
+        MatrixH<3, float> transformedpoints = MatrixH<3, float>::withShape({path.shape[0], points.shape[0], 3});
+
+            for (int i = 0; i < path.shape[0]; i++) {
+                for (int j = 0; j < points.shape[0]; j++) {
+                    transformedpoints[i, j] = path[i] + conviHat[i] * points[j, 0] + convjHat[i] * points[j, 1];
+                    //                transformedpoints[i, j] = path[i] + transforms[i, 0] * points[j, 0] + transforms[i, 1] * points[j, 1];
+                    
+                    
+                    
+                    //                transformedpoints[i, j] = path[i] + transforms[i].T().Dot(points[j].unsqueeze<1>(), true).T().squeeze<1>();
+                }
+            }
+            
+        
+        // FASTER USING SIMD about 40 us faster
+//        MatrixH<3, float> transformedpoints = MatrixH<3, float>::withShape({path.shape[0], points.shape[0], 3});
+//        for (int i = 0; i < path.shape[0]; i++) {
+//            for (int j = 0; j < points.shape[0]; j++) {
+//                transformedpoints[i, j] = simd_matH(path.toSimdFloat3(i) + conviHat.toSimdFloat3(i) * points[j, 0] + convjHat.toSimdFloat3(i) * points[j, 1]);
+//            }
+//        }
+        
+        MatrixH<3, float> VertexBufferView;
+        VertexBufferView.buffer = (float*)Verticies;
+        VertexBufferView.shape[0] = path.shape[0];
+        VertexBufferView.shape[1] = points.shape[0];
+        VertexBufferView.shape[2] = 3;
+        
+        VertexBufferView.strides[0] = points.shape[0] * ( sizeof(Vertex3D) / sizeof(float) );
+        VertexBufferView.strides[1] = sizeof(Vertex3D) / sizeof(float);
+        VertexBufferView.strides[2] = 1;
+        VertexBufferView.flags |= OWNERSHIP_FLAG;
+        VertexBufferView.flags |= NON_CONTIGUOUS_FLAG;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 3);
+        
+        VertexBufferView = transformedpoints;
+        
+        MatrixH<2, uint16> indexBufferRange = MatrixH<2, uint16>::Range(0, {path.shape[0] ,points.shape[0]});
+        MatrixH<3, uint16> indexBufferView;
+        indexBufferView.buffer = (uint16*)indices;
+        indexBufferView.shape[0] = path.shape[0]-1;
+        indexBufferView.shape[1] = points.shape[0];
+        indexBufferView.shape[2] = 6;
+        indexBufferView.calcStrides();
+        indexBufferView.flags |= OWNERSHIP_FLAG;
+        
+        for (int j = 0; j < path.shape[0] -1; j++) {
+            for (int i = 0; i< points.shape[0] - 1; i++) {
+                indexBufferView[j, i, 0] = indexBufferRange[j+0, i];
+                indexBufferView[j, i, 1] = indexBufferRange[j+1, i];
+                indexBufferView[j, i, 2] = indexBufferRange[j+1, i+1];
+                indexBufferView[j, i, 3] = indexBufferRange[j+0, i];
+                indexBufferView[j, i, 4] = indexBufferRange[j+0, i+1];
+                indexBufferView[j, i, 5] = indexBufferRange[j+1, i+1];
+            }
+            indexBufferView[j, points.shape[0]-1, 0] = indexBufferRange[j+0 , points.shape[0]-1];
+            indexBufferView[j, points.shape[0]-1, 1] = indexBufferRange[j+1, points.shape[0]-1];
+            indexBufferView[j, points.shape[0]-1, 2] = indexBufferRange[j+1, 0];
+            indexBufferView[j, points.shape[0]-1, 3] = indexBufferRange[j+0, points.shape[0]-1];
+            indexBufferView[j, points.shape[0]-1, 4] = indexBufferRange[j+0, 0];
+            indexBufferView[j, points.shape[0]-1, 5] = indexBufferRange[j+1, 0];
+        }
+        
+        VertexBufferView.buffer = (float*)Verticies + offsetof(Vertex3D, colour) / sizeof(float);
+        VertexBufferView.shape[2] = 4;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 3);
+        
+        VertexBufferView = MatrixH<3, float>::repeating({path.shape[0], points.shape[0] }, BLUE);
+        
+        VertexBufferView.buffer = (float*)Verticies + offsetof(Vertex3D, normal) / sizeof(float);
+        VertexBufferView.shape[2] = 3;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 3);
+        
+        VertexBufferView = MatrixH<3, float>::repeating({ path.shape[0], points.shape[0] }, MatrixH<1, float>{0.0, 0.0, 1.0});
+        
+        drawType = MTLPrimitiveTypeTriangle;
+    }
+    
+    void UpdatePoints(MatrixH<2, float> path, MatrixH<2, float> points) {
+        if (points.shape[0] * path.shape[0] != vertexCount) {
+            delete [] Verticies;
+            delete [] indices;
+            
+            Verticies = new Vertex3D[points.shape[0] * path.shape[0]];
+            indices = new uint16[points.shape[0] * (path.shape[0] - 1) * 6];
+            
+            vertexCount =  points.shape[0] * path.shape[0];
+            indexCount = points.shape[0] * (path.shape[0] - 1) * 6;
+            update = true;
+            
+            MatrixH<2, uint16> indexBufferRange = MatrixH<2, uint16>::Range(0, {path.shape[0] ,points.shape[0]});
+            MatrixH<3, uint16> indexBufferView;
+            indexBufferView.buffer = (uint16*)indices;
+            indexBufferView.shape[0] = path.shape[0]-1;
+            indexBufferView.shape[1] = points.shape[0];
+            indexBufferView.shape[2] = 6;
+            indexBufferView.calcStrides();
+            indexBufferView.flags |= OWNERSHIP_FLAG;
+            
+            for (int j = 0; j < path.shape[0] -1; j++) {
+                for (int i = 0; i< points.shape[0] - 1; i++) {
+                    indexBufferView[j, i, 0] = indexBufferRange[j+0, i];
+                    indexBufferView[j, i, 1] = indexBufferRange[j+1, i];
+                    indexBufferView[j, i, 2] = indexBufferRange[j+1, i+1];
+                    indexBufferView[j, i, 3] = indexBufferRange[j+0, i];
+                    indexBufferView[j, i, 4] = indexBufferRange[j+0, i+1];
+                    indexBufferView[j, i, 5] = indexBufferRange[j+1, i+1];
+                }
+                indexBufferView[j, points.shape[0]-1, 0] = indexBufferRange[j+0 , points.shape[0]-1];
+                indexBufferView[j, points.shape[0]-1, 1] = indexBufferRange[j+1, points.shape[0]-1];
+                indexBufferView[j, points.shape[0]-1, 2] = indexBufferRange[j+1, 0];
+                indexBufferView[j, points.shape[0]-1, 3] = indexBufferRange[j+0, points.shape[0]-1];
+                indexBufferView[j, points.shape[0]-1, 4] = indexBufferRange[j+0, 0];
+                indexBufferView[j, points.shape[0]-1, 5] = indexBufferRange[j+1, 0];
+            }
+        }
+        MatrixH<2, float> vecs;
+        path.Derivative(vecs, 0, 3);
+        
+
+        auto vecs_normalised = vecs / (vecs * vecs).SumNoRed(1).sqrt();
+
+
+        MatrixH<2, float> iHat = MatrixH<2, float>::zeros({path.shape[0] - 1, 3});
+        MatrixH<2, float> jHat = MatrixH<2, float>::zeros({path.shape[0] - 1, 3});
+        iHat[0] = simd_normalize( simd_cross(vecs_normalised.toSimdFloat3(0), simd_make_float3(0, 0, 1)) );
+
+        for (int i = 1; i < path.shape[0]-1; i++) {
+            float sign =  simd_dot(iHat.toSimdFloat3(i-1), (vecs_normalised.toSimdFloat3(i) - vecs_normalised.toSimdFloat3(i-1))) > 0 ? 1: -1;
+            MatrixH<1, float> diff = simd_matH(simd_reflect((vecs_normalised[i] - vecs_normalised[i-1]).toSimdFloat3(), iHat[i-1].toSimdFloat3()));
+            iHat[i] = iHat[i-1] + 1 * sign * diff;
+            //            iHat[i] =  iHat[i] / (iHat[i] * iHat[i]).SumNoRed(0).sqrt();
+            iHat[i] = simd_matH(simd_normalize(iHat.toSimdFloat3(i)));
+        }
+        
+        // FASTER USING SIMD about 40 us faster
+//        for (int i = 1; i < path.shape[0]-1; i++) {
+//            float sign =  simd_dot(iHat.toSimdFloat3(i-1), (vecs_normalised.toSimdFloat3(i) - vecs_normalised.toSimdFloat3(i-1))) > 0 ? 1: -1;
+//            simd_float3 diff = (simd_reflect((vecs_normalised.toSimdFloat3(i) - vecs_normalised.toSimdFloat3(i-1)), iHat.toSimdFloat3(i-1)));
+//            iHat[i] = simd_matH(iHat.toSimdFloat3(i-1) + 1 * sign * diff);
+//            iHat[i] = simd_matH(simd_normalize(iHat.toSimdFloat3(i)));
+//        }
+    //    iHat = iHat / (iHat * iHat).SumNoRed(1).sqrt();
+        
+        for (int i = 0; i < path.shape[0] - 1; i++) {
+            jHat[i] = simd_normalize(simd_cross(iHat.toSimdFloat3(i), vecs_normalised.toSimdFloat3(i)));
+        }
+        for (int i = 0; i < path.shape[0] - 1; i++) {
+            iHat[i] = simd_normalize(simd_cross(jHat.toSimdFloat3(i), vecs_normalised.toSimdFloat3(i)));
+        }
+
+        MatrixH<2, float> conviHat = MatrixH<2, float>::zeros({iHat.shape[0] + 1, iHat.shape[1]});
+        iHat.conv<1>(conviHat, {1, 1}, 1, ConvMode::Full, ConvModeFull::Extend);
+        
+        MatrixH<2, float> convjHat = MatrixH<2, float>::zeros({jHat.shape[0] + 1, jHat.shape[1]});
+        jHat.conv<1>(convjHat, {1, 1}, 1, ConvMode::Full, ConvModeFull::Extend);
+        
+        conviHat = conviHat / (conviHat * conviHat).SumNoRed(1);
+        convjHat = convjHat / (convjHat * convjHat).SumNoRed(1);
+        
+        
+        MatrixH<3, float> transforms = MatrixH<3, float>::repeating({path.shape[0]}, MatrixH<2, float>::eye(3));
+        transforms.Slice({null, {{0, 1}} }) = conviHat.unsqueeze<1>();
+        transforms.Slice({null, {{1, 2}} }) = convjHat.unsqueeze<1>();
+        transforms.Slice({null, {{2, 3}} }) = MatrixH<2, float>::concat(vecs_normalised, vecs_normalised[vecs_normalised.shape[0]-1].unsqueeze<1>(), 0).unsqueeze<1>();
+        
+
+        MatrixH<3, float> transformedpoints = MatrixH<3, float>::withShape({path.shape[0], points.shape[0], 3});
+
+            for (int i = 0; i < path.shape[0]; i++) {
+                for (int j = 0; j < points.shape[0]; j++) {
+                    transformedpoints[i, j] = path[i] + conviHat[i] * points[j, 0] + convjHat[i] * points[j, 1];
+                    //                transformedpoints[i, j] = path[i] + transforms[i, 0] * points[j, 0] + transforms[i, 1] * points[j, 1];
+                    
+                    
+                    
+                    //                transformedpoints[i, j] = path[i] + transforms[i].T().Dot(points[j].unsqueeze<1>(), true).T().squeeze<1>();
+                }
+            }
+            
+        
+        // FASTER USING SIMD about 40 us faster
+//        MatrixH<3, float> transformedpoints = MatrixH<3, float>::withShape({path.shape[0], points.shape[0], 3});
+//        for (int i = 0; i < path.shape[0]; i++) {
+//            for (int j = 0; j < points.shape[0]; j++) {
+//                transformedpoints[i, j] = simd_matH(path.toSimdFloat3(i) + conviHat.toSimdFloat3(i) * points[j, 0] + convjHat.toSimdFloat3(i) * points[j, 1]);
+//            }
+//        }
+        
+        MatrixH<3, float> VertexBufferView;
+        VertexBufferView.buffer = (float*)Verticies;
+        VertexBufferView.shape[0] = path.shape[0];
+        VertexBufferView.shape[1] = points.shape[0];
+        VertexBufferView.shape[2] = 3;
+        
+        VertexBufferView.strides[0] = points.shape[0] * ( sizeof(Vertex3D) / sizeof(float) );
+        VertexBufferView.strides[1] = sizeof(Vertex3D) / sizeof(float);
+        VertexBufferView.strides[2] = 1;
+        VertexBufferView.flags |= OWNERSHIP_FLAG;
+        VertexBufferView.flags |= NON_CONTIGUOUS_FLAG;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 3);
+        
+        VertexBufferView = transformedpoints;
+    }
+};
+
+
+
+
 
 // Helper structure for 2D points during triangulation
 struct Point2D {
