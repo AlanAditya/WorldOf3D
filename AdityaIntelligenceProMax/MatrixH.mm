@@ -2068,21 +2068,47 @@ public:
         [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
         [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
         
+        // BUG FIX: B_transposed must be declared in the same scope as [commandBuffer commit]; to prevent premature deallocation.
+        // Previously, B_transposed was declared inside the if block and [commandBuffer commit]; outside the if block, causing its metalBuffer to be
+        // deallocated before the GPU command completed, resulting in undefined behavior and incorrect results.
+        // Separated TransposeB branches to handle object lifetimes correctly.
+        // When TransposeB=false, B_transposed must stay alive until GPU execution completes,
+        // so we wait until after waitUntilCompleted() before it goes out of scope.
+        // When TransposeB=true, reverseShapeBuffer can be safely deleted immediately after
+        // waitUntilCompleted() since it's just a shape array, and we avoid unnecessary B_transposed allocation.
         
         if (!TransposeB) {
-            MatrixH<dims, Type> B_transposed = other.T();
+            MatrixH<dims, Type> B_transposed;
+            B_transposed = other.T();
             B_transposed.print();
             [commandEncoder setBuffer:B_transposed.metalBuffer offset:0 atIndex:2];
             [commandEncoder setBytes:other.shape length:dims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:shape length:dims * sizeof(size_m) atIndex:3];
             
+            [commandEncoder setComputePipelineState:GlobalGPUManager.GEMMAComputeState[typeCode]];
+            [commandEncoder dispatchThreads:_dispatchExecutionSize
+                      threadsPerThreadgroup:_threadsPerThreadgroup];
             
+            [commandEncoder endEncoding];
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+                    
         } else {
             size_m* reverseShapeBuffer = new size_m[dims];
             other.print();
             reverseBuffer(other.shape, reverseShapeBuffer, dims);
             [commandEncoder setBuffer:other.metalBuffer offset:0 atIndex:2];
             [commandEncoder setBytes:reverseShapeBuffer length:dims * sizeof(size_m) atIndex:4];
-//            delete [] reverseShapeBuffer;
+            [commandEncoder setBytes:shape length:dims * sizeof(size_m) atIndex:3];
+            
+            [commandEncoder setComputePipelineState:GlobalGPUManager.GEMMAComputeState[typeCode]];
+            [commandEncoder dispatchThreads:_dispatchExecutionSize
+                      threadsPerThreadgroup:_threadsPerThreadgroup];
+            
+            [commandEncoder endEncoding];
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+            delete [] reverseShapeBuffer;
         }
         
         [commandEncoder setBytes:shape length:dims * sizeof(size_m) atIndex:3];
