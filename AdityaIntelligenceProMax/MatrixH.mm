@@ -2049,6 +2049,98 @@ public:
         return output;
     }
     
+    void Dot(MatrixH<dims, Type>& result, const MatrixH<dims, Type> &other, bool TransposeB) {
+        
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        if (!GlobalGPUManager.GEMMAInit[typeCode]) {
+            GlobalGPUManager.initGEMMA_All(typeCode);
+        }
+        
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(result.total_size, 1, 1);
+        
+        [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
+        [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        
+        
+        if (!TransposeB) {
+            MatrixH<dims, Type> B_transposed = other.T();
+            B_transposed.print();
+            [commandEncoder setBuffer:B_transposed.metalBuffer offset:0 atIndex:2];
+            [commandEncoder setBytes:other.shape length:dims * sizeof(size_m) atIndex:4];
+            
+            
+        } else {
+            size_m* reverseShapeBuffer = new size_m[dims];
+            other.print();
+            reverseBuffer(other.shape, reverseShapeBuffer, dims);
+            [commandEncoder setBuffer:other.metalBuffer offset:0 atIndex:2];
+            [commandEncoder setBytes:reverseShapeBuffer length:dims * sizeof(size_m) atIndex:4];
+//            delete [] reverseShapeBuffer;
+        }
+        
+        [commandEncoder setBytes:shape length:dims * sizeof(size_m) atIndex:3];
+        
+        [commandEncoder setComputePipelineState:GlobalGPUManager.GEMMAComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+    }
+    
+    MatrixH<dims, Type> Dot(const MatrixH<dims, Type> &other) {
+        if (shape[dims - 1] != other.shape[0]) {
+            std::cerr << "ValueError: shapes (" ;
+            printShape(false);
+            std::cerr << ") and (";
+            other.printShape(false);
+            std::cerr << ") not aligned: "<< shape[dims-1]<<" (dim "<< dims-1 <<") != "<< other.shape[0] <<" (dim 0) \n";
+            throw;
+        }
+        
+        MatrixH<dims, Type> result = MatrixH<dims, Type>::withShape({shape[0], other.shape[1]});
+        Dot(result, other, false);
+        return result;
+    }
+    
+    MatrixH<dims, Type> Dot(const MatrixH<dims, Type> &other, bool TransposeB) {
+
+        if (TransposeB) {
+            if (shape[dims - 1] != other.shape[dims-1]) {
+                std::cerr << "ValueError: shapes (" ;
+                printShape(false);
+                std::cerr << ") and (";
+                other.printShape(false);
+                std::cerr << ") not aligned: "<< shape[dims-1]<<" (dim "<< dims-1 <<") != "<< other.shape[dims-1] <<" (dim dims-1) \n";
+                throw;
+            }
+            MatrixH<dims, Type> result = MatrixH<dims, Type>::withShape({shape[0], other.shape[0]});
+            Dot(result, other, TransposeB);
+            return result;
+        } else {
+            if (shape[dims - 1] != other.shape[0]) {
+                std::cerr << "ValueError: shapes (" ;
+                printShape(false);
+                std::cerr << ") and (";
+                other.printShape(false);
+                std::cerr << ") not aligned: "<< shape[dims-1]<<" (dim "<< dims-1 <<") != "<< other.shape[0] <<" (dim 0) \n";
+                throw;
+            }
+            MatrixH<dims, Type> result = MatrixH<dims, Type>::withShape({shape[0], other.shape[1]});
+            Dot(result, other, TransposeB);
+            return result;
+        }
+        
+    }
+    
         
         id<MTLComputePipelineState> computeState;
         if constexpr (std::is_integral<Type>::value) {
