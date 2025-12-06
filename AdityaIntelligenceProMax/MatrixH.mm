@@ -31,6 +31,10 @@ typedef uint16_t uint16;
 
 #define SAFE_MODE
 @import GPUManager;
+#define CreationLog
+#define DestructionLog
+#define CopyLog
+#define MoveLog
 
 constexpr auto null = std::nullopt;
 
@@ -397,7 +401,7 @@ enum Flags : unsigned int {
 
 
 template <int dims, typename Type>
-class MatrixH {
+class MatrixH : MatrixBase {
 public:
     Type* buffer;
     size_m shape[dims];
@@ -407,7 +411,7 @@ public:
     uint8_t flags = 0;
     
     using initializer_type = typename nested_initializer_list<Type, dims>::type;
-    MatrixH(initializer_type nestedList) {
+    MatrixH(initializer_type nestedList) requires (dims != 0) : MatrixBase(dims, dtype_from_type<Type>())  {
         total_size = 1;
         computeShape(nestedList, 0);
         buffer = new Type[total_size];
@@ -415,11 +419,19 @@ public:
         writeInBuffer(nestedList, k);
         metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
         }];
+        
+        #ifdef CreationLog
+        std::cout << "Created" << "\n";
+        #endif
+        calcStrides();
     }
     
     MatrixH()
-      : buffer(nullptr), total_size(0), metalBuffer(nullptr) {
-          std::cout << "Created" << "\n";
+      : MatrixBase(dims, dtype_from_type<Type>()), buffer(nullptr), total_size(0), metalBuffer(nullptr) {
+        #ifdef CreationLog
+        std::cout << "Created" << "\n";
+        #endif
+
       }
     
     template <typename T>
@@ -455,15 +467,24 @@ public:
         
     };
     
-    MatrixH(Type value) requires (dims == 0) {
+    MatrixH(Type value, bool buildGPUBuffer = true) requires (dims == 0) : MatrixBase(0, dtype_from_type<Type>()) {
+        #ifdef CreationLog
+        std::cout << "Created" << "\n";
+        #endif        
         buffer = new Type[1];
         *buffer = value;
         total_size = 1;
-        metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-        }];
+        if (buildGPUBuffer) {
+            metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+            }];
+        }
     }
     
-    MatrixH(size_t reserveCapacity) requires (dims != 0) {
+    
+    explicit MatrixH(size_t reserveCapacity) requires (dims != 0) : MatrixBase(dims, dtype_from_type<Type>()) {
+        #ifdef CreationLog
+        std::cout << "Created" << "\n";
+        #endif
         buffer = new Type[reserveCapacity];
         shape[0] = reserveCapacity;
         total_size = reserveCapacity;
@@ -2663,15 +2684,18 @@ public:
     }
     
     ~MatrixH() {
-//        std::cout << "Matrix Destroyed" << "\n";
-        if (flags & 0) {
+        #ifdef DestructionLog
+        std::cout << "Matrix Destroyed" << "\n";
+        #endif
             delete [] buffer;
         }
         
     }
     
-    MatrixH(const MatrixH<dims, Type>& other) {
+    MatrixH(const MatrixH<dims, Type>& other) : MatrixBase(dims, dtype_from_type<Type>()) {
+#ifdef CopyLog
         std::cout << "Copied" << "\n";
+#endif
         // copy constructor doesnt need to delete its buffer as  its called only on uninitlised matricies
 //        if () {
             buffer = new Type[other.total_size];
@@ -2692,8 +2716,10 @@ public:
         memcpy(shape, other.shape, sizeof(size_t) * dims);
     }
     
-    MatrixH( MatrixH<dims, Type>&& other) {
+    MatrixH( MatrixH<dims, Type>&& other) : MatrixBase(dims, dtype_from_type<Type>()) {
+#ifdef MoveLog
         std::cout << "Moved" << "\n";
+#endif
         if (buffer) {
             delete [] buffer;
         }
