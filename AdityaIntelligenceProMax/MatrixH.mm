@@ -2687,9 +2687,18 @@ public:
         #ifdef DestructionLog
         std::cout << "Matrix Destroyed" << "\n";
         #endif
+
+        // HUGE ERROR IN PREVIOUS CODE flags & 0 was always false and buffer wasnt getting deleted
+//        if ((flags & 0)) {
+//            delete [] buffer;
+//            std::cout << "deleted" << "\n";
+//        }
+        if (!(flags & OWNERSHIP_FLAG)) {
             delete [] buffer;
+            #ifdef DestructionLog
+            std::cout << "deleted" << "\n";
+            #endif
         }
-        
     }
     
     MatrixH(const MatrixH<dims, Type>& other) : MatrixBase(dims, dtype_from_type<Type>()) {
@@ -2720,10 +2729,16 @@ public:
 #ifdef MoveLog
         std::cout << "Moved" << "\n";
 #endif
+        
+        if (flags & OWNERSHIP_FLAG) {
+            *this = (const MatrixH<dims, Type>&) other; // calls copy assignment
+            return;
+        }
         if (buffer) {
             delete [] buffer;
         }
         buffer = other.buffer;
+        flags = other.flags;
         other.buffer = nullptr;
         memcpy(shape, other.shape, dims * sizeof(size_t));
         metalBuffer = other.metalBuffer;
