@@ -2337,6 +2337,341 @@ public:
         
     }
     
+    
+    template <int dimsB, int resultDims>
+    void BrodcastedAdd(MatrixH<resultDims, Type>& result, const MatrixH<dimsB, Type> &other) const {
+//        result.parentNodes.push_back(std::make_shared<MatrixH<dims, Type>>(*this));
+//        result.parentNodes.push_back(std::make_shared<MatrixH<dimsB, Type>>(other));
+//        result.gradFunc = [](MatrixH<dims, Type>& selfs) {
+//            auto p1 = selfs.parentNodes[0]->gradFunc ? selfs.parentNodes[0]->gradFunc(*selfs.parentNodes[0]) : selfs.parentNodes[0]->ones();
+//            auto p2 = selfs.parentNodes[1]->gradFunc ? selfs.parentNodes[1]->gradFunc(*selfs.parentNodes[1]) :  selfs.parentNodes[1]->ones();
+//            return p1 + p2;
+//        };
+//        auto add = AddNode(std::make_shared<MatrixBase>(*this), std::make_shared<MatrixBase>(other));
+//        std::vector<AddNode> vec3 = {add};
+//        result.operationNodes.push_back(add);
+//
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        if (!GlobalGPUManager.BrodcastedAddInit[typeCode]) {
+            GlobalGPUManager.initBrodcastedAddInit(typeCode);
+        }
+        
+        if (resultDims != fmax(dims, dimsB)) {
+            std::invalid_argument("Incompatible dims of the result mat");
+            throw;
+        }
+        
+        size_m* strideA = new size_m[resultDims];
+        size_m* strideB = new size_m[resultDims];
+
+        memcpy(strideA + (resultDims -  dims), strides, dims * sizeof(size_m));
+        memcpy(strideB + (resultDims - dimsB), other.strides, dimsB * sizeof(size_m));
+        
+        for (int i = 0; i < resultDims; i++) {
+            // dims - i-1 < 0
+            if (dims < i+1) {
+                result.shape[resultDims-i-1] = other.shape[dimsB-i-1];
+                strideA[resultDims-i-1] =0;
+            } else if (dimsB < i+1) {
+                result.shape[resultDims-i-1] = shape[dims-i-1];
+                strideB[resultDims-i-1] =0;
+            } else if (shape[dims-i-1] != other.shape[dimsB-i-1]) {
+                if (shape[dims-i-1] == 1) {
+                    result.shape[resultDims-i-1] = other.shape[dimsB-i-1];
+                    strideA[resultDims-i-1] =0;
+                } else if (other.shape[dimsB-i-1] == 1) {
+                    result.shape[resultDims-i-1] = shape[dims-i-1];
+                    strideB[resultDims-i-1] =0;
+                } else {
+                    std::invalid_argument("Incompatible shapes for broadcasting");
+                }
+            } else {
+                result.shape[resultDims-i-1] = shape[dims-i-1];
+            }
+        }
+        
+        result.calcStrides();
+        
+        if (result.total_size != result.accumul(0, resultDims)) {
+            result.total_size = result.accumul(0, resultDims);
+            if (result.buffer) {delete [] result.buffer; }
+            result.buffer = new Type[result.total_size];
+            result.buildMetalBuffer();
+        }
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(result.total_size, 1, 1);
+        int rDims = resultDims;
+        [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
+        setBufferOrBytes(commandEncoder, *this, 1);
+        setBufferOrBytes(commandEncoder, other, 2);
+        [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+        [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+        [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+        [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:6];
+        
+        [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedAddComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+    }
+    
+    template <int dimsB, int resultDims>
+    void BrodcastedSub(MatrixH<resultDims, Type>& result, const MatrixH<dimsB, Type> &other) const {
+//        result.parentNodes.push_back(std::make_shared<MatrixH<dims, Type>>(*this));
+//        result.parentNodes.push_back(std::make_shared<MatrixH<dimsB, Type>>(other));
+//        result.gradFunc = [](MatrixH<dims, Type>& selfs) {
+//            auto p1 = selfs.parentNodes[0]->gradFunc ? selfs.parentNodes[0]->gradFunc(*selfs.parentNodes[0]) : selfs.parentNodes[0]->ones();
+//            auto p2 = selfs.parentNodes[1]->gradFunc ? selfs.parentNodes[1]->gradFunc(*selfs.parentNodes[1]) :  selfs.parentNodes[1]->ones();
+//            return p1 + p2;
+//        };
+//
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        if (!GlobalGPUManager.BrodcastedSubInit[typeCode]) {
+            GlobalGPUManager.initBrodcastedSubInit(typeCode);
+        }
+        
+        if (resultDims != fmax(dims, dimsB)) {
+            std::invalid_argument("Incompatible dims of the result mat");
+            throw;
+        }
+        
+        size_m* strideA = new size_m[resultDims];
+        size_m* strideB = new size_m[resultDims];
+
+        memcpy(strideA + (resultDims -  dims), strides, dims * sizeof(size_m));
+        memcpy(strideB + (resultDims - dimsB), other.strides, dimsB * sizeof(size_m));
+        
+        for (int i = 0; i < resultDims; i++) {
+            // dims - i-1 < 0
+            if (dims < i+1) {
+                result.shape[resultDims-i-1] = other.shape[dimsB-i-1];
+                strideA[resultDims-i-1] =0;
+            } else if (dimsB < i+1) {
+                result.shape[resultDims-i-1] = shape[dims-i-1];
+                strideB[resultDims-i-1] =0;
+            } else if (shape[dims-i-1] != other.shape[dimsB-i-1]) {
+                if (shape[dims-i-1] == 1) {
+                    result.shape[resultDims-i-1] = other.shape[dimsB-i-1];
+                    strideA[resultDims-i-1] =0;
+                } else if (other.shape[dimsB-i-1] == 1) {
+                    result.shape[resultDims-i-1] = shape[dims-i-1];
+                    strideB[resultDims-i-1] =0;
+                } else {
+                    std::invalid_argument("Incompatible shapes for broadcasting");
+                }
+            } else {
+                result.shape[resultDims-i-1] = shape[dims-i-1];
+            }
+        }
+        
+        result.calcStrides();
+        if (result.total_size != result.accumul(0, resultDims)) {
+            result.total_size = result.accumul(0, resultDims);
+            if (result.buffer) {delete [] result.buffer; }
+            result.buffer = new Type[result.total_size];
+            result.buildMetalBuffer();
+        }
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(result.total_size, 1, 1);
+        int rDims = resultDims;
+        [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
+        setBufferOrBytes(commandEncoder, *this, 1);
+        setBufferOrBytes(commandEncoder, other, 2);
+        [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+        [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+        [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+        [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:6];
+        
+        [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedSubComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+    }
+    
+    template <int dimsB, int resultDims>
+    void BrodcastedMul(MatrixH<resultDims, Type>& result, const MatrixH<dimsB, Type> &other) const {
+//        result.parentNodes.push_back(std::make_shared<MatrixH<dims, Type>>(*this));
+//        result.parentNodes.push_back(std::make_shared<MatrixH<dimsB, Type>>(other));
+//        result.gradFunc = [](MatrixH<dims, Type>& selfs) {
+//            auto p1 = selfs.parentNodes[0]->gradFunc ? selfs.parentNodes[0]->gradFunc(*selfs.parentNodes[0]) : selfs.parentNodes[0]->ones();
+//            auto p2 = selfs.parentNodes[1]->gradFunc ? selfs.parentNodes[1]->gradFunc(*selfs.parentNodes[1]) :  selfs.parentNodes[1]->ones();
+//            return p1 + p2;
+//        };
+//
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        if (!GlobalGPUManager.BrodcastedMulInit[typeCode]) {
+            GlobalGPUManager.initBrodcastedMulInit(typeCode);
+        }
+        
+        if (resultDims != fmax(dims, dimsB)) {
+            std::invalid_argument("Incompatible dims of the result mat");
+            throw;
+        }
+        
+//        size_m* strideA = new size_m[resultDims];
+//        size_m* strideB = new size_m[resultDims];
+        
+        size_m strideA[resultDims];
+        size_m strideB[resultDims];
+
+        memcpy(strideA + (resultDims -  dims), strides, dims * sizeof(size_m));
+        memcpy(strideB + (resultDims - dimsB), other.strides, dimsB * sizeof(size_m));
+        
+        for (int i = 0; i < resultDims; i++) {
+            // dims - i-1 < 0
+            if (dims < i+1) {
+                result.shape[resultDims-i-1] = other.shape[dimsB-i-1];
+                strideA[resultDims-i-1] =0;
+            } else if (dimsB < i+1) {
+                result.shape[resultDims-i-1] = shape[dims-i-1];
+                strideB[resultDims-i-1] =0;
+            } else if (shape[dims-i-1] != other.shape[dimsB-i-1]) {
+                if (shape[dims-i-1] == 1) {
+                    result.shape[resultDims-i-1] = other.shape[dimsB-i-1];
+                    strideA[resultDims-i-1] =0;
+                } else if (other.shape[dimsB-i-1] == 1) {
+                    result.shape[resultDims-i-1] = shape[dims-i-1];
+                    strideB[resultDims-i-1] =0;
+                } else {
+                    std::invalid_argument("Incompatible shapes for broadcasting");
+                }
+            } else {
+                result.shape[resultDims-i-1] = shape[dims-i-1];
+            }
+        }
+
+        result.calcStrides();
+        
+        if (result.total_size != result.accumul(0, resultDims)) {
+            result.total_size = result.accumul(0, resultDims);
+            if (result.buffer) {delete [] result.buffer; }
+            result.buffer = new Type[result.total_size];
+            result.buildMetalBuffer();
+        }
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(result.total_size, 1, 1);
+        int rDims = resultDims;
+        [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
+        setBufferOrBytes(commandEncoder, *this, 1);
+        setBufferOrBytes(commandEncoder, other, 2);
+
+        [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+        [commandEncoder setBytes:&strideA length:resultDims * sizeof(size_m) atIndex:4];
+        [commandEncoder setBytes:&strideB length:resultDims * sizeof(size_m) atIndex:5];
+        [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:6];
+        [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedMulComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+
+    }
+    
+    template <int dimsB, int resultDims>
+    void BrodcastedDiv(MatrixH<resultDims, Type>& result, const MatrixH<dimsB, Type> &other) const {
+//        result.parentNodes.push_back(std::make_shared<MatrixH<dims, Type>>(*this));
+//        result.parentNodes.push_back(std::make_shared<MatrixH<dimsB, Type>>(other));
+//        result.gradFunc = [](MatrixH<dims, Type>& selfs) {
+//            auto p1 = selfs.parentNodes[0]->gradFunc ? selfs.parentNodes[0]->gradFunc(*selfs.parentNodes[0]) : selfs.parentNodes[0]->ones();
+//            auto p2 = selfs.parentNodes[1]->gradFunc ? selfs.parentNodes[1]->gradFunc(*selfs.parentNodes[1]) :  selfs.parentNodes[1]->ones();
+//            return p1 + p2;
+//        };
+//
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        if (!GlobalGPUManager.BrodcastedDivInit[typeCode]) {
+            GlobalGPUManager.initBrodcastedDivInit(typeCode);
+        }
+        
+        if (resultDims != fmax(dims, dimsB)) {
+            std::invalid_argument("Incompatible dims of the result mat");
+            throw;
+        }
+        
+        size_m* strideA = new size_m[resultDims];
+        size_m* strideB = new size_m[resultDims];
+
+        memcpy(strideA + (resultDims -  dims), strides, dims * sizeof(size_m));
+        memcpy(strideB + (resultDims - dimsB), other.strides, dimsB * sizeof(size_m));
+        
+        for (int i = 0; i < resultDims; i++) {
+            // dims - i-1 < 0
+            if (dims < i+1) {
+                result.shape[resultDims-i-1] = other.shape[dimsB-i-1];
+                strideA[resultDims-i-1] =0;
+            } else if (dimsB < i+1) {
+                result.shape[resultDims-i-1] = shape[dims-i-1];
+                strideB[resultDims-i-1] =0;
+            } else if (shape[dims-i-1] != other.shape[dimsB-i-1]) {
+                if (shape[dims-i-1] == 1) {
+                    result.shape[resultDims-i-1] = other.shape[dimsB-i-1];
+                    strideA[resultDims-i-1] =0;
+                } else if (other.shape[dimsB-i-1] == 1) {
+                    result.shape[resultDims-i-1] = shape[dims-i-1];
+                    strideB[resultDims-i-1] =0;
+                } else {
+                    std::invalid_argument("Incompatible shapes for broadcasting");
+                }
+            } else {
+                result.shape[resultDims-i-1] = shape[dims-i-1];
+            }
+        }
+        
+        result.calcStrides();
+        if (result.total_size != result.accumul(0, resultDims)) {
+            result.total_size = result.accumul(0, resultDims);
+            if (result.buffer) {delete [] result.buffer; }
+            result.buffer = new Type[result.total_size];
+            result.buildMetalBuffer();
+        }
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(result.total_size, 1, 1);
+        int rDims = resultDims;
+        [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
+        setBufferOrBytes(commandEncoder, *this, 1);
+        setBufferOrBytes(commandEncoder, other, 2);
+        [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+        [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+        [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+        [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:6];
+        
+        [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedDivComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+    }
+    
         
         id<MTLComputePipelineState> computeState;
         if constexpr (std::is_integral<Type>::value) {
