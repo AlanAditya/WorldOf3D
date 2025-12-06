@@ -539,6 +539,12 @@ struct nested_initializer_list {
     using type = std::initializer_list<typename nested_initializer_list<T, dims - 1>::type>;
 };
 
+enum Flags : unsigned int {
+    OWNERSHIP_FLAG = 1u << 0,  // Bit 0
+    NON_CONTIGUOUS_FLAG = 1u << 1,  // Bit 1
+};
+
+
 template <int dims, typename Type>
 class MatrixH {
 public:
