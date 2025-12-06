@@ -230,34 +230,136 @@ CMSampleBufferRef createSampleBuffer(CVPixelBufferRef pixelBuffer, CMTime pts) {
     return sampleBuffer;
 }
 
-enum class DType {
-    Float = 0,
-    Half = 1,
-    Int = 2,
-    UInt = 3,
-    Char = 4,
-    UChar = 5,
-    Short = 6,
-    UShort = 7,
-    // Add more as needed
+struct TypeInfo {
+    int typeCode;
+    int values;
+    int baseType;
 };
 
-const char* DTypeName(DType type) {
-    switch (type) {
-        case DType::Float: return "float";
-        case DType::Half: return "half";
-        case DType::Int: return "int";
-        case DType::UInt: return "uint";
-        case DType::Char: return "char"; // Metal uses char/uchar for 8-bit
-        case DType::UChar: return "uchar";
-        case DType::Short: return "short";
-        case DType::UShort: return "ushort";
-        default: return "void"; // Should not happen
-    }
-}
+
+template<typename T> int get_dtype_code();
+
+template<> int get_dtype_code<float>()           { return 0; }
+template<> int get_dtype_code<float16_t>()    { return 1; }
+template<> int get_dtype_code<uint8_t>()         { return 2; }
+template<> int get_dtype_code<int>()             { return 3; }
+
+template<> int get_dtype_code<int16_t>()           { return 4; }
+template<> int get_dtype_code<uint16_t>()        { return 5; }
+template<> int get_dtype_code<uint32_t>()        { return 6; }
+template<> int get_dtype_code<simd_float2>()    { return 7; }
+template<> int get_dtype_code<simd_float3>()    { return 8; }
+template<> int get_dtype_code<simd_float4>()    { return 9; }
 
 
-class GPUManager {
+template<int code> struct dtype_from_code;  // primary template (undefined)
+
+// Specializations
+template<> struct dtype_from_code<0> { using type = float; };
+template<> struct dtype_from_code<1> { using type = float16_t; };
+template<> struct dtype_from_code<2> { using type = uint8_t; };
+template<> struct dtype_from_code<3> { using type = int; };
+template<> struct dtype_from_code<4> { using type = int16_t; };
+template<> struct dtype_from_code<5> { using type = uint16_t; };
+template<> struct dtype_from_code<6> { using type = uint32_t; };
+template<> struct dtype_from_code<7> { using type = simd_float2; };
+template<> struct dtype_from_code<8> { using type = simd_float3; };
+template<> struct dtype_from_code<9> { using type = simd_float4; };
+
+// Convenient alias:
+template<int code>
+using dtype_from_code_t = typename dtype_from_code<code>::type;
+
+template<typename T> TypeInfo get_dtype_info();
+
+template<> TypeInfo get_dtype_info<float>()           { return {0, 1, 0}; }
+template<> TypeInfo get_dtype_info<float16_t>()           { return {1, 1, 0}; }
+template<> TypeInfo get_dtype_info<uint8_t>()         { return {2, 1, 1}; }
+template<> TypeInfo get_dtype_info<int>()             { return {3, 1, 2}; }
+template<> TypeInfo get_dtype_info<int16_t>()         { return {4, 1, 3}; }
+template<> TypeInfo get_dtype_info<uint16_t>()        { return {5, 1, 4}; }
+template<> TypeInfo get_dtype_info<uint32_t>()        { return {6, 1, 5}; }
+template<> TypeInfo get_dtype_info<simd_float2>()    { return {7, 2, 0}; }
+template<> TypeInfo get_dtype_info<simd_float3>()    { return {8, 3, 0}; }
+template<> TypeInfo get_dtype_info<simd_float4>()    { return {9, 4, 0}; }
+
+int valueLimit = 5;
+
+
+//enum class DType {
+//    Float = 0,
+//    Half = 1,
+//    Int = 2,
+//    UInt = 3,
+//    Char = 4,
+//    UChar = 5,
+//    Short = 6,
+//    UShort = 7,
+//    // Add more as needed
+//};
+
+//const char* DTypeName(DType type) {
+//    switch (type) {
+//        case DType::Float: return "float";
+//        case DType::Half: return "half";
+//        case DType::Int: return "int";
+//        case DType::UInt: return "uint";
+//        case DType::Char: return "char"; // Metal uses char/uchar for 8-bit
+//        case DType::UChar: return "uchar";
+//        case DType::Short: return "short";
+//        case DType::UShort: return "ushort";
+//        default: return "void"; // Should not happen
+//    }
+//}
+
+enum class DType : int {
+    Float        = 0,
+    Float16      = 1,
+    UInt8        = 2,
+    Int32        = 3,
+    Int16        = 4,
+    UInt16       = 5,
+    UInt32       = 6,
+    Float2       = 7,
+    Float3       = 8,
+    Float4       = 9,
+
+    Unknown      = -1
+};
+
+template<typename T> constexpr DType dtype_from_type();
+
+template<> constexpr DType dtype_from_type<float>()        { return DType::Float; }
+template<> constexpr DType dtype_from_type<float16_t>()  { return DType::Float16; }
+template<> constexpr DType dtype_from_type<uint8_t>()      { return DType::UInt8; }
+template<> constexpr DType dtype_from_type<int>()          { return DType::Int32; }
+template<> constexpr DType dtype_from_type<int16_t>()      { return DType::Int16; }
+template<> constexpr DType dtype_from_type<uint16_t>()     { return DType::UInt16; }
+template<> constexpr DType dtype_from_type<uint32_t>()     { return DType::UInt32; }
+template<> constexpr DType dtype_from_type<simd_float2>()  { return DType::Float2; }
+template<> constexpr DType dtype_from_type<simd_float3>()  { return DType::Float3; }
+template<> constexpr DType dtype_from_type<Point3D>()  { return DType::Float3; }
+template<> constexpr DType dtype_from_type<simd_float4>()  { return DType::Float4; }
+
+
+template<DType code> struct type_dtype;
+
+template<> struct type_dtype<DType::Float>   { using type = float; };
+template<> struct type_dtype<DType::Float16>  { using type = float16_t; };
+template<> struct type_dtype<DType::UInt8>   { using type = uint8_t; };
+template<> struct type_dtype<DType::Int32>   { using type = int; };
+template<> struct type_dtype<DType::Int16>   { using type = int16_t; };
+template<> struct type_dtype<DType::UInt16>  { using type = uint16_t; };
+template<> struct type_dtype<DType::UInt32>  { using type = uint32_t; };
+template<> struct type_dtype<DType::Float2>  { using type = simd_float2; };
+template<> struct type_dtype<DType::Float3>  { using type = simd_float3; };
+template<> struct type_dtype<DType::Float4>  { using type = simd_float4; };
+
+
+template<DType code>
+using type_from_dtype = typename type_dtype<code>::type;
+
+
 public:
     id<MTLDevice> metalDevice = MTLCreateSystemDefaultDevice();
     id<MTLCommandQueue> gCommandQueue = [metalDevice newCommandQueue];
@@ -561,7 +663,15 @@ public:
         return acc;
     }
     
-    bool compareShapes(size_t* Othershape) {
+    void calcStrides() {
+        size_t acc = 1;
+        for (int i = dims-1; i >= 0; i--) {
+            strides[i] = acc;
+            acc *= shape[i];
+        }
+    }
+    
+    bool compareShapes(size_m* Othershape) {
         bool res = true;
         for (int i = 0; i < dims; i ++) {
             if (shape[i] != Othershape[i]) {
