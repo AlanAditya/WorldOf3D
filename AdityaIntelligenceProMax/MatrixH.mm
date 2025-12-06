@@ -360,169 +360,20 @@ template<DType code>
 using type_from_dtype = typename type_dtype<code>::type;
 
 
-public:
-    id<MTLDevice> metalDevice = MTLCreateSystemDefaultDevice();
-    id<MTLCommandQueue> gCommandQueue = [metalDevice newCommandQueue];
-    
-    id<MTLLibrary> library = [metalDevice newDefaultLibrary];
-    
-    id<MTLComputePipelineState> blendCompute;
-    bool blendInit = false;
-    
-    id<MTLComputePipelineState> invertImgCompute;
-    bool invertInitImg = false;
-    
-    id<MTLComputePipelineState> chromaKeyCompute;
-    bool chromaKeyInit = false;
-    
-    id<MTLComputePipelineState> AddImgCompute;
-    bool AddImgInit = false;
-    id<MTLComputePipelineState> AddIntCompute;
-    bool AddIntInit = false;
-    id<MTLComputePipelineState> AddFloatCompute;
-    bool AddFloatInit = false;
-    
-    id<MTLComputePipelineState> SubImgCompute;
-    bool SubImgInit = false;
-    id<MTLComputePipelineState> SubIntCompute;
-    bool SubIntInit = false;
-    id<MTLComputePipelineState> SubFloatCompute;
-    bool SubFloatInit = false;
-    
-    id<MTLComputePipelineState> MulAllCompute;
-    bool MulAllInit = false;
 
-    id<MTLComputePipelineState> ConversionAll;
-    bool ConversionAllInit = false;
+
+class MatrixBase {
+public:
+    int mDims;
     
-    bool typeCastingInit[3][3];
-    id<MTLComputePipelineState> typeCasting[3][3];
     
-    bool TransposeInit[3];
-    id<MTLComputePipelineState> TransposeComputeState[3];
-    
-    bool GEMMAInit[3];
-    id<MTLComputePipelineState> GEMMAComputeState[3];
-    GPUManager() {
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                typeCastingInit[i][j] = false;
-            }
-        }
-        for (int i = 0; i < 3; i++) {
-            TransposeInit[i] = false;
-        }
-        for (int i = 0; i < 3; i++) {
-            GEMMAInit[i] = false;
-        }
-    }
-    
-    id<MTLComputePipelineState> DerivativeAll;
-    bool DerivativeAllInit = false;
-    
-    void initBlend() {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:@"BlendCompute"];
-        blendCompute = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        blendInit = true;
-    }
-    
-    void initInvert() {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:@"InvertImgCompute"];
-        invertImgCompute = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        invertInitImg = true;
-    }
-    
-    void initchromaKey() {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:@"ChromaKeyCompute"];
-        chromaKeyCompute = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        chromaKeyInit = true;
-    }
-    
-    void initAddImg() {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:@"AddGPU_C"];
-        AddImgCompute = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        AddImgInit = true;
-    }
-    
-    void initAddInt() {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:@"AddGPU_I"];
-        AddIntCompute = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        AddIntInit = true;
-    }
-    
-    void initAddFloat() {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:@"AddGPU_F"];
-        AddFloatCompute = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        AddFloatInit = true;
-    }
-    
-    void initSubImg() {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:@"AddGPU_C"];
-        AddImgCompute = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        AddImgInit = true;
-    }
-    
-    void initSubInt() {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:@"SubGPU_I"];
-        SubIntCompute = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        SubIntInit = true;
-    }
-    
-    void initSubFloat() {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:@"SubGPU_F"];
-        SubFloatCompute = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        SubFloatInit = true;
-    }
-    void initMulAll() {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:@"MulGPU_All"];
-        MulAllCompute = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        MulAllInit = true;
-    }
-    void initConversionAll() {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:@"ConversionGPU_All"];
-        ConversionAll = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        ConversionAllInit = true;
-    }
-    
-    void initTypeCasting(int i, int j) {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:[NSString stringWithFormat:@"TypeCastingGPU_%i_%i", i,j]];
-        typeCasting[i][j] = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        typeCastingInit[i][j] = true;
-    }
-    
-    void initDerivativeAll() {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:@"DerivativeGPU_All"];
-        DerivativeAll = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        DerivativeAllInit = true;
-    }
-    
-    void initTransposeAll(int i) {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:[NSString stringWithFormat:@"TransposeGPU_%i", i]];
-        TransposeComputeState[i] = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        TransposeInit[i] = true;
-    }
-    
-    void initGEMMA_All(int i) {
-        NSError* error = nil;
-        id<MTLFunction> func = [library newFunctionWithName:[NSString stringWithFormat:@"MatMulGPU_%i", i]];
-        GEMMAComputeState[i] = [metalDevice newComputePipelineStateWithFunction:func error:&error];
-        GEMMAInit[i] = true;
+    DType dtype;
+    MatrixBase(int dims, DType dtype): mDims(dims), dtype(dtype) {
     }
 };
+
+template <int dims, typename Type>
+class MatrixH;
 
 static GPUManager GlobalGPUManager = GPUManager();
 
