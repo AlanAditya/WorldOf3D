@@ -10,6 +10,7 @@
 		AB00143C2C70E83F00BB0A24 /* File.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB00143B2C70E83F00BB0A24 /* File.swift */; };
 		AB00143E2C70F18100BB0A24 /* ViewImporter.mm in Sources */ = {isa = PBXBuildFile; fileRef = AB00143D2C70F18100BB0A24 /* ViewImporter.mm */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
 		AB0014412C70F71A00BB0A24 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AB0014402C70F71A00BB0A24 /* Cocoa.framework */; };
+		AB031A502E2CEC84005916D7 /* libmlx.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AB031A4F2E2CEC84005916D7 /* libmlx.dylib */; };
 		AB0329C32D44DBDE004729F2 /* libavcodec.61.19.100.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AB0329C22D44DBDE004729F2 /* libavcodec.61.19.100.dylib */; };
 		AB0329C52D44DC27004729F2 /* libavformat.61.7.100.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AB0329C42D44DC27004729F2 /* libavformat.61.7.100.dylib */; };
 		AB0729B92D44F5C10075BC49 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE782C1B841A00D0A599 /* AppKit.framework */; };
@@ -163,6 +164,7 @@
 		AB00143D2C70F18100BB0A24 /* ViewImporter.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ViewImporter.mm; sourceTree = "<group>"; };
 		AB00143F2C70F20300BB0A24 /* ViewImporterBridge.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = ViewImporterBridge.hpp; sourceTree = "<group>"; };
 		AB0014402C70F71A00BB0A24 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
+		AB031A4F2E2CEC84005916D7 /* libmlx.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libmlx.dylib; path = ../../../../../usr/local/lib/libmlx.dylib; sourceTree = "<group>"; };
 		AB0329C22D44DBDE004729F2 /* libavcodec.61.19.100.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libavcodec.61.19.100.dylib; path = ../../../../../opt/homebrew/Cellar/ffmpeg/7.1_4/lib/libavcodec.61.19.100.dylib; sourceTree = "<group>"; };
 		AB0329C42D44DC27004729F2 /* libavformat.61.7.100.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libavformat.61.7.100.dylib; path = ../../../../../opt/homebrew/Cellar/ffmpeg/7.1_4/lib/libavformat.61.7.100.dylib; sourceTree = "<group>"; };
 		AB08DEA62D15E869000548CF /* Aditya_Intelligence */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = Aditya_Intelligence; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -223,6 +225,16 @@
 		ABFBBE842C1E1BCD00D0A599 /* MathOperations.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = MathOperations.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		ABD283252E4A51860065F44F /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				back.txt,
+			);
+			target = AB1BE7242D7DE4DB00D29037 /* AdityaIntelligenceProMax */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 		AB06EBFE2D72F952000D81D0 /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
@@ -231,11 +243,26 @@
 				Extensions/shapeExtension.hpp,
 			);
 		};
+		AB80E0EF2ED527A6002D30BA /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = AB1BE7232D7DE4DB00D29037 /* Resources */;
+			membershipExceptions = (
+				module.modulemap,
+			);
+		};
+		ABD283262E4A51860065F44F /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = AB1BE7212D7DE4DB00D29037 /* Sources */;
+			membershipExceptions = (
+				back.txt,
+				Mods/GPUManager.h,
+			);
+		};
 /* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		AB08DEA72D15E869000548CF /* Aditya_Intelligence */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (AB06EBFE2D72F952000D81D0 /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Aditya_Intelligence; sourceTree = "<group>"; };
-		AB1BE7262D7DE4DB00D29037 /* AdityaIntelligenceProMax */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {11_7_2024.usdz = archive.zip; output.usda = text.xml; }; explicitFolders = (); path = AdityaIntelligenceProMax; sourceTree = "<group>"; };
+		AB1BE7262D7DE4DB00D29037 /* AdityaIntelligenceProMax */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (ABD283252E4A51860065F44F /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ABD283262E4A51860065F44F /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */, AB80E0EF2ED527A6002D30BA /* PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet */, ); explicitFileTypes = {11_7_2024.usdz = archive.zip; output.usda = text.xml; }; explicitFolders = (); path = AdityaIntelligenceProMax; sourceTree = "<group>"; };
 		AB6E164C2D32BADE00A3C685 /* test */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = test; sourceTree = "<group>"; };
 		AB748F582D46158900D85275 /* Video Editor */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "Video Editor"; sourceTree = "<group>"; };
 		AB7692A02D5B9D7500BCD030 /* ParticleSystem */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ParticleSystem; sourceTree = "<group>"; };
@@ -263,6 +290,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB031A502E2CEC84005916D7 /* libmlx.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -451,6 +479,7 @@
 		ABCB242A2C103782006EB7B6 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				AB031A4F2E2CEC84005916D7 /* libmlx.dylib */,
 				AB84631E2D723E0D00FC6B24 /* Vision.framework */,
 				AB7692982D57FD5800BCD030 /* CoreMedia.framework */,
 				AB7692962D57FD4C00BCD030 /* CoreVideo.framework */,
@@ -973,7 +1002,9 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++23";
 				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC_EXCEPTIONS = YES;
 				CODE_SIGN_ENTITLEMENTS = AdityaIntelligenceProMax/AdityaIntelligenceProMax.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -983,6 +1014,10 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					/usr/local/include/,
+					"$(SRCROOT)/AdityaIntelligenceProMax",
+				);
 				INFOPLIST_KEY_NSCameraUsageDescription = "To use duh";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "To use duh";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -998,14 +1033,20 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 18.1;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				LIBRARY_SEARCH_PATHS = (
+					/usr/local/lib,
+					"$(PROJECT_DIR)/AdityaIntelligenceProMax",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				MARKETING_VERSION = 1.0;
+				MTL_COMPILER_FLAGS = "-fmetal-enable-logging";
 				PRODUCT_BUNDLE_IDENTIFIER = com.Aditya.AdityaIntelligenceProMax;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/AdityaIntelligenceProMax/";
 				SWIFT_OBJC_BRIDGING_HEADER = "$(SWIFT_MODULE_NAME)/MatrixH.mm";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -1019,7 +1060,9 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++23";
 				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC_EXCEPTIONS = YES;
 				CODE_SIGN_ENTITLEMENTS = AdityaIntelligenceProMax/AdityaIntelligenceProMax.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -1029,6 +1072,10 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					/usr/local/include/,
+					"$(SRCROOT)/AdityaIntelligenceProMax",
+				);
 				INFOPLIST_KEY_NSCameraUsageDescription = "To use duh";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "To use duh";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -1044,14 +1091,20 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 18.1;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				LIBRARY_SEARCH_PATHS = (
+					/usr/local/lib,
+					"$(PROJECT_DIR)/AdityaIntelligenceProMax",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				MARKETING_VERSION = 1.0;
+				MTL_COMPILER_FLAGS = "-fmetal-enable-logging";
 				PRODUCT_BUNDLE_IDENTIFIER = com.Aditya.AdityaIntelligenceProMax;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/AdityaIntelligenceProMax/";
 				SWIFT_OBJC_BRIDGING_HEADER = "$(SWIFT_MODULE_NAME)/MatrixH.mm";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
@@ -1272,7 +1325,7 @@
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
@@ -1323,6 +1376,11 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"\"-fmodules\"",
+					"-fcxx-modules",
+				);
 				SDKROOT = macosx;
 				SWIFT_OBJC_BRIDGING_HEADER = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/ImageProcessing/ImageProcessing-Bridging-Header.h";
 				SWIFT_OBJC_INTEROP_MODE = objcxx;
@@ -1336,7 +1394,7 @@
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
@@ -1380,6 +1438,11 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"\"-fmodules\"",
+					"-fcxx-modules",
+				);
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OBJC_BRIDGING_HEADER = "/Users/adityadude/Documents/C++XCODE/WorldOf3D/ImageProcessing/ImageProcessing-Bridging-Header.h";

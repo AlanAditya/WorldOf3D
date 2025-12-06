@@ -30,6 +30,7 @@ typedef uint16_t uint16;
 #include <span>
 
 #define SAFE_MODE
+@import GPUManager;
 
 constexpr auto null = std::nullopt;
 
