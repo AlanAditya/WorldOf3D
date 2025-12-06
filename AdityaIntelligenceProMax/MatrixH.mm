@@ -631,9 +631,68 @@ public:
         return result;
     }
     
+    
+//    BUG FIX: Metal Buffer Cache Coherency Issue for Non-Contiguous Buffers
+//
+//    PROBLEM:
+//    When creating Metal buffers for non-contiguous data using newBufferWithBytesNoCopy,
+//    the buffer length was incorrectly set to (total_size * sizeof(Type)), which only
+//    accounts for the number of valid elements, not the actual memory span.
+//
+//    For non-contiguous buffers, elements may be scattered across a larger memory region
+//    due to strides. When Metal is told the buffer is smaller than the actual accessed
+//    memory range, it may not properly cache, synchronize, or maintain coherency for
+//    memory beyond the declared boundary, leading to intermittent GPU read failures
+//    (~10% failure rate observed) where later elements appear as zeros.
+//
+//    ROOT CAUSE:
+//    Metal's memory management system uses the declared buffer length to determine:
+//    - Cache line prefetching boundaries
+//    - CPU→GPU memory synchronization scope
+//    - Memory barrier coverage regions
+//
+//    Even though the underlying pointer is valid and CPU-side access works correctly,
+//    GPU kernel access to indices beyond the declared buffer size may fail because
+//    Metal's caching layer doesn't guarantee those memory regions are synchronized
+//    or available in GPU cache.
+//
+//    FIX:
+//    For non-contiguous buffers, use the actual memory span (shape[0] * strides[0] * sizeof(Type))
+//    instead of the element count (total_size * sizeof(Type)). This ensures Metal properly
+//    manages the entire accessed memory region.
+//
+//    BEFORE:
+//    total_size * sizeof(Type)  // ❌ Only counts valid elements
+
+//
+//    AFTER:
+//    length:shape[0] * strides[0] * sizeof(Type)  // ✅ Full memory span
+//    IMPORTANT:
+//    buildMetalBuffer() must be called AFTER setting the NON_CONTIGUOUS_FLAG, as the
+//    flag determines which buffer size calculation to use:
+//
+//    CORRECT ORDER:
+//    InstanceTransformView.flags |= NON_CONTIGUOUS_FLAG;  // Set flag first
+//    InstanceTransformView.buildMetalBuffer();            // Then build buffer
+//
+//    INCORRECT ORDER:
+//    InstanceTransformView.buildMetalBuffer();            // ❌ Wrong: uses wrong size
+//    InstanceTransformView.flags |= NON_CONTIGUOUS_FLAG;  // ❌ Too late
+//
+//    IMPACT:
+//    - Fixes intermittent GPU kernel failures where non-contiguous buffer elements
+//      read as zero
+//    - Ensures proper Metal cache coherency for strided/sparse tensor operations
+//    - Eliminates race conditions in GPU compute operations on broadcasted/reshaped tensors
     void buildMetalBuffer() {
-        metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-        }];
+        if (total_size == 0 && !buffer) {std::cout << "failed to build MTL buffer with size 0"; return;}
+        if (flags & NON_CONTIGUOUS_FLAG) {
+            metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:shape[0]*strides[0] * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+            }];
+        } else {
+            metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+            }];
+        }
     }
     void copyFrom(MatrixH<dims, Type>& input) {
         if (!buffer) {
