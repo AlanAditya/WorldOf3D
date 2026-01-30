@@ -1916,13 +1916,52 @@ public:
     
     
     
-    static MatrixH<dims, Type> sin(MatrixH<dims, Type>& mat) {
+    MatrixH<dims, Type> sin() const {
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        if (!GlobalGPUManager.SinInit[typeCode]) {
+            GlobalGPUManager.initSin(typeCode);
+        }
+        
+        MatrixH<dims, Type> output;
+        output.total_size = total_size;
+        output.buffer = new Type[total_size];
+        output.buildMetalBuffer();
+        memcpy(output.shape, shape, sizeof(size_m) * dims);
+        memcpy(output.strides, strides, sizeof(size_m) * dims);
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(total_size, 1, 1);
+        
+        [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
+        if (metalBuffer) {
+            [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        } else {
+            [commandEncoder setBytes:buffer length:total_size*sizeof(Type) atIndex:1];
+        }
+
+        [commandEncoder setComputePipelineState:GlobalGPUManager.SinComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        
+        return output;
+    }
+    
+    static MatrixH<dims, Type> sqrt(MatrixH<dims, Type>& mat) {
         
         
         uint8_t typeCode = get_dtype_code<Type>();
         
-        if (!GlobalGPUManager.SinInit[typeCode]) {
-            GlobalGPUManager.initSin_All(typeCode);
+        if (!GlobalGPUManager.SqrtInit[typeCode]) {
+            GlobalGPUManager.initSqrt_All(typeCode);
         }
         
         MatrixH<dims, Type> output;
@@ -1939,9 +1978,13 @@ public:
         auto _dispatchExecutionSize =  MTLSizeMake(mat.total_size, 1, 1);
         
         [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
-        [commandEncoder setBuffer:mat.metalBuffer offset:0 atIndex:1];
+        if (mat.metalBuffer) {
+            [commandEncoder setBuffer:mat.metalBuffer offset:0 atIndex:1];
+        } else {
+            [commandEncoder setBytes:mat.buffer length:mat.total_size*sizeof(Type) atIndex:1];
+        }
 
-        [commandEncoder setComputePipelineState:GlobalGPUManager.SinComputeState[typeCode]];
+        [commandEncoder setComputePipelineState:GlobalGPUManager.SqrtComputeState[typeCode]];
         [commandEncoder dispatchThreads:_dispatchExecutionSize
                   threadsPerThreadgroup:_threadsPerThreadgroup];
         
@@ -1952,7 +1995,160 @@ public:
         return output;
     }
     
-    MatrixH<dims-1, Type> Sum(int axis) {
+    // sqrts itself
+    MatrixH<dims, Type> sqrt() const {
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        MatrixH<dims, Type> output;
+        output.total_size = total_size;
+        output.buffer = new Type[total_size];
+        output.buildMetalBuffer();
+        memcpy(output.shape, shape, sizeof(size_m) * dims);
+        memcpy(output.strides, strides, sizeof(size_m) * dims);
+        
+        if (!GlobalGPUManager.SqrtInit[typeCode]) {
+            GlobalGPUManager.initSqrt_All(typeCode);
+        }
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(total_size, 1, 1);
+        
+        [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
+        if (metalBuffer) {
+            [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        } else {
+            [commandEncoder setBytes:buffer length:total_size*sizeof(Type) atIndex:1];
+        }
+
+        [commandEncoder setComputePipelineState:GlobalGPUManager.SqrtComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        
+        return output;
+    }
+    
+    MatrixH<dims, Type> exp() const {
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        MatrixH<dims, Type> output;
+        output.total_size = total_size;
+        output.buffer = new Type[total_size];
+        output.buildMetalBuffer();
+        memcpy(output.shape, shape, sizeof(size_m) * dims);
+        memcpy(output.strides, strides, sizeof(size_m) * dims);
+        
+        if (!GlobalGPUManager.ExpInit[typeCode]) {
+            GlobalGPUManager.initExp(typeCode);
+        }
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(total_size, 1, 1);
+        
+        [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
+        if (metalBuffer) {
+            [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        } else {
+            [commandEncoder setBytes:buffer length:total_size*sizeof(Type) atIndex:1];
+        }
+
+        [commandEncoder setComputePipelineState:GlobalGPUManager.ExpComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        
+        return output;
+    }
+    
+    MatrixH<dims, Type> cos() const {
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        MatrixH<dims, Type> output;
+        output.total_size = total_size;
+        output.buffer = new Type[total_size];
+        output.buildMetalBuffer();
+        memcpy(output.shape, shape, sizeof(size_m) * dims);
+        memcpy(output.strides, strides, sizeof(size_m) * dims);
+        
+        if (!GlobalGPUManager.CosInit[typeCode]) {
+            GlobalGPUManager.initCos(typeCode);
+        }
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(total_size, 1, 1);
+        
+        [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
+        [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+
+        [commandEncoder setComputePipelineState:GlobalGPUManager.CosComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        
+        return output;
+    }
+    
+    MatrixH<dims, Type> tan() const {
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        MatrixH<dims, Type> output;
+        output.total_size = total_size;
+        output.buffer = new Type[total_size];
+        output.buildMetalBuffer();
+        memcpy(output.shape, shape, sizeof(size_m) * dims);
+        memcpy(output.strides, strides, sizeof(size_m) * dims);
+        
+        if (!GlobalGPUManager.TanInit[typeCode]) {
+            GlobalGPUManager.initTan(typeCode);
+        }
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(total_size, 1, 1);
+        
+        [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
+        if (metalBuffer) {
+            [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        } else {
+            [commandEncoder setBytes:buffer length:total_size*sizeof(Type) atIndex:1];
+        }
+
+        [commandEncoder setComputePipelineState:GlobalGPUManager.TanComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        
+        return output;
+    }
+    
+    MatrixH<dims-1, Type> Sum(int axis) const {
         if (axis < 0){
             axis += dims;
         }
@@ -2892,6 +3088,35 @@ public:
 //    }
     
 };
+
+template <int dims, typename Type>
+MatrixH<dims, Type> sin(const MatrixH<dims, Type>& mat) {
+    return mat.sin();
+}
+
+template <int dims, typename Type>
+MatrixH<dims, Type> cos(const MatrixH<dims, Type>& mat) {
+    return mat.cos();
+}
+
+template <int dims, typename Type>
+MatrixH<dims, Type> tan(const MatrixH<dims, Type>& mat) {
+    return mat.tan();
+}
+
+template <int dims, typename Type>
+MatrixH<dims, Type> exp(const MatrixH<dims, Type>& mat) {
+    return mat.exp();
+}
+
+MatrixH<1, float> simd_matH(simd_float3 inp) {
+    auto mat = MatrixH<1, float>(3);
+    mat.buffer[0] = inp.x;
+    mat.buffer[1] = inp.y;
+    mat.buffer[2] = inp.z;
+    mat.calcStrides();
+    return mat;
+}
 
 // MARK: - HAND DETECTOR AI
 static MatrixH<1, uint8_t> RED = {255, 0, 0, 255};
