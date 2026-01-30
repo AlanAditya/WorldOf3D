@@ -6258,6 +6258,8 @@ public:
     pRender = [[Renderer alloc] initWithDevice:metalDevice :frameView1.size.width :frameView1.size.height :4];
     pRender2 = [[Renderer alloc] initWithDevice:metalDevice :frameView1.size.width :frameView1.size.height :4];
     
+    _sidePanel = [[SidePannel alloc] initWithVector:&pRender->_NodesQueuePtr];
+    
     NSLog(@"hello");
     [_view1 setDelegate:pRender];
     [_view2 setDelegate:pRender2];
