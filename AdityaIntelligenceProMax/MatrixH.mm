@@ -5559,6 +5559,9 @@ public:
 
 
 - (void)updateBaseImage:(MatrixH<3, uint8_t>&) layer {
+    if (layer.shape[2] != 4) {
+        throw std::runtime_error("MatrixH: updateBaseImage: expected 4 channels (RGBA), got " + std::to_string(layer.shape[2]));
+    }
     if (layer.total_size == 0 || !layer.buffer) {
         layer.buffer = new uint8_t[width * height * 4];
         layer.shape[0] = height;
