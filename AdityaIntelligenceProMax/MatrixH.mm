@@ -2427,13 +2427,9 @@ public:
 //
         uint8_t typeCode = get_dtype_code<Type>();
         
-        if (!GlobalGPUManager.BrodcastedAddInit[typeCode]) {
-            GlobalGPUManager.initBrodcastedAddInit(typeCode);
-        }
         
         if (resultDims != fmax(dims, dimsB)) {
-            std::invalid_argument("Incompatible dims of the result mat");
-            throw;
+            throw std::invalid_argument("MatrixH: Incompatible dims of the result mat");
         }
         
         size_m strideA[resultDims];
@@ -2458,7 +2454,7 @@ public:
                     result.shape[resultDims-i-1] = shape[dims-i-1];
                     strideB[resultDims-i-1] =0;
                 } else {
-                    std::invalid_argument("Incompatible shapes for broadcasting");
+                    throw std::invalid_argument("MatrixH: Incompatible shapes for broadcasting");
                 }
             } else {
                 result.shape[resultDims-i-1] = shape[dims-i-1];
@@ -2484,12 +2480,52 @@ public:
         [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
         setBufferOrBytes(commandEncoder, *this, 1);
         setBufferOrBytes(commandEncoder, other, 2);
-        [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
-        [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
-        [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
-        [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:6];
         
-        [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedAddComputeState[typeCode]];
+        
+        if (rDims == 1) {
+            // 1 dim specialisation
+            if (!GlobalGPUManager.BrodcastedAddInit[typeCode][0]) {
+                GlobalGPUManager.initBrodcastedAddInit(typeCode, 0);
+            }
+            [commandEncoder setBytes:&result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:&strideA length: sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:&strideB length: sizeof(size_m) atIndex:5];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedAddComputeState[typeCode][0]];
+            _dispatchExecutionSize = MTLSizeMake(result.total_size, 1, 1);
+        } else if (rDims == 2) {
+            // 2 dim specialisation
+            if (!GlobalGPUManager.BrodcastedAddInit[typeCode][1]) {
+                GlobalGPUManager.initBrodcastedAddInit(typeCode, 1);
+            }
+            [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedAddComputeState[typeCode][1]];
+            _dispatchExecutionSize = MTLSizeMake(result.shape[1], result.shape[0], 1);
+        } else if (rDims == 3) {
+            // 3 dim specialisation
+            if (!GlobalGPUManager.BrodcastedAddInit[typeCode][2]) {
+                GlobalGPUManager.initBrodcastedAddInit(typeCode, 2);
+            }
+            [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedAddComputeState[typeCode][2]];
+            _dispatchExecutionSize = MTLSizeMake(result.shape[2], result.shape[1], result.shape[0]);
+        } else {
+            // N dim specialisation
+            if (!GlobalGPUManager.BrodcastedAddInit[typeCode][3]) {
+                GlobalGPUManager.initBrodcastedAddInit(typeCode, 3);
+            }
+            [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+            [commandEncoder setBytes:result.shape length:rDims * sizeof(size_m) atIndex:6];
+            [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:7];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedAddComputeState[typeCode][3]];
+            _dispatchExecutionSize = MTLSizeMake(result.shape[resultDims-1], result.shape[resultDims-2], result.accumul(0, resultDims-2));
+        }
+        
         [commandEncoder dispatchThreads:_dispatchExecutionSize
                   threadsPerThreadgroup:_threadsPerThreadgroup];
         
@@ -2509,14 +2545,10 @@ public:
 //        };
 //
         uint8_t typeCode = get_dtype_code<Type>();
-        
-        if (!GlobalGPUManager.BrodcastedSubInit[typeCode]) {
-            GlobalGPUManager.initBrodcastedSubInit(typeCode);
-        }
+    
         
         if (resultDims != fmax(dims, dimsB)) {
-            std::invalid_argument("Incompatible dims of the result mat");
-            throw;
+            throw std::invalid_argument("MatrixH: Incompatible dims of the result mat");
         }
         
         size_m strideA[resultDims];
@@ -2541,7 +2573,7 @@ public:
                     result.shape[resultDims-i-1] = shape[dims-i-1];
                     strideB[resultDims-i-1] =0;
                 } else {
-                    std::invalid_argument("Incompatible shapes for broadcasting");
+                    throw std::invalid_argument("MatrixH: Incompatible shapes for broadcasting");
                 }
             } else {
                 result.shape[resultDims-i-1] = shape[dims-i-1];
@@ -2566,12 +2598,52 @@ public:
         [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
         setBufferOrBytes(commandEncoder, *this, 1);
         setBufferOrBytes(commandEncoder, other, 2);
-        [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
-        [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
-        [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
-        [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:6];
         
-        [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedSubComputeState[typeCode]];
+        
+        if (rDims == 1) {
+            // 1 dim specialisation
+            if (!GlobalGPUManager.BrodcastedSubInit[typeCode][0]) {
+                GlobalGPUManager.initBrodcastedSubInit(typeCode, 0);
+            }
+            [commandEncoder setBytes:&result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:&strideA length: sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:&strideB length: sizeof(size_m) atIndex:5];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedSubComputeState[typeCode][0]];
+            _dispatchExecutionSize = MTLSizeMake(result.total_size, 1, 1);
+        } else if (rDims == 2) {
+            // 2 dim specialisation
+            if (!GlobalGPUManager.BrodcastedSubInit[typeCode][1]) {
+                GlobalGPUManager.initBrodcastedSubInit(typeCode, 1);
+            }
+            [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedSubComputeState[typeCode][1]];
+            _dispatchExecutionSize = MTLSizeMake(result.shape[1], result.shape[0], 1);
+        } else if (rDims == 3) {
+            // 3 dim specialisation
+            if (!GlobalGPUManager.BrodcastedSubInit[typeCode][2]) {
+                GlobalGPUManager.initBrodcastedSubInit(typeCode, 2);
+            }
+            [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedSubComputeState[typeCode][2]];
+            _dispatchExecutionSize = MTLSizeMake(result.shape[2], result.shape[1], result.shape[0]);
+        } else {
+            // N dim specialisation
+            if (!GlobalGPUManager.BrodcastedSubInit[typeCode][3]) {
+                GlobalGPUManager.initBrodcastedSubInit(typeCode, 3);
+            }
+            [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+            [commandEncoder setBytes:result.shape length:rDims * sizeof(size_m) atIndex:6];
+            [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:7];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedSubComputeState[typeCode][3]];
+            _dispatchExecutionSize = MTLSizeMake(result.shape[resultDims-1], result.shape[resultDims-2], result.accumul(0, resultDims-2));
+        }
+        
         [commandEncoder dispatchThreads:_dispatchExecutionSize
                   threadsPerThreadgroup:_threadsPerThreadgroup];
         
@@ -2592,13 +2664,8 @@ public:
 //
         uint8_t typeCode = get_dtype_code<Type>();
         
-        if (!GlobalGPUManager.BrodcastedMulInit[typeCode]) {
-            GlobalGPUManager.initBrodcastedMulInit(typeCode);
-        }
-        
         if (resultDims != fmax(dims, dimsB)) {
-            std::invalid_argument("Incompatible dims of the result mat");
-            throw;
+            throw std::invalid_argument("MatrixH: Incompatible dims of the result mat");
         }
         
 //        size_m* strideA = new size_m[resultDims];
@@ -2626,7 +2693,7 @@ public:
                     result.shape[resultDims-i-1] = shape[dims-i-1];
                     strideB[resultDims-i-1] =0;
                 } else {
-                    std::invalid_argument("Incompatible shapes for broadcasting");
+                    throw std::invalid_argument("MatrixH: Incompatible shapes for broadcasting");
                 }
             } else {
                 result.shape[resultDims-i-1] = shape[dims-i-1];
@@ -2650,12 +2717,51 @@ public:
         [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
         setBufferOrBytes(commandEncoder, *this, 1);
         setBufferOrBytes(commandEncoder, other, 2);
+        
+        if (rDims == 1) {
+            // 1 dim specialisation
+            if (!GlobalGPUManager.BrodcastedMulInit[typeCode][0]) {
+                GlobalGPUManager.initBrodcastedMulInit(typeCode, 0);
+            }
+            [commandEncoder setBytes:&result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:&strideA length: sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:&strideB length: sizeof(size_m) atIndex:5];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedMulComputeState[typeCode][0]];
+            _dispatchExecutionSize = MTLSizeMake(result.total_size, 1, 1);
+        } else if (rDims == 2) {
+            // 2 dim specialisation
+            if (!GlobalGPUManager.BrodcastedMulInit[typeCode][1]) {
+                GlobalGPUManager.initBrodcastedMulInit(typeCode, 1);
+            }
+            [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedMulComputeState[typeCode][1]];
+            _dispatchExecutionSize = MTLSizeMake(result.shape[1], result.shape[0], 1);
+        } else if (rDims == 3) {
+            // 3 dim specialisation
+            if (!GlobalGPUManager.BrodcastedMulInit[typeCode][2]) {
+                GlobalGPUManager.initBrodcastedMulInit(typeCode, 2);
+            }
+            [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedMulComputeState[typeCode][2]];
+            _dispatchExecutionSize = MTLSizeMake(result.shape[2], result.shape[1], result.shape[0]);
+        } else {
+            // N dim specialisation
+            if (!GlobalGPUManager.BrodcastedMulInit[typeCode][3]) {
+                GlobalGPUManager.initBrodcastedMulInit(typeCode, 3);
+            }
+            [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+            [commandEncoder setBytes:result.shape length:rDims * sizeof(size_m) atIndex:6];
+            [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:7];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedMulComputeState[typeCode][3]];
+            _dispatchExecutionSize = MTLSizeMake(result.shape[resultDims-1], result.shape[resultDims-2], result.accumul(0, resultDims-2));
+        }
 
-        [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
-        [commandEncoder setBytes:&strideA length:resultDims * sizeof(size_m) atIndex:4];
-        [commandEncoder setBytes:&strideB length:resultDims * sizeof(size_m) atIndex:5];
-        [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:6];
-        [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedMulComputeState[typeCode]];
         [commandEncoder dispatchThreads:_dispatchExecutionSize
                   threadsPerThreadgroup:_threadsPerThreadgroup];
         [commandEncoder endEncoding];
@@ -2675,13 +2781,9 @@ public:
 //
         uint8_t typeCode = get_dtype_code<Type>();
         
-        if (!GlobalGPUManager.BrodcastedDivInit[typeCode]) {
-            GlobalGPUManager.initBrodcastedDivInit(typeCode);
-        }
         
         if (resultDims != fmax(dims, dimsB)) {
-            std::invalid_argument("Incompatible dims of the result mat");
-            throw;
+            throw std::invalid_argument("MatrixH: Incompatible dims of the result mat");
         }
         
         size_m strideA[resultDims];
@@ -2706,7 +2808,7 @@ public:
                     result.shape[resultDims-i-1] = shape[dims-i-1];
                     strideB[resultDims-i-1] =0;
                 } else {
-                    std::invalid_argument("Incompatible shapes for broadcasting");
+                    throw std::invalid_argument("MatrixH: Incompatible shapes for broadcasting");
                 }
             } else {
                 result.shape[resultDims-i-1] = shape[dims-i-1];
@@ -2731,12 +2833,52 @@ public:
         [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
         setBufferOrBytes(commandEncoder, *this, 1);
         setBufferOrBytes(commandEncoder, other, 2);
-        [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
-        [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
-        [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
-        [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:6];
+
         
-        [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedDivComputeState[typeCode]];
+        if (rDims == 1) {
+            // 1 dim specialisation
+            if (!GlobalGPUManager.BrodcastedDivInit[typeCode][0]) {
+                GlobalGPUManager.initBrodcastedDivInit(typeCode, 0);
+            }
+            [commandEncoder setBytes:&result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:&strideA length: sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:&strideB length: sizeof(size_m) atIndex:5];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedDivComputeState[typeCode][0]];
+            _dispatchExecutionSize = MTLSizeMake(result.total_size, 1, 1);
+        } else if (rDims == 2) {
+            // 2 dim specialisation
+            if (!GlobalGPUManager.BrodcastedDivInit[typeCode][1]) {
+                GlobalGPUManager.initBrodcastedDivInit(typeCode, 1);
+            }
+            [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedDivComputeState[typeCode][1]];
+            _dispatchExecutionSize = MTLSizeMake(result.shape[1], result.shape[0], 1);
+        } else if (rDims == 3) {
+            // 3 dim specialisation
+            if (!GlobalGPUManager.BrodcastedDivInit[typeCode][2]) {
+                GlobalGPUManager.initBrodcastedDivInit(typeCode, 2);
+            }
+            [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedDivComputeState[typeCode][2]];
+            _dispatchExecutionSize = MTLSizeMake(result.shape[2], result.shape[1], result.shape[0]);
+        } else {
+            // N dim specialisation
+            if (!GlobalGPUManager.BrodcastedDivInit[typeCode][3]) {
+                GlobalGPUManager.initBrodcastedDivInit(typeCode, 3);
+            }
+            [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+            [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+            [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+            [commandEncoder setBytes:result.shape length:rDims * sizeof(size_m) atIndex:6];
+            [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:7];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedDivComputeState[typeCode][3]];
+            _dispatchExecutionSize = MTLSizeMake(result.shape[resultDims-1], result.shape[resultDims-2], result.accumul(0, resultDims-2));
+        }
+
         [commandEncoder dispatchThreads:_dispatchExecutionSize
                   threadsPerThreadgroup:_threadsPerThreadgroup];
         
