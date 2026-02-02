@@ -2436,8 +2436,8 @@ public:
             throw;
         }
         
-        size_m* strideA = new size_m[resultDims];
-        size_m* strideB = new size_m[resultDims];
+        size_m strideA[resultDims];
+        size_m strideB[resultDims];
 
         memcpy(strideA + (resultDims -  dims), strides, dims * sizeof(size_m));
         memcpy(strideB + (resultDims - dimsB), other.strides, dimsB * sizeof(size_m));
@@ -2496,9 +2496,6 @@ public:
         [commandEncoder endEncoding];
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
-        
-        delete[] strideA;
-        delete[] strideB;
     }
     
     template <int dimsB, int resultDims>
@@ -2522,8 +2519,8 @@ public:
             throw;
         }
         
-        size_m* strideA = new size_m[resultDims];
-        size_m* strideB = new size_m[resultDims];
+        size_m strideA[resultDims];
+        size_m strideB[resultDims];
 
         memcpy(strideA + (resultDims -  dims), strides, dims * sizeof(size_m));
         memcpy(strideB + (resultDims - dimsB), other.strides, dimsB * sizeof(size_m));
@@ -2581,9 +2578,6 @@ public:
         [commandEncoder endEncoding];
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
-        
-        delete[] strideA;
-        delete[] strideB;
     }
     
     template <int dimsB, int resultDims>
@@ -2667,10 +2661,6 @@ public:
         [commandEncoder endEncoding];
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
-        
-        delete[] strideA;
-        delete[] strideB;
-
     }
     
     template <int dimsB, int resultDims>
@@ -2694,8 +2684,8 @@ public:
             throw;
         }
         
-        size_m* strideA = new size_m[resultDims];
-        size_m* strideB = new size_m[resultDims];
+        size_m strideA[resultDims];
+        size_m strideB[resultDims];
 
         memcpy(strideA + (resultDims -  dims), strides, dims * sizeof(size_m));
         memcpy(strideB + (resultDims - dimsB), other.strides, dimsB * sizeof(size_m));
@@ -2753,9 +2743,6 @@ public:
         [commandEncoder endEncoding];
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
-        
-        delete[] strideA;
-        delete[] strideB;
     }
     
         
