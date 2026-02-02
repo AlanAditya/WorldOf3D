@@ -2496,6 +2496,9 @@ public:
         [commandEncoder endEncoding];
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
+        
+        delete[] strideA;
+        delete[] strideB;
     }
     
     template <int dimsB, int resultDims>
@@ -2578,6 +2581,9 @@ public:
         [commandEncoder endEncoding];
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
+        
+        delete[] strideA;
+        delete[] strideB;
     }
     
     template <int dimsB, int resultDims>
@@ -2661,6 +2667,9 @@ public:
         [commandEncoder endEncoding];
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
+        
+        delete[] strideA;
+        delete[] strideB;
 
     }
     
@@ -2744,6 +2753,9 @@ public:
         [commandEncoder endEncoding];
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
+        
+        delete[] strideA;
+        delete[] strideB;
     }
     
         
