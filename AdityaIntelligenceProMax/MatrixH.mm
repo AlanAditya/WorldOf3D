@@ -680,8 +680,86 @@ public:
         for (int i = 0; i < result.total_size; i++) {
             result.buffer[i] = i+start;
         }
-        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:result.total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-        }];
+        result.buildMetalBuffer();
+        result.calcStrides();
+        return result;
+    }
+    
+    // Random uniform distribution uses std::mt19937 generator which values perfection of distribution over speed.
+    // std::mt19937 is ~2.5KB of state and comparitively slow.
+    static MatrixH<dims, float> rand_uniform(std::initializer_list<size_m> shapeI, Type lower, Type upper) {
+        if (shapeI.size() != dims) {
+            std::cerr << "MatrixH: Shape should not exceed dim of matrix";
+            throw std::invalid_argument("Invalid shape dimensions");
+        }
+        
+        MatrixH<dims, Type> result;
+        std::copy(shapeI.begin(), shapeI.end(), result.shape);
+        result.total_size = result.accumul(0, dims);
+        result.buffer = new Type[result.total_size];
+        
+        if (result.total_size > 10000) {
+            // C++17 Parallel Policy
+            std::for_each(std::execution::par_unseq, result.buffer, result.buffer + result.total_size, 
+                [lower, upper](float& val) {
+                    // Thread-local generator for parallel safety
+                    static thread_local std::mt19937 generator(std::random_device{}());
+                    // Create distribution locally (it's lightweight)
+                    std::uniform_real_distribution<float> distribution(lower, upper);
+                    val = distribution(generator);
+                });
+        } else {
+            // Fast random generation using thread-local RNG
+            static thread_local std::mt19937 generator(std::random_device{}());
+            std::uniform_real_distribution<float> distribution(lower, upper);
+            
+            // Vectorized generation
+            for (size_m i = 0; i < result.total_size; i++) {
+                result.buffer[i] = distribution(generator);
+            }
+        }
+        result.buildMetalBuffer();
+        result.calcStrides();
+        return result;
+    }
+
+    // Random uniform distribution uses std::minstd_rand generator which values speed over perfection of distribution.
+    static MatrixH<dims, float> fast_rand_uniform(std::initializer_list<size_m> shapeI, Type lower, Type upper) {
+        if (shapeI.size() != dims) {
+            std::cerr << "MatrixH: Shape should not exceed dim of matrix";
+            throw std::invalid_argument("Invalid shape dimensions");
+        }
+        
+        MatrixH<dims, Type> result;
+        std::copy(shapeI.begin(), shapeI.end(), result.shape);
+        result.total_size = result.accumul(0, dims);
+        result.buffer = new Type[result.total_size];
+        
+        if (result.total_size > 10000) {
+            // C++17 Parallel Policy
+            std::for_each(std::execution::par_unseq, result.buffer, result.buffer + result.total_size, 
+                [lower, upper](float& val) {
+                    // Thread-local generator for parallel safety
+                    static thread_local std::minstd_rand generator(std::random_device{}());
+                    // Create distribution locally (it's lightweight)
+                    std::uniform_real_distribution<float> distribution(lower, upper);
+                    val = distribution(generator);
+                });
+        } else {
+            // Fast random generation using thread-local RNG
+            static thread_local std::minstd_rand generator(std::random_device{}());
+            std::uniform_real_distribution<float> distribution(lower, upper);
+            
+            // Vectorized generation
+            for (size_m i = 0; i < result.total_size; i++) {
+                result.buffer[i] = distribution(generator);
+            }
+        }
+        result.buildMetalBuffer();
+        result.calcStrides();
+        return result;
+    }
+    
         return result;
     }
     
