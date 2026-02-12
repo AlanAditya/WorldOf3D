@@ -3095,8 +3095,213 @@ public:
             throw std::invalid_argument( "Index Out Of range" );
         }
     #endif
-        return buffer[i];
+        return buffer[i * strides[0]];
     }
+    
+    template <size_t D = dims, typename = std::enable_if_t<(D == 2)>>
+    Type& operator[] (int i, int j) const {
+    #ifdef SAFE_MODE
+        if (i < 0) {
+            i = shape[0] + i;
+        }
+        if (i >= shape[0]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+    #endif
+        return buffer[strides[0] * i + strides[1] * j];
+    }
+    
+    template <size_t D = dims, typename = std::enable_if_t<(D == 3)>>
+    Type& operator[] (int i, int j, int k) const {
+    #ifdef SAFE_MODE
+        if (i < 0) {
+            i = shape[0] + i;
+        }
+        if (i >= shape[0]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (j < 0) {
+            j = shape[1] + j;
+        }
+        if (j >= shape[1]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (k < 0) {
+            k = shape[2] + k;
+        }
+        if (k >= shape[2]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+    #endif
+        return buffer[strides[0] * i + strides[1] * j + strides[2] * k];
+    }
+    
+    template <size_t D = dims, typename = std::enable_if_t<(D == 4)>>
+    Type& operator[] (int i, int j, int k, int l) const {
+    #ifdef SAFE_MODE
+        if (i < 0) {
+            i = shape[0] + i;
+        }
+        if (i >= shape[0]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (j < 0) {
+            j = shape[1] + j;
+        }
+        if (j >= shape[1]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (k < 0) {
+            k = shape[2] + k;
+        }
+        if (k >= shape[2]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (l < 0) {
+            l = shape[3] + l;
+        }
+        if (l >= shape[3]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+    #endif
+        return buffer[strides[0] * i + strides[1] * j + strides[2] * k + strides[3] * l];
+    }
+    
+    template <size_t D = dims, typename = std::enable_if_t<(D == 1)>>
+    inline Type& us(int i) const {
+        return buffer[i * strides[0]];
+    }
+    
+    template <size_t D = dims, typename = std::enable_if_t<(D == 2)>>
+    inline Type& us(int i, int j) const {
+        return buffer[strides[0] * i + strides[1] * j];
+    }
+    
+    template <size_t D = dims, typename = std::enable_if_t<(D == 3)>>
+    inline Type& us(int i, int j, int k) const {
+        return buffer[strides[0] * i + strides[1] * j + strides[2] * k];
+    }
+    
+    template <size_t D = dims, typename = std::enable_if_t<(D == 4)>>
+    inline Type& us (int i, int j, int k, int l) const {
+        return buffer[strides[0] * i + strides[1] * j + strides[2] * k + strides[3] * l];
+    }
+    
+    template <size_t D = dims, typename = std::enable_if_t<(D > 1)>>
+    MatrixH<dims-1, Type> operator[] (int i) const {
+#ifdef SAFE_MODE
+        if (i < 0) {
+            i = shape[0] + i;
+        }
+        if (i >= shape[0]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+#endif
+//        MatrixH<dims-1, Type> result;
+//        result.total_size = accumul(1, dims);
+//        std::memcpy(result.shape, shape + 1, sizeof(size_m) * (dims-1));
+//        result.buffer = buffer + result.total_size * i;
+//        flags |= OWNERSHIP_FLAG;
+//        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:result.total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+//        }];
+        
+        MatrixH<dims-1, Type> slicedMat;
+        slicedMat.buffer = buffer + strides[0] * i;
+        memcpy(slicedMat.strides, strides + 1, (dims-1) * sizeof(size_m));
+        memcpy(slicedMat.shape, shape + 1, (dims-1) * sizeof(size_m));
+        slicedMat.total_size = accumul(1, dims);
+        if (slicedMat.total_size > 10) {
+            slicedMat.buildMetalBuffer();
+        }
+        
+        slicedMat.flags |= OWNERSHIP_FLAG;
+        
+        return slicedMat;
+    }
+    
+    template <size_t D = dims, typename = std::enable_if_t<(D > 2)>>
+    MatrixH<dims-2, Type> operator[] (int i, int j) const {
+    #ifdef SAFE_MODE
+        if (i < 0) {
+            i = shape[0] + i;
+        }
+        if (i >= shape[0]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (j < 0) {
+            j = shape[1] + j;
+        }
+        if (j >= shape[1]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+    #endif
+        MatrixH<dims-2, Type> slicedMat;
+        slicedMat.buffer = buffer + strides[0] * i + strides[1] * j;
+        memcpy(slicedMat.strides, strides + 2, (dims-2) *sizeof(size_m));
+        memcpy(slicedMat.shape, shape + 2, (dims-2) *sizeof(size_m));
+        slicedMat.total_size = accumul(2, dims);
+        if (slicedMat.total_size > 10) {
+            slicedMat.buildMetalBuffer();
+        }
+        slicedMat.flags |= OWNERSHIP_FLAG;
+        return slicedMat;
+    }
+    
+    template <size_t D = dims, typename = std::enable_if_t<(D > 3)>>
+    MatrixH<dims-3, Type> operator[] (int i, int j, int k) const {
+    #ifdef SAFE_MODE
+        if (i < 0) {
+            i = shape[0] + i;
+        }
+        if (i >= shape[0]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (j < 0) {
+            j = shape[1] + j;
+        }
+        if (j >= shape[1]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (k < 0) {
+            k = shape[2] + k;
+        }
+        if (k >= shape[2]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+    #endif
+        MatrixH<dims-3, Type> slicedMat;
+        
+        slicedMat.buffer = buffer + strides[0] * i + strides[1] * j + strides[2] * k;
+        memcpy(slicedMat.strides, strides + 3, (dims-3) *sizeof(size_m));
+        memcpy(slicedMat.shape, shape + 3, (dims-3) *sizeof(size_m));
+        slicedMat.total_size = accumul(3, dims);
+        if (slicedMat.total_size > 10) {
+            slicedMat.buildMetalBuffer();
+        }
+        slicedMat.flags |= OWNERSHIP_FLAG;
+        return slicedMat;
+    }
+    
+    MatrixH<dims, Type> operator[](struct Range r1) {
+
+        
+        return Slice({ {{r1.start, r1.end}} });
+    }
+    
+    MatrixH<dims, Type> operator[](struct Range r1, struct Range r2) {
+
+        
+        return Slice({ {{r1.start, r1.end}}, {{ r2.start, r2.end }} });
+    }
+    
     
     ~MatrixH() {
         #ifdef DestructionLog
