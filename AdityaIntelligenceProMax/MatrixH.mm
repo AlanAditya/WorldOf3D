@@ -2560,7 +2560,7 @@ public:
         setBufferOrBytes(commandEncoder, other, 2);
         
         
-        if (rDims == 1) {
+        if constexpr (resultDims == 1) {
             // 1 dim specialisation
             if (!GlobalGPUManager.BrodcastedAddInit[typeCode][0]) {
                 GlobalGPUManager.initBrodcastedAddInit(typeCode, 0);
@@ -2570,7 +2570,7 @@ public:
             [commandEncoder setBytes:&strideB length: sizeof(size_m) atIndex:5];
             [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedAddComputeState[typeCode][0]];
             _dispatchExecutionSize = MTLSizeMake(result.total_size, 1, 1);
-        } else if (rDims == 2) {
+        } else if constexpr (resultDims == 2) {
             // 2 dim specialisation
             if (!GlobalGPUManager.BrodcastedAddInit[typeCode][1]) {
                 GlobalGPUManager.initBrodcastedAddInit(typeCode, 1);
@@ -2580,7 +2580,7 @@ public:
             [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
             [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedAddComputeState[typeCode][1]];
             _dispatchExecutionSize = MTLSizeMake(result.shape[1], result.shape[0], 1);
-        } else if (rDims == 3) {
+        } else if constexpr (resultDims == 3) {
             // 3 dim specialisation
             if (!GlobalGPUManager.BrodcastedAddInit[typeCode][2]) {
                 GlobalGPUManager.initBrodcastedAddInit(typeCode, 2);
@@ -2678,7 +2678,7 @@ public:
         setBufferOrBytes(commandEncoder, other, 2);
         
         
-        if (rDims == 1) {
+        if constexpr (resultDims == 1) {
             // 1 dim specialisation
             if (!GlobalGPUManager.BrodcastedSubInit[typeCode][0]) {
                 GlobalGPUManager.initBrodcastedSubInit(typeCode, 0);
@@ -2688,7 +2688,7 @@ public:
             [commandEncoder setBytes:&strideB length: sizeof(size_m) atIndex:5];
             [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedSubComputeState[typeCode][0]];
             _dispatchExecutionSize = MTLSizeMake(result.total_size, 1, 1);
-        } else if (rDims == 2) {
+        } else if constexpr (resultDims == 2) {
             // 2 dim specialisation
             if (!GlobalGPUManager.BrodcastedSubInit[typeCode][1]) {
                 GlobalGPUManager.initBrodcastedSubInit(typeCode, 1);
@@ -2698,7 +2698,7 @@ public:
             [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
             [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedSubComputeState[typeCode][1]];
             _dispatchExecutionSize = MTLSizeMake(result.shape[1], result.shape[0], 1);
-        } else if (rDims == 3) {
+        } else if constexpr (resultDims == 3) {
             // 3 dim specialisation
             if (!GlobalGPUManager.BrodcastedSubInit[typeCode][2]) {
                 GlobalGPUManager.initBrodcastedSubInit(typeCode, 2);
@@ -2796,7 +2796,7 @@ public:
         setBufferOrBytes(commandEncoder, *this, 1);
         setBufferOrBytes(commandEncoder, other, 2);
         
-        if (rDims == 1) {
+        if constexpr (resultDims == 1) {
             // 1 dim specialisation
             if (!GlobalGPUManager.BrodcastedMulInit[typeCode][0]) {
                 GlobalGPUManager.initBrodcastedMulInit(typeCode, 0);
@@ -2806,7 +2806,7 @@ public:
             [commandEncoder setBytes:&strideB length: sizeof(size_m) atIndex:5];
             [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedMulComputeState[typeCode][0]];
             _dispatchExecutionSize = MTLSizeMake(result.total_size, 1, 1);
-        } else if (rDims == 2) {
+        } else if constexpr (resultDims == 2) {
             // 2 dim specialisation
             if (!GlobalGPUManager.BrodcastedMulInit[typeCode][1]) {
                 GlobalGPUManager.initBrodcastedMulInit(typeCode, 1);
@@ -2816,7 +2816,7 @@ public:
             [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
             [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedMulComputeState[typeCode][1]];
             _dispatchExecutionSize = MTLSizeMake(result.shape[1], result.shape[0], 1);
-        } else if (rDims == 3) {
+        } else if constexpr (resultDims == 3) {
             // 3 dim specialisation
             if (!GlobalGPUManager.BrodcastedMulInit[typeCode][2]) {
                 GlobalGPUManager.initBrodcastedMulInit(typeCode, 2);
@@ -2913,7 +2913,7 @@ public:
         setBufferOrBytes(commandEncoder, other, 2);
 
         
-        if (rDims == 1) {
+        if constexpr (resultDims == 1) {
             // 1 dim specialisation
             if (!GlobalGPUManager.BrodcastedDivInit[typeCode][0]) {
                 GlobalGPUManager.initBrodcastedDivInit(typeCode, 0);
@@ -2923,7 +2923,7 @@ public:
             [commandEncoder setBytes:&strideB length: sizeof(size_m) atIndex:5];
             [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedDivComputeState[typeCode][0]];
             _dispatchExecutionSize = MTLSizeMake(result.total_size, 1, 1);
-        } else if (rDims == 2) {
+        } else if constexpr (resultDims == 2) {
             // 2 dim specialisation
             if (!GlobalGPUManager.BrodcastedDivInit[typeCode][1]) {
                 GlobalGPUManager.initBrodcastedDivInit(typeCode, 1);
@@ -2933,7 +2933,7 @@ public:
             [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
             [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedDivComputeState[typeCode][1]];
             _dispatchExecutionSize = MTLSizeMake(result.shape[1], result.shape[0], 1);
-        } else if (rDims == 3) {
+        } else if constexpr (resultDims == 3) {
             // 3 dim specialisation
             if (!GlobalGPUManager.BrodcastedDivInit[typeCode][2]) {
                 GlobalGPUManager.initBrodcastedDivInit(typeCode, 2);
