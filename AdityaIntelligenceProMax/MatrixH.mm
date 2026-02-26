@@ -13,8 +13,11 @@
 #import <Vision/Vision.h>
 #import <ModelIO/ModelIO.h>
 #import <MLCompute/MLCTensor.h>
+#include <cstddef>
+#include <typeinfo>
 #if !TARGET_OS_IPHONE
 #import <Cocoa/Cocoa.h>
+#import <AppKit/AppKit.h>
 #endif
 
 #if TARGET_OS_IPHONE
@@ -28,73 +31,44 @@ typedef uint16_t uint16;
 #include <chrono>
 #include <mlx/mlx.h>
 #include <span>
+#import "Matrix.mm"
+//#include "TestTracer.h"
+#include <random>
+#include <map>
+#include <utility>
 
-#define SAFE_MODE
+#import <CoreText/CoreText.h>
+#import <CoreGraphics/CoreGraphics.h>
+#include <vector>
+#include <map>
+#include <Accelerate/Accelerate.h>
 @import GPUManager;
-#define CreationLog
-#define DestructionLog
-#define CopyLog
-#define MoveLog
+@import GeometryNode;
+@import Utils;
+@import Camera3D;
+#import <SwiftUI/SwiftUI.h>
 
+//#include "FaceLandmarkWrapper.h"
+//#include <mediapipe/mediapipe/framework/calculator_graph.h>
+
+@import SwiftUI;
+#define FAST_MAX(a, b) ((a) > (b) ? (a) : (b))
+#define R(start, end) Range(start, end)
+#pragma once // <--- 1. Prevents recursive inclusion
+#define SAFE_MODE
+
+//#define CreationLog
+//#define DestructionLog
+//#define CopyLog
+//#define MoveLog
+
+
+int mediapipe_xcode_dylib_dummy_symbol();
 constexpr auto null = std::nullopt;
+using size_m = uint32_t;
+simd_float3 ORIGIN = simd_make_float3(0, 0, 0);
 
-simd::float4x4 Identity() {
-    simd_float4 row0 = {1.0f, 0.0f, 0.0f, 0.0f};
-    simd_float4 row1 = {0.0f, 1.0f, 0.0f, 0.0f};
-    simd_float4 row2 = {0.0f, 0.0f, 1.0f, 0.0f};
-    simd_float4 row3 = {0.0f, 0.0f, 0.0f, 1.0f};
-    return simd_matrix(row0, row1, row2, row3);
-}
 
-simd::float4x4 Translation(simd::float3 dPos) {
-    
-    simd_float4 row0 = {1.0f, 0.0f, 0.0f, 0.0f};
-    simd_float4 row1 = {0.0f, 1.0f, 0.0f, 0.0f};
-    simd_float4 row2 = {0.0f, 0.0f, 1.0f, 0.0f};
-    simd_float4 row3 = {dPos[0], dPos[1], dPos[2], 1.0f};
-    return simd_matrix(row0, row1, row2, row3);
-}
-
-simd::float4x4 RotationZ(float theta) {
-    theta = theta * M_PI / 180;
-    float sin = sinf(theta);
-    float cos = cosf(theta);
-    simd_float4 row0 = {cos, sin, 0.0f, 0.0f};
-    simd_float4 row1 = {-sin, cos, 0.0f, 0.0f};
-    simd_float4 row2 = {0.0f, 0.0f, 1.0f, 0.0f};
-    simd_float4 row3 = {0.0f, 0.0f, 0.0f, 1.0f};
-    return simd_matrix(row0, row1, row2, row3);
-}
-
-simd::float4x4 RotationY(float theta) {
-    theta = theta * M_PI / 180;
-    float sin = sinf(theta);
-    float cos = cosf(theta);
-    simd_float4 row0 = {cos, 0.0f, sin, 0.0f};
-    simd_float4 row1 = {0.0f, 1.0f, 0.0f, 0.0f};
-    simd_float4 row2 = {-sin, 0.0f, cos, 0.0f};
-    simd_float4 row3 = {0.0f, 0.0f, 0.0f, 1.0f};
-    return simd_matrix(row0, row1, row2, row3);
-}
-
-simd::float4x4 RotationX(float theta) {
-    theta = theta * M_PI / 180;
-    float sin = sinf(theta);
-    float cos = cosf(theta);
-    simd_float4 row0 = {1.0f, 0.0f, 0.0f, 0.0f};
-    simd_float4 row1 = {0.0f, cos, -sin, 0.0f};
-    simd_float4 row2 = {0.0f, sin, cos, 0.0f};
-    simd_float4 row3 = {0.0f, 0.0f, 0.0f, 1.0f};
-    return simd_matrix(row0, row1, row2, row3);
-}
-
-simd::float4x4 Scale(simd::float3 scale) {
-    simd_float4 row0 = {scale.x, 0.0f, 0.0f, 0.0f};
-    simd_float4 row1 = {0.0f, scale.y, 0.0f, 0.0f};
-    simd_float4 row2 = {0.0f, 0.0f, scale.z, 0.0f};
-    simd_float4 row3 = {0.0f, 0.0f, 0.0f, 1.0f};
-    return simd_matrix(row0, row1, row2, row3);
-}
 
 std::ostream& operator<<(std::ostream& os, const simd::float4& matrix) {
     std::cout << "{ " << matrix.x << ", " << matrix.y << ", " << matrix.z << ", " << matrix.w <<" }";
@@ -123,7 +97,18 @@ void printArray(T* pointer, uint32_t size) {
     std::cout << "} \n";
 }
 
+template <typename T>
+T dotArray(const T* buff1, const T* buff2 ,const uint32_t size) {
+    T acc = 0;
+    for (uint32_t i = 0; i < size; i++) {
+        acc += buff1[i] * buff2[i];
+    }
+    return acc;
+}
+
 typedef char simd_packed_char3 __attribute__((ext_vector_type(3)));
+
+
 
 float CosOfVec(simd_float2 a, simd_float2 b, bool& orientation) {
     if (simd_cross(a, b).z >= 0) {
@@ -159,7 +144,7 @@ void reverseBuffer(const T* src, T* des, size_t len) {
     }
 }
 
-void PatternFill(void* destination, void* pattern, size_t patternSize, uint32_t n) {
+void PatternFill(void* destination, const void* pattern, size_t patternSize, uint32_t n) {
     uint32_t exp = 0;
     uint32_t pO2 = 1;
     while ((1u << (exp + 1)) <= n) {
@@ -190,8 +175,8 @@ public:
         auto start = std::chrono::time_point_cast<std::chrono::nanoseconds>(m_startTime).time_since_epoch().count();
         auto end = std::chrono::time_point_cast<std::chrono::nanoseconds>(endPointTime).time_since_epoch().count();
         auto duration = end - start;
-        double ms = duration * 0.001;
-        std::cout << "It took " << duration << " ns " << ms << " ms " <<  "\n";
+        double us = duration * 0.001;
+        std::cout << "It took " << duration << " ns " << us << " us " <<  "\n";
     }
 private:
     std::chrono::time_point<std::chrono::high_resolution_clock> m_startTime;
@@ -379,7 +364,72 @@ public:
 template <int dims, typename Type>
 class MatrixH;
 
-static GPUManager GlobalGPUManager = GPUManager();
+
+
+template <typename T>
+void fill_nd_iterative(
+    T* base,
+    const size_m* shape,
+    const size_m* strides,
+    const int dims,
+    const T& value)
+{
+    const size_t ndim = dims;
+    if (ndim == 0) return;
+    if (ndim == 1) {
+        // Single dimension — contiguous or strided
+        for (size_t i = 0; i < shape[0]; i++) {
+            base[i * strides[0]] = value;
+        }
+        return;
+    }
+
+    // Logical indices for each dimension
+    std::vector<size_t> idx(ndim, 0);
+    T* ptr = base;
+
+    while (true) {
+        // Fill the innermost dimension in a tight loop
+        for (size_t i = 0; i < shape[ndim - 1]; i++) {
+            ptr[i * strides[ndim - 1]] = value;
+        }
+
+        // Increment multi-dimensional index (except last dim)
+        size_t dim = ndim - 2; // start from second-last dimension
+        while (true) {
+            idx[dim]++;
+            ptr += strides[dim]; // move pointer by stride[dim] elements
+
+            if (idx[dim] < shape[dim]) {
+                // We can break and do the next row
+                break;
+            } else {
+                // Reset this dim and move up one
+                idx[dim] = 0;
+                ptr = base;
+                for (size_t d = 0; d < dim; d++) {
+                    ptr += idx[d] * strides[d];
+                }
+                if (dim == 0) {
+                    return; // All done
+                }
+                dim--;
+            }
+        }
+    }
+}
+
+enum class ConvMode : uint8_t {
+    Full = 0,
+    Valid = 1,
+    Same  = 2  // optional common mode
+};
+
+enum class ConvModeFull : uint8_t {
+    Normal = 0,
+    Extend = 1,
+    Mirror  = 2  // optional common mode
+};
 
 template <typename T, int dims>
 struct nested_initializer_list;
@@ -392,6 +442,10 @@ struct nested_initializer_list<T, 1> {
 template <typename T, int dims>
 struct nested_initializer_list {
     using type = std::initializer_list<typename nested_initializer_list<T, dims - 1>::type>;
+};
+template <typename T>
+struct nested_initializer_list<T, 0> {
+    using type = T;
 };
 
 enum Flags : unsigned int {
@@ -417,9 +471,9 @@ public:
         buffer = new Type[total_size];
         int k = 0;
         writeInBuffer(nestedList, k);
-        metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-        }];
-        
+        if (total_size > 10) {
+            buildMetalBuffer();
+        }
         #ifdef CreationLog
         std::cout << "Created" << "\n";
         #endif
@@ -564,13 +618,11 @@ public:
 //    - Eliminates race conditions in GPU compute operations on broadcasted/reshaped tensors
     void buildMetalBuffer() {
         if (total_size == 0 && !buffer) {std::cout << "failed to build MTL buffer with size 0"; return;}
-        if (flags & NON_CONTIGUOUS_FLAG) {
-            metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:shape[0]*strides[0] * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-            }];
-        } else {
-            metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-            }];
-        }
+//        if (total_size < 10) { return; }
+
+       metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:effectiveBufferSize() * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+       }];
+        
     }
     void copyFrom(MatrixH<dims, Type>& input) {
         if (!buffer) {
@@ -2459,9 +2511,57 @@ public:
         return result;
     }
     
+    MatrixH<dims, Type> cross(const MatrixH<dims, Type> &other) {
+#ifdef SAFE_MODE
+        if (3 != shape[dims-1]) {
+            std::cerr << "ValueError: last dim should be 3 (" ;
+            printShape(false);
+            std::cerr << ") \n";
+            throw;
+        }
+        if (3 != other.shape[dims-1]) {
+            std::cerr << "ValueError: last dim should be 3 (" ;
+            other.printShape(false);
+            std::cerr << ") \n";
+            throw;
+        }
+#endif
+        
+        MatrixH<dims, Type> result = other.zeros();
+        for (int i = 0; i < accumul(0, dims-1); i++) {
+            *(simd_float3*)(result.buffer + 3*i) = simd_cross(*(simd_float3*)(buffer + 3*i), *(simd_float3*)(other.buffer + 3*i));
+        }
+        return result;
+    }
+    
+    MatrixH<dims-1, Type> length(const MatrixH<dims, Type> &other) {
+#ifdef SAFE_MODE
+        if (3 != shape[dims-1]) {
+            std::cerr << "ValueError: last dim should be 3 (" ;
+            printShape(false);
+            std::cerr << ") \n";
+            throw;
+        }
+        if (3 != other.shape[dims-1]) {
+            std::cerr << "ValueError: last dim should be 3 (" ;
+            other.printShape(false);
+            std::cerr << ") \n";
+            throw;
+        }
+#endif
+        
+        MatrixH<dims-1, Type> result(accumul(0, dims-1));
+        for (int i = 0; i < accumul(0, dims-1); i++) {
+            *(simd_float3*)(result.buffer + 3*i) = simd_length(*(simd_float3*)(buffer + 3*i));
+        }
+        return result;
+    }
+    
+    
     MatrixH<dims, Type> Dot(const MatrixH<dims, Type> &other, bool TransposeB) {
 
         if (TransposeB) {
+#ifdef SAFE_MODE
             if (shape[dims - 1] != other.shape[dims-1]) {
                 std::cerr << "ValueError: shapes (" ;
                 printShape(false);
@@ -2470,10 +2570,12 @@ public:
                 std::cerr << ") not aligned: "<< shape[dims-1]<<" (dim "<< dims-1 <<") != "<< other.shape[dims-1] <<" (dim dims-1) \n";
                 throw;
             }
+#endif
             MatrixH<dims, Type> result = MatrixH<dims, Type>::withShape({shape[0], other.shape[0]});
             Dot(result, other, TransposeB);
             return result;
         } else {
+#ifdef SAFE_MODE
             if (shape[dims - 1] != other.shape[0]) {
                 std::cerr << "ValueError: shapes (" ;
                 printShape(false);
@@ -2482,6 +2584,7 @@ public:
                 std::cerr << ") not aligned: "<< shape[dims-1]<<" (dim "<< dims-1 <<") != "<< other.shape[0] <<" (dim 0) \n";
                 throw;
             }
+#endif
             MatrixH<dims, Type> result = MatrixH<dims, Type>::withShape({shape[0], other.shape[1]});
             Dot(result, other, TransposeB);
             return result;
@@ -3010,13 +3113,64 @@ public:
         [commandBuffer waitUntilCompleted];
     }
     
-    MatrixH<dims, Type> operator+(MatrixH<dims, Type> &other) {
+    template<int dimsB>
+    MatrixH<dims, Type> operator+(const MatrixH<dimsB, Type> &other) requires (dims > dimsB) {
         MatrixH<dims, Type> result;
-        result.buffer = new Type[total_size];
-        result.total_size = total_size;
-        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-        }];
-        memcpy(result.shape, shape, sizeof(size_t) * dims);
+        if (FAST_MAX(total_size, other.total_size) < 10) { BrodcastedAddCPU(result, other); } else { BroadcastedAdd(result, other); }
+        return result;
+    }
+    
+    template<int dimsB>
+    MatrixH<dimsB, Type> operator+(const MatrixH<dimsB, Type> &other) requires (dims < dimsB) {
+        MatrixH<dimsB, Type> result;
+        if (FAST_MAX(total_size, other.total_size) < 10) { BrodcastedAddCPU(result, other); } else { BroadcastedAdd(result, other); }
+        return result;
+    }
+    
+    MatrixH<dims, Type> operator+(const Type value) const {
+        MatrixH<dims, Type> result;
+        
+        if (total_size < 10) {
+            auto other = MatrixH<0, Type>(value, false);
+            BrodcastedAddCPU(result, other);
+        } else {
+            auto other = MatrixH<0, Type>(value, true);
+            BroadcastedAdd(result, other); }
+        return result;
+    }
+    
+    friend MatrixH<dims, Type> operator+(Type value, const MatrixH<dims, Type>& mat) {
+        MatrixH<dims, Type> result;
+        
+        
+        if (mat.total_size  < 10) {
+            auto other = MatrixH<0, Type>(value, false);
+            mat.BroadcastedAdd(result, other);
+        } else {
+            auto other = MatrixH<0, Type>(value, true);
+            mat.BroadcastedAdd(result, other);
+        }
+        return result;
+    }
+    
+    MatrixH<dims, Type> operator+(const MatrixH<dims, Type> &other) {
+        MatrixH<dims, Type> result;
+        if (FAST_MAX(total_size, other.total_size) < 10) {
+            if (total_size == other.total_size) {
+                AddSameCPU(result, other);
+            } else {
+                BrodcastedAddCPU(result, other);
+            }
+        } else if (total_size == other.total_size && !(flags & NON_CONTIGUOUS_FLAG)) {
+            result.buffer = new Type[effectiveBufferSize()];
+            result.total_size = total_size;
+            result.buildMetalBuffer();
+            memcpy(result.shape, shape, sizeof(size_m) * dims);
+            memcpy(result.strides, strides, sizeof(size_m) * dims);
+            Add(result, other);
+        } else {
+            BroadcastedAdd(result, other);
+        }
         
 //        id<MTLDevice> metalDevice = MTLCreateSystemDefaultDevice();
 //        
@@ -3063,27 +3217,180 @@ public:
 //        [commandEncoder endEncoding];
 //        [commandBuffer commit];
 //        [commandBuffer waitUntilCompleted];
-        Add(result, other);
+        
         return result;
     }
     
-    template <size_t D = dims, typename = std::enable_if_t<(D > 1)>>
-    MatrixH<dims-1, Type> operator[] (int i) {
-        if (i < 0) {
-            i = shape[0] + i;
-        }
-        if (i >= shape[0]) {
-            throw std::invalid_argument( "Index Out Of range" );
-        }
-        MatrixH<dims-1, Type> result;
-        result.total_size = accumul(1, dims);
-        std::memcpy(result.shape, shape + 1, sizeof(size_t) * (dims-1));
-        result.buffer = buffer + result.total_size * i;
-        flags |= (1u << 0);      // sets bit 0 to
-        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:result.total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-        }];
+    template<int dimsB>
+    MatrixH<dims, Type> operator*(const MatrixH<dimsB, Type> &other) requires (dims > dimsB) {
+        MatrixH<dims, Type> result;
+        if (FAST_MAX(total_size, other.total_size) < 10) { BrodcastedMulCPU(result, other); } else { BrodcastedMul(result, other); }
         return result;
     }
+    
+    template<int dimsB>
+    MatrixH<dimsB, Type> operator*(const MatrixH<dimsB, Type> &other) requires (dims < dimsB) {
+        MatrixH<dimsB, Type> result;
+        if (FAST_MAX(total_size, other.total_size) < 10) { BrodcastedMulCPU(result, other); } else { BrodcastedMul(result, other); }
+        return result;
+    }
+    
+    MatrixH<dims, Type> operator*(const Type value) const {
+        MatrixH<dims, Type> result;
+        
+        if (total_size < 10) {
+            MulConstCPU(result, value);
+        }
+        else {
+            auto other = MatrixH<0, Type>(value, true);
+            BrodcastedMul(result, other);
+        }
+        return result;
+    }
+    friend MatrixH<dims, Type> operator*(Type value, const MatrixH<dims, Type>& mat) {
+        MatrixH<dims, Type> result;
+        if (mat.total_size < 10) {
+            mat.MulConstCPU(result, value); }
+        else {
+            auto other = MatrixH<0, Type>(value, true);
+            mat.BrodcastedMul(result, other);
+        }
+        return result;
+    }
+    
+
+    MatrixH<dims, Type> operator*(const MatrixH<dims, Type>& other) const {
+        if (FAST_MAX(total_size, other.total_size) < 10) {
+            MatrixH<dims, Type> result;
+            if (total_size == other.total_size) {
+                MulSameCPU(result, other);
+            } else {
+                BrodcastedMulCPU(result, other);
+            }
+            return result;
+        }
+        else if (total_size == other.total_size) {
+//            return MulMat(other);
+            MatrixH<dims, Type> result;
+            BrodcastedMul(result, other);
+            return result;
+        } else {
+            MatrixH<dims, Type> result;
+            BrodcastedMul(result, other);
+            return result;
+        }
+    }
+    // Division
+    
+    template<int dimsB>
+    MatrixH<dims, Type> operator/(const MatrixH<dimsB, Type> &other) requires (dims > dimsB) {
+        
+        MatrixH<dims, Type> result;
+        if (FAST_MAX(total_size, other.total_size) < 10) { BrodcastedDivCPU(result, other); } else { BrodcastedDiv(result, other);}
+        return result;
+    }
+    
+    template<int dimsB>
+    MatrixH<dimsB, Type> operator/(const MatrixH<dimsB, Type> &other) requires (dims < dimsB) {
+        MatrixH<dimsB, Type> result;
+        if (FAST_MAX(total_size, other.total_size) < 10) { BrodcastedDivCPU(result, other); } else { BrodcastedDiv(result, other);}
+        return result;
+    }
+    
+    template<int dimsB>
+    MatrixH<dimsB, Type> operator/(const MatrixH<dimsB, Type> &other) requires (dims == dimsB) {
+        MatrixH<dimsB, Type> result;
+        if (FAST_MAX(total_size, other.total_size) < 10) {
+            if (total_size == other.total_size) {
+                DivSameCPU(result, other);
+            } else {
+                BrodcastedDivCPU(result, other);
+            }
+        } else { BrodcastedDiv(result, other);
+        }
+        return result;
+    }
+    
+    MatrixH<dims, Type> operator/(const Type value) {
+        MatrixH<dims, Type> result;
+        
+        if (total_size < 10) {
+            DivConstCPU(result, value);
+        } else {
+            auto other = MatrixH<0, Type>(value, true);
+            BrodcastedDiv(result, other);
+        }
+        return result;
+    }
+    
+    friend MatrixH<dims, Type> operator/(Type value, const MatrixH<dims, Type>& mat) {
+        MatrixH<dims, Type> result;
+
+        if (mat.total_size < 10) {
+            mat.DivConstRevCPU(result, value);
+        } else {
+            auto other = MatrixH<0, Type>(value, true);
+            other.BrodcastedDiv(result, mat);
+        }
+        
+        return result;
+    }
+    
+    // Subtraction
+    
+    template<int dimsB>
+    MatrixH<dims, Type> operator-(const MatrixH<dimsB, Type> &other) requires (dims > dimsB) {
+        MatrixH<dims, Type> result;
+        if (FAST_MAX(total_size, other.total_size) < 10)  { BrodcastedSubCPU(result, other); } else { BrodcastedSub(result, other);}
+        return result;
+    }
+    
+    template<int dimsB>
+    MatrixH<dimsB, Type> operator-(const MatrixH<dimsB, Type> &other) requires (dims < dimsB) {
+        MatrixH<dimsB, Type> result;
+        if (FAST_MAX(total_size, other.total_size) < 10)  { BrodcastedSubCPU(result, other); } else { BrodcastedSub(result, other);}
+        return result;
+    }
+    
+    template<int dimsB>
+    MatrixH<dims, Type> operator-(const MatrixH<dimsB, Type> &other) requires (dims == dimsB) {
+        MatrixH<dims, Type> result;
+        if (FAST_MAX(total_size, other.total_size) < 10)  {
+            if (total_size == other.total_size) {
+                SubSameCPU(result, other);
+            } else {
+                BrodcastedSubCPU(result, other);
+            }
+        
+        } else {
+            BrodcastedSub(result, other);
+        }
+        return result;
+    }
+    
+    MatrixH<dims, Type> operator-(const Type value) {
+        MatrixH<dims, Type> result;
+        
+        if (total_size < 10) {
+            SubConstCPU(result, value);
+        } else {
+            auto other = MatrixH<0, Type>(value, true);
+            BrodcastedSub(result, other);
+        }
+        return result;
+    }
+    friend MatrixH<dims, Type> operator-(Type value, const MatrixH<dims, Type>& mat) {
+        MatrixH<dims, Type> result;
+        
+        if (mat.total_size < 10) {
+            mat.SubConstRevCPU(result, value);
+        } else {
+            auto other = MatrixH<0, Type>(value, true);
+            other.BrodcastedSub(result, mat);
+        }
+        return result;
+    }
+
     
     template <size_t D = dims, typename = std::enable_if_t<(D == 1)>>
     Type& operator[] (int i) const {
@@ -3172,6 +3479,47 @@ public:
         return buffer[strides[0] * i + strides[1] * j + strides[2] * k + strides[3] * l];
     }
     
+    template <size_t D = dims, typename = std::enable_if_t<(D == 5)>>
+    Type& operator[] (int i, int j, int k, int l, int w) const {
+    #ifdef SAFE_MODE
+        if (i < 0) {
+            i = shape[0] + i;
+        }
+        if (i >= shape[0]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (j < 0) {
+            j = shape[1] + j;
+        }
+        if (j >= shape[1]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (k < 0) {
+            k = shape[2] + k;
+        }
+        if (k >= shape[2]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (l < 0) {
+            l = shape[3] + l;
+        }
+        if (l >= shape[3]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (w < 0) {
+            w = shape[4] + w;
+        }
+        if (w >= shape[4]) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+    #endif
+        return buffer[strides[0] * i + strides[1] * j + strides[2] * k + strides[3] * l + strides[4] * w];
+    }
+    
     template <size_t D = dims, typename = std::enable_if_t<(D == 1)>>
     inline Type& us(int i) const {
         return buffer[i * strides[0]];
@@ -3249,7 +3597,7 @@ public:
         if (slicedMat.total_size > 10) {
             slicedMat.buildMetalBuffer();
         }
-        slicedMat.flags |= OWNERSHIP_FLAG;
+        slicedMat.flags |= NON_OWNERSHIP_FLAG;
         return slicedMat;
     }
     
@@ -3286,7 +3634,60 @@ public:
         if (slicedMat.total_size > 10) {
             slicedMat.buildMetalBuffer();
         }
-        slicedMat.flags |= OWNERSHIP_FLAG;
+        slicedMat.flags |= NON_OWNERSHIP_FLAG;
+        return slicedMat;
+    }
+    
+    template <size_t D = dims, typename = std::enable_if_t<(D > 4)>>
+    MatrixH<dims-4, Type> operator[] (int i, int j, int k, int l) const {
+    #ifdef SAFE_MODE
+        if (i < 0) {
+            i = shape[0] + i;
+        }
+        if (i >= shape[0] || i < 0) { // Added < 0 catch in case abs(negative index) > shape
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (j < 0) {
+            j = shape[1] + j;
+        }
+        if (j >= shape[1] || j < 0) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+        
+        if (k < 0) {
+            k = shape[2] + k;
+        }
+        if (k >= shape[2] || k < 0) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+
+        if (l < 0) {
+            l = shape[3] + l;
+        }
+        if (l >= shape[3] || l < 0) {
+            throw std::invalid_argument( "Index Out Of range" );
+        }
+    #endif // SAFE_MODE
+
+        MatrixH<dims-4, Type> slicedMat;
+        
+        // Offset the buffer pointer by 4 strides
+        slicedMat.buffer = buffer + strides[0] * i + strides[1] * j + strides[2] * k + strides[3] * l;
+        
+        // Copy the remaining strides and shapes, shifting the pointer by 4
+        memcpy(slicedMat.strides, strides + 4, (dims-4) * sizeof(size_m));
+        memcpy(slicedMat.shape, shape + 4, (dims-4) * sizeof(size_m));
+        
+        // Accumulate from the 4th index onward
+        slicedMat.total_size = accumul(4, dims);
+        
+        if (slicedMat.total_size > 10) {
+            slicedMat.buildMetalBuffer();
+        }
+        
+        slicedMat.flags |= NON_OWNERSHIP_FLAG;
+        
         return slicedMat;
     }
     
@@ -3313,8 +3714,9 @@ public:
 //            delete [] buffer;
 //            std::cout << "deleted" << "\n";
 //        }
-        if (!(flags & OWNERSHIP_FLAG)) {
+        if (!(flags & NON_OWNERSHIP_FLAG)) {
             delete [] buffer;
+            buffer = nullptr;
             #ifdef DestructionLog
             std::cout << "deleted" << "\n";
             #endif
@@ -3331,6 +3733,8 @@ public:
             total_size = other.total_size;
             metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
             }];
+//        gradFunc = other.gradFunc;
+//        parentNodes = other.parentNodes;
 //        } else if (total_size != other.total_size) {
 //            // copy constructor doesnt need to delete it
 ////            if (buffer) {
@@ -3340,9 +3744,12 @@ public:
 //            total_size = other.total_size;
 //
 //        }
-        
+        flags = other.flags; // FIX: We are allocating new buffer, so we own it. Reset the ownership flags.
+        flags &= ~NON_OWNERSHIP_FLAG;
         memcpy(buffer, other.buffer, sizeof(Type) * total_size);
-        memcpy(shape, other.shape, sizeof(size_t) * dims);
+        memcpy(shape, other.shape, sizeof(size_m) * dims);
+        memcpy(strides, other.strides, dims * sizeof(size_m));
+        tape = other.tape;
     }
     
     MatrixH( MatrixH<dims, Type>&& other) : MatrixBase(dims, dtype_from_type<Type>()) {
@@ -3350,7 +3757,7 @@ public:
         std::cout << "Moved" << "\n";
 #endif
         
-        if (flags & OWNERSHIP_FLAG) {
+        if (flags & NON_OWNERSHIP_FLAG) {
             *this = (const MatrixH<dims, Type>&) other; // calls copy assignment
             return;
         }
@@ -3360,64 +3767,206 @@ public:
         buffer = other.buffer;
         flags = other.flags;
         other.buffer = nullptr;
-        memcpy(shape, other.shape, dims * sizeof(size_t));
+        memcpy(shape, other.shape, dims * sizeof(size_m));
+        memcpy(strides, other.strides, dims * sizeof(size_m));
         metalBuffer = other.metalBuffer;
         total_size = other.total_size;
-        
+//        gradFunc = std::move(other.gradFunc);
+//        parentNodes = std::move(other.parentNodes);
         other.~MatrixH();
     }
     
     // const fill
     MatrixH<dims, Type>& operator=(Type value) {
-        memset(buffer, 0, total_size * sizeof(Type));
+        if (flags & (1u << 1)) {
+            fill_nd_iterative(buffer, shape, strides, dims, value);
+        } else {
+            std::fill(buffer, buffer+total_size, value);
+//            memset(buffer, 0, total_size * sizeof(Type));
+        }
+        
         return *this;
     }
+    
+    MatrixH<2, Type>& operator=(const MatrixH<1, Type>& other) requires (dims == 2) {
+        
+        if (total_size != other.total_size) {
+            std::cerr << "Error: MatrixH size mismatch — total_size = " << total_size
+                      << ", other.total_size = " << other.total_size << std::endl;
+            throw std::runtime_error("Tensor size mismatch in operation");
+        }
+        if (shape[1] != other.shape[0]) {
+            std::cerr << "Error: MatrixH shape mismatch — shape[last] = " << shape[1]
+                      << ", other.shape[last] = " << other.shape[0] << std::endl;
+            throw std::runtime_error("MatrixH shape mismatch in operation");
+            throw;
+        }
+        
+        if ((flags & NON_CONTIGUOUS_FLAG) || (other.flags & NON_CONTIGUOUS_FLAG)) {
+            for (int i = 0; i < shape[0]; i++) {
+                for (int j = 0; j < shape[1]; j++) {
+                    buffer[strides[0] * i + strides[1] * j] = other.buffer[j * other.strides[0]];
+                }
+            }
+            return *this;
+        } else {
+
+#ifdef CopyLog
+            std::cout << "Copy Assignment" << "\n";
+#endif
+            memcpy(buffer, other.buffer, total_size * sizeof(Type));
+            memcpy(shape, other.shape, dims * sizeof(size_m));
+            memcpy(strides, other.strides, dims * sizeof(size_m));
+//            gradFunc = other.gradFunc;
+//            parentNodes = other.parentNodes;
+            
+            
+        }
+        
+        return *this;
+    }
+    
     
     // copy assignment
     MatrixH<dims, Type>& operator=(const MatrixH<dims, Type>& other) {
+        
         if (&other == this) { }
+        // 2. Data Buffer Check (Same Underlying Data)
+        // If both point to the same memory buffer, copying is redundant.
+        else if (this->buffer == other.buffer) {
+            return *this;
+        }
         else if (total_size == other.total_size) {
+            if ((flags & NON_CONTIGUOUS_FLAG) || (other.flags & NON_CONTIGUOUS_FLAG)) {
+                
+                size_m indexA[dims];
+                size_m indexB[dims];
+                for (int gid = 0; gid < total_size; gid++) {
+                    int remA = gid;
+                    int remB = gid;
+                    for (int i =dims-1; i >= 0; i--) {
+                        indexA[i] = remA % shape[i];
+                        indexB[i] = remB % other.shape[i];
+                        remA /= shape[i];
+                        remB /= other.shape[i];
+                    }
+                    
+                    int offsetA = dotArray(indexA, strides, dims);
+                    int offsetB = dotArray(indexB, other.strides, dims);
+                    buffer[offsetA] = other.buffer[offsetB];
+                }
+                return *this;
+            }
+#ifdef CopyLog
             std::cout << "Copy Assignment" << "\n";
+#endif
             memcpy(buffer, other.buffer, total_size * sizeof(Type));
-            memcpy(shape, other.shape, dims * sizeof(size_t));
+            memcpy(shape, other.shape, dims * sizeof(size_m));
+            memcpy(strides, other.strides, dims * sizeof(size_m));
+//            gradFunc = other.gradFunc;
+//            parentNodes = other.parentNodes;
+            
+            
         } else {
+#ifdef CopyLog
             std::cout << "Copy Create Assignment" << "\n";
-            if (buffer) {
+#endif
+            if (buffer && !(flags & NON_OWNERSHIP_FLAG)) {
                 delete [] buffer;
             }
+            flags = other.flags; // FIX: We are allocating new buffer, so we own it. Reset the ownership flags.
+            flags &= ~NON_OWNERSHIP_FLAG;
             total_size = other.total_size;
             buffer = new Type[total_size];
-            metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-            }];
+            buildMetalBuffer();
             memcpy(buffer, other.buffer, total_size * sizeof(Type));
-            memcpy(shape, other.shape, dims * sizeof(size_t));
+            memcpy(shape, other.shape, dims * sizeof(size_m));
+            memcpy(strides, other.strides, dims * sizeof(size_m));
+//            gradFunc = other.gradFunc;
+//            parentNodes = other.parentNodes;
         }
+        
         return *this;
     }
+
     
     MatrixH<dims, Type>& operator=(MatrixH<dims, Type>&& other) {
-        if (&other == this) { }
+        if (&other == this) { return *this; }
+        if (flags & NON_OWNERSHIP_FLAG) {
+#ifdef CopyLog
+            std::cout << "DONT OWN THE DATA COPYInG INSTEAD \n";
+#endif
+            *this = (const MatrixH<dims, Type>&) other;
+            return *this;
+        }
 //        else if (total_size == other.total_size) {
 //            std::cout << "Copy Assignment" << "\n";
 //            memcpy(buffer, other.buffer, total_size * sizeof(Type));
-//            memcpy(shape, other.shape, dims * sizeof(size_t));
+//            memcpy(shape, other.shape, dims * sizeof(size_m));
 //        } else {
+#ifdef MoveLog
         std::cout << "Move Assignment" << "\n";
-        if (buffer && (flags & 0)) {
+#endif
+        // WRONGGGGGG
+//        if (buffer && (flags & 0)) {
+//            delete [] buffer;
+//        }
+        if (buffer && !(flags & NON_OWNERSHIP_FLAG)) {
             delete [] buffer;
         }
         buffer = other.buffer;
         metalBuffer = other.metalBuffer;
         flags = other.flags;
         other.buffer = nullptr;
-        memcpy(shape, other.shape, dims * sizeof(size_t));
+        memcpy(shape, other.shape, dims * sizeof(size_m));
+        memcpy(strides, other.strides, dims * sizeof(size_m));
         total_size = other.total_size;
-        
+//        gradFunc = std::move(other.gradFunc);
+//        parentNodes = std::move(other.parentNodes);
+//        parentNodes = other.parentNodes; // its a pointer to a vector
         other.~MatrixH();
         return *this;
     }
     
-    MatrixH<dims, Type>& Derivative(MatrixH<dims, Type>& result, int axis, bool loopBack) {
+//    template <int d>
+//    MatrixH<d, Type>& operator=(MatrixH<d, Type>&& other) {
+//
+//        this->~MatrixH();
+//        return *other;
+//    }
+    MatrixH<dims, Type>& operator=(const simd_float3 other) {
+        
+        if ((float*)&other == this->buffer) { }
+        else if (total_size == 3) {
+            if (flags & NON_CONTIGUOUS_FLAG) {
+                size_m indexA[dims];
+                for (int gid = 0; gid < total_size; gid++) {
+                    int remA = gid;
+                    for (int i =dims-1; i >= 0; i--) {
+                        indexA[i] = remA % shape[i];
+                        remA /= shape[i];
+                    }
+                    
+                    int offsetA = dotArray(indexA, strides, dims);
+                    buffer[offsetA] = other[gid];
+                }
+                return *this;
+            }
+#ifdef CopyLog
+            std::cout << "Copy Assignment" << "\n";
+#endif
+            memcpy(buffer, &other, total_size * sizeof(Type));
+            
+            
+        } else {
+            std::cerr << "Cant Paste SIMD_FLOAT3 with total size of " << total_size << "\n";
+            throw;
+        }
+        
+        return *this;
+    }
+    
+    MatrixH<dims, Type> Derivative(MatrixH<dims, Type>& result, int axis, int loopBack) {
         size_t stride = accumul(axis+1, dims);
         size_t max = shape[axis] - 1;
         int lastResolve = loopBack;
@@ -5142,7 +5691,7 @@ public:
         indiciesStridedView.shape[1] = rS;
         indiciesStridedView.shape[2] = 6;
         indiciesStridedView.total_size = 6*rS*(lS-1);
-        indiciesStridedView.flags |= OWNERSHIP_FLAG;
+        indiciesStridedView.flags |= NON_OWNERSHIP_FLAG;
         indiciesStridedView.calcStrides();
         
         MatrixH<2, uint16> vertexIndexStridedView = MatrixH<2, uint16>::Range(1, { (unsigned)lS, (unsigned)rS }); // for no. of verticies range starts like 1, 2,3 in a shape shape[0] is latitudes so ican get help in no. verticies during index buffer
@@ -5355,7 +5904,7 @@ public:
         indiciesStridedView.shape[0] = rS;
         indiciesStridedView.shape[1] = 6;
         indiciesStridedView.total_size = 6*rS;
-        indiciesStridedView.flags |= OWNERSHIP_FLAG;
+        indiciesStridedView.flags |= NON_OWNERSHIP_FLAG;
         indiciesStridedView.calcStrides();
         
         MatrixH<2, uint16> vertexIndexStridedView = MatrixH<2, uint16>::Range(1, { 2, (unsigned)rS });
@@ -5439,7 +5988,7 @@ public:
         VertexBufferView.shape[1] = 3;
         VertexBufferView.strides[0] = sizeof(Vertex3D) / sizeof(float);
         VertexBufferView.strides[1] = 1;
-        VertexBufferView.flags |= OWNERSHIP_FLAG;
+        VertexBufferView.flags |= NON_OWNERSHIP_FLAG;
         VertexBufferView.flags |= NON_CONTIGUOUS_FLAG;
         VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
         
@@ -5463,7 +6012,7 @@ public:
         indexBufferView.shape[0] = points.shape[0] - 1;
         indexBufferView.shape[1] = 6;
         indexBufferView.calcStrides();
-        indexBufferView.flags |= OWNERSHIP_FLAG;
+        indexBufferView.flags |= NON_OWNERSHIP_FLAG;
         
         for (int i = 0; i < points.shape[0] - 1; i++) {
             indexBufferView[i, 0] = indexBufferRange[i, 0];
@@ -5494,7 +6043,7 @@ public:
             indexBufferView.shape[0] = points.shape[0] - 1;
             indexBufferView.shape[1] = 6;
             indexBufferView.calcStrides();
-            indexBufferView.flags |= OWNERSHIP_FLAG;
+            indexBufferView.flags |= NON_OWNERSHIP_FLAG;
             
             for (int i = 0; i < points.shape[0] - 1; i++) {
                 indexBufferView[i, 0] = indexBufferRange[i, 0];
@@ -5525,7 +6074,7 @@ public:
         VertexBufferView.shape[1] = 3;
         VertexBufferView.strides[0] = sizeof(Vertex3D) / sizeof(float);
         VertexBufferView.strides[1] = 1;
-        VertexBufferView.flags |= OWNERSHIP_FLAG;
+        VertexBufferView.flags |= NON_OWNERSHIP_FLAG;
         VertexBufferView.flags |= NON_CONTIGUOUS_FLAG;
         VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
         
@@ -5644,7 +6193,7 @@ public:
         indexBufferView.shape[1] = points.shape[0];
         indexBufferView.shape[2] = 6;
         indexBufferView.calcStrides();
-        indexBufferView.flags |= OWNERSHIP_FLAG;
+        indexBufferView.flags |= NON_OWNERSHIP_FLAG;
         
         for (int j = 0; j < path.shape[0] -1; j++) {
             for (int i = 0; i< points.shape[0] - 1; i++) {
@@ -5697,7 +6246,7 @@ public:
             indexBufferView.shape[1] = points.shape[0];
             indexBufferView.shape[2] = 6;
             indexBufferView.calcStrides();
-            indexBufferView.flags |= OWNERSHIP_FLAG;
+            indexBufferView.flags |= NON_OWNERSHIP_FLAG;
             
             for (int j = 0; j < path.shape[0] -1; j++) {
                 for (int i = 0; i< points.shape[0] - 1; i++) {
@@ -5798,7 +6347,7 @@ public:
         VertexBufferView.strides[0] = points.shape[0] * ( sizeof(Vertex3D) / sizeof(float) );
         VertexBufferView.strides[1] = sizeof(Vertex3D) / sizeof(float);
         VertexBufferView.strides[2] = 1;
-        VertexBufferView.flags |= OWNERSHIP_FLAG;
+        VertexBufferView.flags |= NON_OWNERSHIP_FLAG;
         VertexBufferView.flags |= NON_CONTIGUOUS_FLAG;
         VertexBufferView.total_size = VertexBufferView.accumul(0, 3);
         
@@ -6202,6 +6751,7 @@ public:
         Verticies = new Vertex3D[vertexCount];
         updateShape(pts, *this);
     }
+    #if !TARGET_OS_IPHONE
     static MatrixH<1, simd_float2> generatePtsFromText(NSString* text, size_t size, NSFont* font) {
         MatrixH<1, simd_float2> points;
         CFStringRef cfText = (__bridge CFStringRef)text;
