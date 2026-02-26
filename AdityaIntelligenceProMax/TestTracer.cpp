@@ -1,3 +1,8 @@
+//#include "Mods/GPUManager.h"
+//#include "Mods/GeometryNode.h"
+//#include "Mods/Utils.h"
+//
+//GeometryNode<uint16> cube(nil, 0, nil, 0);
 ////
 ////  TestTracer.cpp
 ////  WorldOf3D
@@ -9,8 +14,9 @@
 //#define TestTracer_h
 //
 //#include <iostream>
-//#include <vector>
+#include <vector>
 //#include <string>
+
 //#include <memory>
 //#include <sstream>
 //#include <map>
@@ -470,3 +476,5 @@
 //    return 0;
 //}
 //#endif /* TestTracer_h */
+
+

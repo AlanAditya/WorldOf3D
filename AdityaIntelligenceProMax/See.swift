@@ -1,3 +1,6 @@
+
+
+#if os(macOS)
 import AppKit
 import Metal
 import MetalKit
@@ -933,3 +936,4 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Main Entry PointAttachments[0].pixelFormat = .bgra8Unorm
            
+#endif
