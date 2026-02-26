@@ -379,8 +379,6 @@ using type_from_dtype = typename type_dtype<code>::type;
 class MatrixBase {
 public:
     int mDims;
-    
-    
     DType dtype;
     MatrixBase(int dims, DType dtype): mDims(dims), dtype(dtype) {
     }
@@ -686,7 +684,7 @@ public:
         return res;
     }
     
-    bool compareShapes(size_t* Othershape, int end) {
+    bool compareShapes(size_m* Othershape, int end) {
         if (end < 0) {
             end = dims - end;
         }
@@ -759,7 +757,8 @@ public:
             std::cerr << "Dimensions Dont Add up, Pattern: " << dimsI << " + Repeat:" << shapeI.size() << " != Total Dim" << dims << "\n";
             throw std::invalid_argument("Repeating shape dimensions mismatch."); // FIXED
         }
-        
+        #endif
+        MatrixH<dims, Type> result;
         MatrixH<dims, Type> patternView;
         memcpy(patternView.shape, shapeI.begin(), shapeI.size() * sizeof(size_m));
         memcpy(patternView.shape + shapeI.size(), pattern.shape, dimsI * sizeof(size_m));
@@ -1351,7 +1350,7 @@ public:
         MatrixH<dims, Type> result;
         result.buffer = new Type[total_size];
         result.total_size = total_size;
-        memcpy(result.shape, shape, sizeof(size_t) * dims);
+        memcpy(result.shape, shape, sizeof(size_m) * dims);
         
         if (!GlobalGPUManager.AddImgInit) {
             GlobalGPUManager.initAddImg();
@@ -2968,7 +2967,6 @@ public:
 
         if (!cgImage) {
             std::cerr << "Failed to create CGImage" << std::endl;
-//            return;
         }
         size_t Imgwidth = CGImageGetWidth(cgImage);
         size_t Imgheight = CGImageGetHeight(cgImage);
@@ -11252,6 +11250,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     Renderer* pRender;
     Renderer* pRender2;
     CapReader* cap;
+    dispatch_source_t cameraTimer;
     
 }
 @property (nonatomic) float Red;
@@ -11280,13 +11279,38 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 -(void) TeselatorTester;
 -(void) TextTesselator;
 -(void) MatTester;
+-(void) MatTesterV2;
+-(void) GeometryNodeTester;
+-(void) GeometryNodeTesterV2;
+-(void) RGBCam;
+- (void) DepthFromImage;
+- (void) convPerChannel;
+-(void) VideoMerger;
+-(void) NewEfficientApproachTester;
+    -(void) iOS_Depth;
+    -(void) computational_graph;
+    -(void) vec_field;
 @end
 
 @implementation Intelligence
 
-
+@synthesize pRender = pRender;
 - (id)init:(CGRect)frameView1 {
     self = [super init];
+    
+    _components = [[NSMutableArray alloc] init];
+    
+    UIComponent *slider = [[UIComponent alloc] init];
+    slider.title = @"Brightness";
+    slider.type = 0;
+    slider.value = 0.5;
+    slider.minValue = 0.0;
+    slider.maxValue = 1.0;
+    slider.valueChangedCallback = ^(float newValue) {
+        NSLog(@"Brightness changed to: %f", newValue);
+        // Do something with the value
+    };
+    [_components addObject:slider];
     
     id<MTLDevice> metalDevice = MTLCreateSystemDefaultDevice();
     std::cout << "Initaialised Metal Device \n";
@@ -11299,17 +11323,17 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     [_view1 setDepthStencilPixelFormat:MTLPixelFormatDepth16Unorm];
     [_view1 setSampleCount:4];
     
-    _view2 = [[MyMetalView alloc] initWithFrame:frameView1 device:metalDevice];
-    [_view2 setColorPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
-    [_view2 setClearColor:MTLClearColorMake(1.0, 0.0, 0.0, 1.0)];
-    [_view2 setClearDepth:1.0];
-    [_view2 setPreferredFramesPerSecond:30];
-    [_view2 setFramebufferOnly: false];
-    [_view2 setDepthStencilPixelFormat:MTLPixelFormatDepth16Unorm];
-    [_view2 setSampleCount:4];
+//    _view2 = [[MyMetalView alloc] initWithFrame:frameView1 device:metalDevice];
+//    [_view2 setColorPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
+//    [_view2 setClearColor:MTLClearColorMake(1.0, 0.0, 0.0, 1.0)];
+//    [_view2 setClearDepth:1.0];
+//    [_view2 setPreferredFramesPerSecond:30];
+//    [_view2 setFramebufferOnly: false];
+//    [_view2 setDepthStencilPixelFormat:MTLPixelFormatDepth16Unorm];
+//    [_view2 setSampleCount:4];
     
     pRender = [[Renderer alloc] initWithDevice:metalDevice :frameView1.size.width :frameView1.size.height :4];
-    pRender2 = [[Renderer alloc] initWithDevice:metalDevice :frameView1.size.width :frameView1.size.height :4];
+//    pRender2 = [[Renderer alloc] initWithDevice:metalDevice :frameView1.size.width :frameView1.size.height :4];se
     
     _sidePanel = [[SidePannel alloc] initWithVector:&pRender->_NodesQueuePtr];
     
@@ -11324,6 +11348,366 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     return self;
 }
 
+- (void)addSliderWithTitle:(NSString*)title
+                       min:(float)min
+                       max:(float)max
+                  callback:(std::function<void(float)>)callback
+{
+    UIComponent *slider = [[UIComponent alloc] init];
+    slider.title = @"Brightness";
+    slider.type = 0;
+    slider.value = 0.5;
+    slider.minValue = 0.0;
+    slider.maxValue = 1.0;
+
+    [_components addObject:slider];
+
+
+}
+    
+-(void) computational_graph {
+    auto x = std::make_shared<MatrixH<1, float>>(
+        MatrixH<1, float>::Range(0, {10})
+    );
+
+    auto y = std::make_shared<MatrixH<1, float>>(
+        MatrixH<1, float>::Range(0, {10})
+    );
+    
+    auto addPrimitive1 = SimmilarPrimitive<1, float>(OpType::ADD, x, y);
+    
+    auto result = x->zeros();
+    result.tape = &addPrimitive1;
+    result.flags |= COMPUTE_GRAPH;
+    
+    auto addPrimitive2 = SimmilarPrimitive<1, float>(OpType::ADD, std::make_shared<MatrixH<1, float>>(result), y);
+
+    auto result2 = x->zeros();
+    result2.tape = &addPrimitive2;
+    result2.flags |= COMPUTE_GRAPH;
+    
+    auto unsqeeze_primitive = UnsqeezePrimitive<1, 2, float>(std::make_shared<MatrixH<1, float>>(result2), 0);
+    auto result3 = result2.unsqueeze<1>();
+    result3.tape = &unsqeeze_primitive;
+    result3.evaluate();
+    result3.print();
+    
+}
+    
+- (void) vec_field {
+    size_t no_of_points = 100;
+    auto points_charges_location = MatrixH<2, float>::withShape({(uint32_t)no_of_points, 3});
+    
+    float Angle = 0;
+    for (size_t i = 0; i < no_of_points; i++) {
+        points_charges_location[i] = {cos(Angle), sin(Angle), 0};
+        Angle += 2 * M_PI / (no_of_points);
+    }
+    auto transforms = MatrixH<3, float>::repeating({no_of_points}, MatrixH<2, float>::eye(4) );
+    transforms.shape[2] = 3;
+    for (size_t i = 0; i < no_of_points; i++) {
+        transforms[i, 3] = points_charges_location[i];
+    }
+    transforms.shape[2] = 4;
+    transforms.flags |= NON_OWNERSHIP_FLAG;
+    
+    auto charges = std::make_shared<CircleNode>(0.01, 10, MatrixH<1, float>{1.0, 0.0, 0.0, 1.0});
+    charges->buildInstanceFromBuffer((simd_float4x4*)transforms.buffer, no_of_points);
+    pRender->_NodesQueuePtr.push_back(charges);
+    
+    
+    uint32_t grid_x_size = 10;
+    uint32_t grid_y_size = 10;
+    uint32_t grid_z_size = 10;
+    auto E_field = MatrixH<5, float>::repeating({grid_x_size, grid_y_size, grid_z_size}, MatrixH<2, float>::eye(4));
+    auto x_axis = MatrixH<1, float>::linspace(-1, 1, {grid_x_size});
+    auto y_axis = MatrixH<1, float>::linspace(-1, 1, {grid_y_size});
+    auto z_axis = MatrixH<1, float>::linspace(-1, 1, {grid_z_size});
+    
+    // vectorised ops
+    auto [X, Y, Z] = MatrixH<1, float>::meshGrid(x_axis, y_axis, z_axis);
+    auto cubic_grid = MatrixH<3, float>::concatGPU_ID(X, Y, Z, 3);
+    cubic_grid.print();
+    auto cubic_grid_per_charge = MatrixH<5, float>::repeatingGPU({(uint32_t)no_of_points}, cubic_grid).Transpose({1, 2, 3, 0, 4});
+    auto r_vec_cubic_grid_per_charge = cubic_grid_per_charge - points_charges_location;
+    auto r_square = (r_vec_cubic_grid_per_charge * r_vec_cubic_grid_per_charge).SumNoRed(-1);
+    auto field = (0.001 * r_vec_cubic_grid_per_charge / (r_square.sqrt() * r_square)).Sum(-2);
+    auto transforms_for_arrow = MatrixH<5, float>::repeatingGPU({grid_x_size, grid_y_size, grid_z_size}, MatrixH<2, float>::eye(4));
+    transforms_for_arrow.Slice({ {null} , {null}, {null} , {{3,4}}, {{0, 3}} }).squeeze(-2) = cubic_grid ;
+    transforms_for_arrow.flags |= NON_OWNERSHIP_FLAG;
+    transforms_for_arrow.Slice({ {null} , {null}, {null} , {{1,2}}, {{0, 3}} }).squeeze(-2) = field;
+    transforms_for_arrow.Slice({ {null} , {null}, {null} , {{0,1}}, {{0, 3}} }).flatten<3>() = MatrixH<2, float>({ {0, -1, 0}, {1, 0, 0}, {0, 0, 1} }).Dot(std::move(field).flatten<2>().T()).T();
+//    std::move(transforms_for_arrow).flatten<2>().print();
+    // E_field.shape[4] = 3;
+    // for (int i = 0; i < grid_x_size; i++) {
+    //     for (int j = 0; j < grid_y_size; j++) {
+    //         for (int w = 0; w < grid_z_size; w++) {
+    //             E_field[i, j, w, 3] = {x_axis[i], y_axis[j], z_axis[w]};
+    //             E_field[i, j, w, 1, 1] = 0.0f;
+    //             for (int k = 0; k < no_of_points; k++) {
+    //                 auto r_vec = MatrixH<1, float>{ x_axis[i], y_axis[j], z_axis[w] } - points_charges_location[k];
+    //                 float dist_sq = simd_dot(r_vec.toSimdFloat3(), r_vec.toSimdFloat3());
+                        
+    //                     // 2. Prevent NaN singularities when grid points overlap charges
+    //                 dist_sq += 1e-6f;
+                        
+    //                     // 3. To get 1/r^3 for the unnormalized vector, we need 1 / (dist_sq * sqrt(dist_sq))
+    //                 float dist_cube_inv = 1.0f / (dist_sq * std::sqrt(dist_sq));
+    //                 E_field[i, j, w, 1] = E_field[i, j, w, 1] +  0.001 * r_vec * dist_cube_inv;
+                    
+    //             }
+    //             E_field[i, j,w, 0] = {-E_field[i, j, w, 1, 1], E_field[i, j,w, 1, 0], 0};
+    //         }
+    //     }
+    // }
+    // E_field.shape[4] = 4;
+    // E_field.flags |= NON_OWNERSHIP_FLAG;
+    auto arrow = std::make_shared<ArrowNode>(1, 0.1);
+    arrow->buildInstanceFromBuffer((simd_float4x4*)transforms_for_arrow.buffer, grid_x_size * grid_y_size * grid_z_size);
+    pRender->_NodesQueuePtr.push_back(arrow);
+    
+}
+#if TARGET_OS_IPHONE
+-(void) iOS_Depth {
+    cap = [[CapReader alloc] initWithCam:0];
+    __block MatrixH<3, uint8_t> frame;
+    
+    auto x = MatrixH<1, float>::linspace(1, -1, {(unsigned int)cap->width});
+    auto y = MatrixH<1, float>::linspace(1, -1, {(unsigned int)cap->height});
+    auto gridResult = MatrixH<1, float>::meshGrid(y, x);
+
+    __block auto Y = gridResult.first;  // or gridResult.x
+    __block auto X = gridResult.second; // or gridResult.y
+    __block MatrixH<2, float16_t> halfZ;
+
+    
+    [cap read:frame];
+    [cap getDepth:halfZ];
+    MatrixH<2, float> Z = (MatrixH<2, float>)halfZ;
+    
+    auto floatCol = (((MatrixH<3, float>)frame) / 255.0f).flatten<1>();
+    auto points = MatrixH<2, float>::concatID(X, Y, Z, 2).flatten<1>();
+    __block auto pointCloud = std::make_shared<PointCloudNode>(points, floatCol);
+    __block auto block = ^{
+//        NSTimer* timer = [NSTimer scheduledTimerWithTimeInterval:(1.0/30)
+//                                                         repeats:YES
+//                                                          block:^(NSTimer * _Nonnull timer) {
+        @autoreleasepool
+        {
+            Timer time;
+//            [cap read:frame];
+//            [cap getDepth:halfZ];
+//            MatrixH<2, float> Z = (MatrixH<2, float>)(10.0f / halfZ);
+            
+//            auto floatCol = (((MatrixH<3, float>)frame) / 255.0f).flatten<1>();
+//            auto points = MatrixH<2, float>::concatGPU_ID(X, Y, Z, 2).flatten<1>();
+//            pointCloud->updatePoints(points, floatCol);
+        }
+//        }];
+//        NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
+//        [runLoop addTimer:timer forMode:NSDefaultRunLoopMode];
+//        [runLoop run];
+    };
+        
+    pRender->_NodesQueuePtr.push_back(pointCloud);
+//    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), block);
+
+    
+//    dispatch_queue_t queue = dispatch_queue_create("com.engine.processing", DISPATCH_QUEUE_SERIAL);
+//    cameraTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
+//
+//    // 3. Set the timing (1/30th of a second in nanoseconds)
+//    uint64_t interval = (uint64_t)((1.0 / 30.0) * NSEC_PER_SEC);
+//    uint64_t leeway = 1ull * NSEC_PER_MSEC; // Tell the OS 1ms of drift is okay for battery saving
+//
+//    dispatch_source_set_timer(cameraTimer, dispatch_walltime(NULL, 0), interval, leeway);
+//    dispatch_source_set_event_handler(cameraTimer, block);
+//    dispatch_resume(cameraTimer);
+    return;
+}
+#endif
+-(void) NewEfficientApproachTester {
+    
+//    __block MatrixH<4, uint8_t> vid = MatrixH<4, uint8_t>::fromVideo("/Users/adityadude/Documents/Screenshots/Screen Recording 2026-02-09 at 12.37.46 AM.mov");
+//    
+//    
+//    __block int frame_index = 0;
+//    __block bool breakIt = false;
+//    [NSTimer scheduledTimerWithTimeInterval:(1.0/30)
+//                                    repeats:YES
+//                                      block:^(NSTimer * _Nonnull timer) {
+//        
+//        auto frame = vid[frame_index];
+//        frame.drawText("SARS-COV-2", MatrixH<1, int>{300, 100}, MatrixH<1, int>{0, 0, 0, 255}, 100);
+//        vid[frame_index] = frame;
+//        [pRender updateBaseImage:frame];
+//        if (frame_index < vid.shape[0]-1) {
+//            frame_index++;
+//        } else {
+//            if (breakIt != true) {
+//                breakIt = true;
+//                vid.saveVideo("/Users/adityadude/Documents/Screenshots/out.mp4", true);
+//            }
+//        }
+//        
+//    }];
+//    
+//    return;
+//    
+    
+
+    
+    __block auto Cube = std::make_shared<QuadNode>(1.0, 1.0);
+    Cube->RenderStateNo = 2;
+    pRender->_NodesQueuePtr.push_back(Cube);
+    
+//    auto Model = GeometryNode<uint32_t>::BuildGeoNodeFromModel("11_7_2024.usdz");
+//    pRender->_NodesQueue_32.push_back(std::move(Model));
+//
+    __block MatrixH<2, float> RN = MatrixH<2, float>::noise_texture({1000, 3}, 5.9, 2.0, 1.0);
+    __block MatrixH<2, float> RSS   = MatrixH<2, float>::concatGPU( MatrixH<2, float>::noise_texture({1000, 3}), MatrixH<2, float>::repeating({1000, 1}, 1.0f) , 1);
+    __block auto RS = std::make_shared<PointCloudNode>(RN, RSS);
+//    
+////    __block MatrixH<3, float> depth =
+//    auto noisy_img = MatrixH<3, float>::concatGPU( MatrixH<3, float>::noise_texture({100, 100, 3}), MatrixH<3, float>::repeating({100, 100, 1}, 1.0f) , 1);
+    pRender->_NodesQueuePtr.push_back(RS);
+////
+    [_sidePanel updateAssetManager];
+    auto [img, depthMap] = MatrixH<3, uint8_t>::fromImageWithDepth();
+    MatrixH<2, float> depthMapFull = ((MatrixH<2, float>)depthMap);
+    
+    MatrixH<2, float> posEncodingX = MatrixH<2, float>::repeating({depthMapFull.shape[0]}, (MatrixH<1, float>::Range(0, {depthMapFull.shape[1]}) / depthMapFull.shape[1]));
+    MatrixH<2, float> posEncodingY = MatrixH<2, float>::repeating({depthMapFull.shape[1]}, (MatrixH<1, float>::Range(0, {depthMapFull.shape[0]}) / depthMapFull.shape[0])).T();
+    
+    MatrixH<3, float> posEncodingMeshGrid = MatrixH<2, float>::concatGPU_ID(posEncodingX, posEncodingY, depthMapFull, 2);
+    
+    MatrixH<3, float> normalisedFloatColour = ((MatrixH<3, float>)img ) / 255.0f;
+    
+    RS->updatePoints(std::move(posEncodingMeshGrid).reshape(posEncodingMeshGrid.shape[0] * posEncodingMeshGrid.shape[1], posEncodingMeshGrid.shape[2]), std::move(normalisedFloatColour).reshape(normalisedFloatColour.shape[0] * normalisedFloatColour.shape[1], normalisedFloatColour.shape[2]));
+    
+
+    [pRender updateBaseImage:img];
+//
+//    std::vector<float> paramValues = {
+//        5.0f,   // Scale
+//        2.0f,   // Detail
+//        0.5f,   // Roughness
+//        2.0f,   // Lacunarity
+//        0.0f,   // Offset
+//        1.0f,   // Gain
+//        0.0f    // Distortion
+//    };
+//    std::vector<std::string> paramNames = {
+//        "Scale",
+//        "Detail",
+//        "Roughness",
+//        "Lacunarity",
+//        "Offset",
+//        "Gain",
+//        "Distortion"
+//    };
+    
+//    MatrixH<1, float> vecX = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+//    vecX.buildMetalBuffer();
+//    MatrixH<1, float> vecY = {0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0};
+//    vecY.buildMetalBuffer();
+//    
+//    auto X = MatrixH<1, float>::linspace(-1, 1, {1000});
+//    auto Y = MatrixH<1, float>::linspace(-1, 1, {1000});
+//    auto Colour = MatrixH<2, float>::repeating({1000 * 1000}, MatrixH<1, float>{1.0, 0.0, 1.0, 1.0});
+//    
+//    auto [gridXx, gridYx] = MatrixH<1, float>::meshGrid(X, Y);
+//    
+//    auto gridZz = sqrt(1 - (gridXx * gridXx + gridYx * gridYx));
+//    auto points_for_nish = MatrixH<3, float>::concat(std::move(gridXx).unsqueeze(-1), std::move(gridZz).unsqueeze(-1), std::move(gridYx).unsqueeze(-1), 2).flatten<1>();
+//    
+//    RS->updatePoints(points_for_nish, Colour);
+    
+//                        MTLCaptureManager *captureManager = [MTLCaptureManager sharedCaptureManager];
+//                        MTLCaptureDescriptor *captureDescriptor = [[MTLCaptureDescriptor alloc] init];
+//                        captureDescriptor.captureObject = GlobalGPUManager.metalDevice;
+//    
+//                        NSError *error = nil;
+//                        if (![captureManager startCaptureWithDescriptor:captureDescriptor error:&error]) {
+//                            NSLog(@"Capture start failed: %@", error);
+//                        }
+    
+
+//    ////
+//    MatrixH<2, float> gridX = MatrixH<2, float>::withShape({vecX.shape[0], vecY.shape[0]});
+//    MatrixH<2, float> gridY = MatrixH<2, float>::withShape({vecX.shape[0], vecY.shape[0]});
+//    MatrixH<2, float> vecX_buffer_view;
+//    vecX_buffer_view.buffer = vecX.buffer;
+//    vecX_buffer_view.shape[0] = vecX.shape[0];
+//    vecX_buffer_view.shape[1] = vecY.shape[0];
+//    vecX_buffer_view.strides[0] = vecX.strides[0];
+//    vecX_buffer_view.strides[1] = 0;
+//    vecX_buffer_view.total_size = vecX_buffer_view.accumul(0, 2);
+//    vecX_buffer_view.flags |= NON_CONTIGUOUS_FLAG;
+//    vecX_buffer_view.flags |= OWNERSHIP_FLAG;
+//    vecX_buffer_view.metalBuffer = vecX.metalBuffer;
+//
+//    MatrixH<2, float>::copyGPUinplace(gridX, vecX_buffer_view, 0, false);
+//    
+//    MatrixH<2, float> vecY_buffer_view;
+//    vecY_buffer_view.buffer = vecY.buffer;
+//    vecY_buffer_view.shape[0] = vecX.shape[0];
+//    vecY_buffer_view.shape[1] = vecY.shape[0];
+//    vecY_buffer_view.strides[0] = 0;
+//    vecY_buffer_view.strides[1] = vecY.strides[0];
+//    vecY_buffer_view.total_size = vecY_buffer_view.accumul(0, 2);
+//    vecY_buffer_view.metalBuffer = vecY.metalBuffer;
+//    vecY_buffer_view.flags |= NON_CONTIGUOUS_FLAG;
+//    vecY_buffer_view.flags |= OWNERSHIP_FLAG;
+//    
+//    
+//    MatrixH<2, float>::copyGPUinplace(gridY, vecY_buffer_view, 0, true);
+//    gridX.print();
+//    gridY.print();
+//    [captureManager stopCapture];
+//    for (int i = 0; i < paramNames.size(); i++) {
+//        NSString *paramName = [NSString stringWithUTF8String:paramNames[i].c_str()];
+//        UIComponent *slider = [[UIComponent alloc] init];
+//        slider.title = paramName;
+//        slider.type = 0;
+//        slider.value = paramValues[i]; // Default value from vector
+//        slider.minValue = 0.0;
+//        slider.maxValue = 10.0;
+//        slider.valueChangedCallback = ^(float newValue) {
+//            float scale = [_components[0] value];
+//            float detail = [_components[1] value];
+//            float roughness = [_components[2] value];
+//            float lacunarity = [_components[3] value];
+//            float offset = [_components[4] value];
+//            float gain = [_components[5] value];
+//            float distortion = [_components[6] value];
+//            auto noisy_img = MatrixH<3, float>::concatGPU( MatrixH<3, float>::noise_texture({100, 100, 3}, scale, detail, roughness, lacunarity, offset, gain, distortion) * 1.2, MatrixH<3, float>::repeating({100, 100, 1}, 1.0f) , 2);
+//            auto noisy_img_uint8 = (MatrixH<3, uint8_t>)(noisy_img * 255.0f);
+//            
+//            [self->pRender updateBaseImage:noisy_img_uint8];
+//        };
+//        [_components addObject:slider];
+//    }
+//    
+    
+//    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+//        @autoreleasepool {
+//            NSTimer *timer = [NSTimer timerWithTimeInterval:(1.0/30.0)
+//                                                     repeats:YES
+//                                                       block:^(NSTimer * _Nonnull timer) {
+//                RN = MatrixH<2, float>::rand_uniform({1000, 3}, -10, 10);
+//                RSS   = MatrixH<2, float>::concatGPU( MatrixH<2, float>::rand_uniform({1000, 3}, 0, 1), MatrixH<2, float>::repeating({1000, 1}, 1.0f) , 1);
+//                RS->updatePoints(RN, RSS);
+//            }];
+//    
+//            NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
+//            [runLoop addTimer:timer forMode:NSDefaultRunLoopMode];
+//            [runLoop run];
+//        }
+//    });
+
+}
+#if !TARGET_OS_IPHONE
 -(void) concatLogic {
         __block MatrixH<3, uint8_t> img = MatrixH<3, uint8_t>::fromImage(false);
         __block MatrixH<3, uint8_t> img2 = MatrixH<3, uint8_t>::constant({img.shape[0], img.shape[1], img.shape[2]}, 0);
@@ -11362,7 +11746,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 //    
 //        pRender->_objectQueue.push_back(tt2);
     
-    __block PointCloud ptCloud = PointCloud::fromImage({-1.5, -1.5, 0.1}, {1.5, 1.5, 0.9});
+//    __block PointCloud ptCloud = PointCloud::fromImage({-1.5, -1.5, 0.1}, {1.5, 1.5, 0.9});
 //    pRender->_pointCloudQueue.push_back(ptCloud);
     auto meshufferallocator = [[MTKMeshBufferAllocator alloc] initWithDevice:pRender->metalDevice];
     __block auto mesh = ObjMesh(pRender->metalDevice, meshufferallocator, [[NSBundle mainBundle] pathForResource:@"11_7_2024"
@@ -11459,6 +11843,22 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     }];
 }
 
+-(void) VideoMerger {
+    __block MatrixH<4, uint8_t> vid = MatrixH<4, uint8_t>::fromVideo("/Users/adityadude/Downloads/IMG_0605.mov");
+    __block int i = 0;
+    [NSTimer scheduledTimerWithTimeInterval:(1.0/120)
+                                    repeats:YES
+                                      block:^(NSTimer * _Nonnull timer) {
+        auto frame = vid[i];
+        
+        [self->pRender updateBaseImage:frame];
+        if (i != vid.shape[0]-1) {
+            i++;
+        }
+        printf("frame: %d \n", i);
+    }];
+}
+
 -(void) VideoPlayer {
     __block MatrixH<4, uint8_t> vid = MatrixH<4, uint8_t>::fromVideo("/Users/adityadude/Documents/SadiGaliFarewellClip2.mp4");
     __block int i = 0;
@@ -11549,13 +11949,959 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     }];
 }
 
+-(void) MatTesterV2 {
+    MatrixH<1, float> x = MatrixH<1, float>::Range(0.0, {5});
+    mlx::core::array mlxArray = mlx::core::array({1.0f, 2.0f, 3.0f, 4.0f, 5.0f});
+    mlxArray =mlx::core::arange(5000);
+    auto Mat2 =  (x * x) + x;
+    auto mat3 = sin(x);
+//    mat3.print();
+    MatrixH<1, simd_float2> pts = {
+        simd_make_float2(0.0f, 0.0f),
+        simd_make_float2(1.0f, 0.0f),
+        simd_make_float2(1.0f, 1.0f),
+    };
+    MatrixH<3, float> y = MatrixH<3, float>::Range(1.0, {100, 100, 100});
+    auto points = (MatrixH<2, float>)pts;
+//    points.print();
+    
+//    x[2] = 6.0f;
+//    x.print();
+    
+    
+
+    auto L1 = Line(points);
+//    
+    auto Mat = MatrixH<3, float>::zeros({5, 5, 5});
+    Mat = y.Slice({{{0, 5}}, {{0, 5}}, {{0, 5}}});
+    
+    Mat.printNonCont();
+    
+    auto z = MatrixH<3, float>::zeros({5, 5, 3});
+    auto kernel = MatrixH<2, float>({{1, 1, 1}, {1, 1, 1}, {1, 1, 1}});
+    auto convMat = MatrixH<3, float>::repeating({5, 3}, MatrixH<1, float>({1.0f, 2.0f, 3.0f, 4.0f, 5.0f}));
+    convMat.print();
+    auto newM = convMat.Transpose({0, 2, 1});
+    newM.print();
+    newM.conv(z, kernel, 2, ConvMode::Same);
+    z.print();
+    
+    
+
+//    std::cout << (Mat2.parentNodes[1]->parentNodes.size()) << "\n";
+//    (Mat2.gradFunc(Mat2)).print();
+
+//    std::cout <<  sizeof(mlx::core::) << "\n";
+    
+}
+
+- (void) DepthFromImage {
+    auto [img, depthMap] = MatrixH<3, uint8_t>::fromImageWithDepth();
+    auto floatImg = (MatrixH<3, float>)img / 255.0f;
+    auto icospNode = TriangleNode(0.01, 0.01);
+    MatrixH<4, float> transforms = MatrixH<4, float>::repeating({depthMap.shape[0], depthMap.shape[1]}, MatrixH<2, float>::eye(4));
+    transforms.flags |= NON_OWNERSHIP_FLAG;
+    
+    for (int y = 0; y < transforms.shape[0]; y++) {
+        for (int x = 0; x < transforms.shape[1]; x++) {
+            transforms[y, x, 3, 0] = 2 * (float)x / transforms.shape[1];
+            transforms[y, x, 3, 1] = 2 * (float)y / transforms.shape[0];
+            transforms[y, x, 3, 2] = depthMap[y, x];
+        }
+    }
+    icospNode.buildInstanceFromBuffer((simd_float4x4*)transforms.buffer, (int)depthMap.total_size);
+    [pRender createRenderPiplineState:@"CustomShader1" :@"lightingFragmentShader"];
+    icospNode.RenderStateNo = 1;
+    icospNode.renderStateBlock = ^(id<MTLRenderCommandEncoder> encoder) {
+        [encoder setVertexBuffer:floatImg.metalBuffer offset:0 atIndex:4];
+        // Do something with the value
+    };
+    pRender->_NodesQueue.push_back(std::move(icospNode));
+    [pRender updateBaseImage:img];
+    auto alphaMap = MatrixH<2, uint8_t>::repeating({depthMap.shape[0], depthMap.shape[1]},  MatrixH<0, uint8_t>(255));
+    auto depthMapUint = (MatrixH<2, uint8_t>)(depthMap * 200);
+    auto combined = MatrixH<2, uint8_t>::concatID(depthMapUint, depthMapUint, depthMapUint, alphaMap, 2);
+
+    
+    [pRender updateBaseImage:combined];
+}
+
+- (void) convPerChannel {
+//    auto [img, depthMap] = MatrixH<3, uint8_t>::fromImageWithDepth();
+    __block auto img =MatrixH<3, uint8_t>::fromImage(false);
+    auto floatImg = (MatrixH<3, float>)img / 255.0f;
+    auto result = floatImg.zeros();
+    __block auto Cube = std::make_shared<QuadNode>(1.0, 1.0);
+    pRender->_NodesQueuePtr.push_back(Cube);
+//    [pRender updateBaseImage:img];
+    [_sidePanel updateAssetManager];
+
+    MatrixH<2, float> kernel = MatrixH<2, float>::gaussian({25, 25}, 12, true);
+    MatrixH<2, float> kernel2 = MatrixH<2, float>::constant({100, 100}, 1.0) / 10000;
+    MatrixH<3, float> sl = MatrixH<3, float>::zeros({floatImg.shape[0], floatImg.shape[1], 1});
+    
+    
+////    auto RChannel = MatrixH<3, float>::zeros({floatImg.shape[0], floatImg.shape[1], 1});
+//    auto RChannel = floatImg.Slice({null, null, {{0,1}} });
+//    {
+//        Timer time;
+//        RChannel.conv(sl, kernel2);
+//    }
+//    result.Slice({ null, null, {{0, 1}}}) = sl;
+//    result.Slice({ null, null, {{1, 4}}}) = floatImg.Slice({ null, null, {{1, 4}}});
+//
+//    {
+//        Timer time;
+//        floatImg.conv(result, kernel2);
+//    }
+//    auto uint8img = (MatrixH<3, uint8_t>) (result * 255.0f);
+////
+
+//    auto RChannelConved = MatrixH<3, float>::zeros({floatImg.shape[0], floatImg.shape[1], 1});
+//    auto GChannelConved = MatrixH<3, float>::zeros({floatImg.shape[0], floatImg.shape[1], 1});
+//    auto BChannelConved = MatrixH<3, float>::zeros({floatImg.shape[0], floatImg.shape[1], 1});
+//    
+//    auto RChannel = floatImg.SliceCopy({null, null, {{0,1}} });
+//    auto GChannel = floatImg.SliceCopy({null, null, {{1,2}} });
+//    auto BChannel = floatImg.SliceCopy({null, null, {{2,3}} });
+//    
+//    {
+//        Timer time;
+//        RChannel.conv(RChannelConved, kernel2);
+//        GChannel.conv(GChannelConved, kernel2);
+//        BChannel.conv(BChannelConved, kernel2);
+//    }
+//    auto blurImg = MatrixH<3, float>::zeros({floatImg.shape[0], floatImg.shape[1], 4});
+//    blurImg.Slice({null, null, {{0, 1}} }) = BChannel;
+//    blurImg.Slice({null, null, {{1, 2}} }) = GChannelConved;
+//    blurImg.Slice({null, null, {{2, 3}} }) = RChannelConved;
+//    blurImg.Slice({null, null, {{3, 4}} }) = RChannel.ones();
+    
+//    auto blur = (MatrixH<3, uint8_t> )(MatrixH<3, float>::concat(BChannel, GChannelConved , RChannelConved, RChannel.ones(), 2) * 255.0);
+//    auto blur = (MatrixH<3, uint8_t> )(result * 255.0);
+    
+    
+//    sl[50, 50].print();
+//    [pRender updateBaseImage: blur];
+    
+//    __block cv::VideoCapture cap(0);
+//    
+//
+//
+//    std::cout << "Camera opened successfully.\n";
+//
+//    __block cv::Mat frame;
+//    __block cv::Mat OUTframe;
+    
+    cap = [[CapReader alloc] initWithCam:0];
+    __block MatrixH<3, uint8_t> frame;
+//    auto BITCH = [BitchWrapper new];
+    
+    sleep(2);
+//    cap >> frame;
+//    void* handle = dlopen("/private/var/tmp/_bazel_adityadude/eb3560479e75155bc8d80d1ef4345636/execroot/mediapipe/bazel-out/darwin_arm64-opt/bin/mediapipe/examples/desktop/libmediapipe_xcode_dylib.dylib",
+//                          RTLD_NOW | RTLD_LOCAL);
+//    if (!handle) {
+//        printf("%s\n", dlerror());
+//        return;
+//    }
+////
+//    typedef cv::Mat(*main2)(cv::Mat,cv::Mat);
+//
+//    __block main2 mm = (main2)dlsym(handle, "main2");
+//    if (!mm) {
+//        printf("%s\n", dlerror());
+//        return;
+//    }
+//    main2(frame, OUTframe);
+    
+//
+//    cap.~VideoCapture();
+    
+//    auto cvToMatH = MatrixH<3, uint8_t>::fromCVmat(OUTframe);
+//    auto matWithAlpha = MatrixH<3, uint8_t>::concat(cvToMatH, MatrixH<3, uint8_t>::constant({cvToMatH.shape[0], cvToMatH.shape[1], 1}, 255), 2);
+//    [pRender updateBaseImage:matWithAlpha];
+//    auto r = [BITCH detectInMat:frame width:frame.rows height:frame.cols];
+    
+    
+//    __block int i  = 0;
+//    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+//        @autoreleasepool {
+//            NSTimer *timer = [NSTimer timerWithTimeInterval:(1.0/30.0)
+//                                                     repeats:YES
+//                                                       block:^(NSTimer * _Nonnull timer) {
+//                cap >> frame;
+//
+//                if (frame.empty()) {
+//                    std::cerr << "ERROR: Empty frame.\n";
+//                } else if (i > 100){
+//                    auto mat = MatrixH<3, uint8_t>::fromCVmat(frame);
+//                    auto matWithAlpha = MatrixH<3, uint8_t>::concat(mat, MatrixH<3, uint8_t>::constant({mat.shape[0], mat.shape[1], 1}, 255), 2);
+//                    [pRender updateBaseImage:matWithAlpha];
+//                }
+//                i++;
+//            }];
+//
+//            NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
+//            [runLoop addTimer:timer forMode:NSDefaultRunLoopMode];
+//            [runLoop run];
+//        }
+//    });
+    __block auto face_landmark_mat = MatrixH<2, float>(478*3);
+    face_landmark_mat.shape[0] = 478;
+    face_landmark_mat.shape[1] = 3;
+    face_landmark_mat.calcStrides();
+    
+    __block auto hand_landmark_mat = MatrixH<3, float>(126);
+    hand_landmark_mat.shape[0] = 2;
+    hand_landmark_mat.shape[1] = 21;
+    hand_landmark_mat.shape[2] = 3;
+    hand_landmark_mat.calcStrides();
+    
+    __block auto icospNode = std::make_shared<IcosphereNode>(0.005, 1);
+    __block auto transformMat = MatrixH<3, float>::repeating({478 + 126}, MatrixH<2, float>::eye(4));
+    transformMat.flags |= NON_OWNERSHIP_FLAG;
+    
+
+    icospNode->buildInstanceFromBuffer((simd_float4x4*)transformMat.buffer, 478 + 126);
+    pRender->_NodesQueuePtr.push_back(icospNode);
+
+    
+    
+    __block int numOfLandmarksFace = 0;
+    __block int numOfLandmarksHand = 0;
+//    __block auto alphaMat = MatrixH<3, uint8_t>::constant({(size_t)frame.rows, (size_t)frame.cols, 1}, 255);
+    __block auto alphaMat = MatrixH<3, uint8_t>::constant({(size_t)cap->height, (size_t)cap->width, 1}, 255);
+    [NSTimer scheduledTimerWithTimeInterval:(1.0/30)
+                                    repeats:YES
+                                      block:^(NSTimer * _Nonnull timer) {
+//        cap >> frame;
+        [cap read:frame];
+//        if (frame.empty()) {
+//            std::cerr << "ERROR: Empty frame.\n";
+//        } else {
+//            main2(frame, OUTframe);
+//            facial_landmarks(frame, OUTframe, face_landmark_mat.buffer, numOfLandmarksFace);
+//            float axis =  ((face_landmark_mat.Sum(0)[0] / 478) - 0.5);
+//            printf("axis %f", axis);
+//            Cube->setRot(simd_make_float3(0, 100 * axis, 0));
+//            pRender->cam.setMouseEvent( 100* axis, 0, false, false, TransformationMode::Translate);
+//            
+//            pRender->cam.position.x =   face_landmark_mat.Sum(0)[0];
+//            
+//            pRender->cam.updateAngles(pRender->cam.position);
+//            for (int i = 0; i < numOfLandmarksFace; i++) {
+//                transformMat[i, 3, 0] = face_landmark_mat[i, 0] - 0.5;
+//                transformMat[i, 3, 1] = -1 * face_landmark_mat[i, 1] + 0.5;
+//                transformMat[i, 3, 2] = face_landmark_mat[i, 2];
+//            }
+//            {
+//                Timer time;
+//            hand_tracking(frame, OUTframe, hand_landmark_mat.buffer, numOfLandmarksHand);
+//            }
+            auto mat = frame;
+            
+            {
+//                std::cout << "For creating pos mat \n";
+//                Timer time;
+                for (int i = 0; i < 21; i++) {
+                    transformMat[numOfLandmarksFace + i, 3, 0] = hand_landmark_mat[0, i, 0] - 0.5;
+                    transformMat[numOfLandmarksFace + i, 3, 1] = -1 * hand_landmark_mat[0, i, 1] + 0.5;
+                    transformMat[numOfLandmarksFace + i, 3, 2] = hand_landmark_mat[0, i, 2];
+                    
+                    transformMat[numOfLandmarksFace + 21 + i, 3, 0] = hand_landmark_mat[1, i, 0] - 0.5;
+                    transformMat[numOfLandmarksFace + 21 + i, 3, 1] = -1 * hand_landmark_mat[1, i, 1] + 0.5;
+                    transformMat[numOfLandmarksFace + 21 + i, 3, 2] = hand_landmark_mat[1, i, 2];
+                }
+            }
+            
+            {
+//                std::cout << "For bulding instances \n";
+//                Timer time;
+                icospNode->BuildInstances();
+            }
+            {
+                std::cout << "For AadiXLA: ";
+                Timer time;
+                
+//                auto matWithAlpha = MatrixH<3, uint8_t>::concat(mat, alphaMat, 2);
+                
+                [self->pRender2 updateBaseImage:mat];
+            }
+//            {
+//                std::cout << "For AadiXLA 2.0: ";
+//                Timer time;
+//
+//                
+////                [pRender2 updateBaseImage:matWithAlpha];
+//            }
+//            auto RGB_IMG = mlx::core::zeros({1080, 1920, 3}, mlx::core::uint8);
+//            auto alpha_IMG = mlx::core::zeros({1080, 1920, 1}, mlx::core::uint8);
+////            {
+//                std::cout << "For mlx: ";
+//////                Timer time;
+////                    MTLCaptureManager *captureManager = [MTLCaptureManager sharedCaptureManager];
+////                    MTLCaptureDescriptor *captureDescriptor = [[MTLCaptureDescriptor alloc] init];
+////                    captureDescriptor.captureObject = GlobalGPUManager.metalDevice;
+////            
+////                    NSError *error = nil;
+////                    if (![captureManager startCaptureWithDescriptor:captureDescriptor error:&error]) {
+////                        NSLog(@"Capture start failed: %@", error);
+////                    }
+//
+//            
+//            MatrixH<3, uint8_t> matWithAlpha(1080 * 1920 * 4);
+//            matWithAlpha.shape[0] = 1080;
+//            matWithAlpha.shape[1] = 1920;
+//            matWithAlpha.shape[2] = 4;
+//            matWithAlpha.calcStrides();
+//            matWithAlpha.copyGPUinplace(matWithAlpha, mat, 0, false);
+//            matWithAlpha.copyGPUinplace(matWithAlpha, alphaMat, 3, true);
+//
+//            auto RGBA = mlx::core::concatenate({RGB_IMG, alpha_IMG}, 2);
+//            RGBA.eval();
+//
+////            [captureManager stopCapture];
+//
+//            NSLog(@"Capture saved to /tmp/capture.gputrace");
+//            }
+
+//        }
+    }];
+    
+}
+
+-(void) RGBCam {
+    cap = [[CapReader alloc] initWithCam:0];
+    __block MatrixH<3, uint8_t> frame;
+    
+    
+    UIComponent *slider1 = [[UIComponent alloc] init];
+    slider1.title = @"Red";
+    slider1.type = 0;
+    slider1.value = 1;
+    slider1.minValue = 0.0;
+    slider1.maxValue = 1.0;
+    slider1.valueChangedCallback = ^(float newValue) {
+        // Do something with the value
+    };
+    [_components addObject:slider1];
+    
+    UIComponent *slider2 = [[UIComponent alloc] init];
+    slider2.title = @"Blue";
+    slider2.type = 0;
+    slider2.value = 1;
+    slider2.minValue = 0.0;
+    slider2.maxValue = 1.0;
+    slider2.valueChangedCallback = ^(float newValue) {
+        // Do something with the value
+    };
+    [_components addObject:slider2];
+    
+    UIComponent *slider3 = [[UIComponent alloc] init];
+    slider3.title = @"Green";
+    slider3.type = 0;
+    slider3.value = 1;
+    slider3.minValue = 0.0;
+    slider3.maxValue = 1.0;
+    slider3.valueChangedCallback = ^(float newValue) {
+        // Do something with the value
+    };
+    [_components addObject:slider3];
+
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+        @autoreleasepool {
+            NSTimer *timer = [NSTimer timerWithTimeInterval:(1.0/30.0)
+                                                     repeats:YES
+                                                       block:^(NSTimer * _Nonnull timer) {
+                [cap read:frame];
+                auto floatFrame = (MatrixH<3, float>)frame;
+                floatFrame = floatFrame * MatrixH<1, float>{slider2.value, slider3.value, slider1.value, 1.0f};
+                frame = (MatrixH<3, uint8_t>)floatFrame;
+
+                [pRender updateBaseImage:frame];
+            }];
+
+            NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
+            [runLoop addTimer:timer forMode:NSDefaultRunLoopMode];
+            [runLoop run];
+        }
+    });
+}
+
+-(void) GeometryNodeTesterV2 {
+    
+    MatrixH<4, float> hello =   MatrixH<4, float>::Range(0, {100, 1, 1, 1});
+    auto c = hello.addWithTape(hello, hello);
+    
+//    MatrixH<1, uint8_t> hellos =   MatrixH<1, uint8_t>::Range(0, {100});
+    
+    __block auto InstanceTransformPoints = IcosphereNode(1.4, 4);
+    __block MatrixH<3, float> InstanceTransformView;
+    InstanceTransformView.shape[0] = InstanceTransformPoints.vertexCount;
+    InstanceTransformView.shape[1] = 1;
+    InstanceTransformView.shape[2] = 3;
+    InstanceTransformView.total_size =  InstanceTransformView.accumul(0, 3);
+    InstanceTransformView.strides[0] = sizeof(Vertex3D) / sizeof(float);
+    InstanceTransformView.strides[1] = 3;
+    InstanceTransformView.strides[2] = 1;
+    InstanceTransformView.buffer = (float*)InstanceTransformPoints.Verticies;
+    InstanceTransformView.flags |= NON_OWNERSHIP_FLAG;
+    InstanceTransformView.flags |= NON_CONTIGUOUS_FLAG;
+    InstanceTransformView.buildMetalBuffer();
+
+    (InstanceTransformView * MatrixH<3, float>::rand_uniform({(uint)InstanceTransformPoints.vertexCount, 1, 3}, 0.9, 1.5)).print();
+    std::cout << ((float*)([InstanceTransformView.metalBuffer contents]))[1601] << "\n";
+    
+    MatrixH<3, float> InstanceTransformMatricies = MatrixH<3, float>::repeating({ (uint)InstanceTransformPoints.vertexCount}, MatrixH<2, float>::eye(4));
+    auto noise = MatrixH<3, float>::noise_texture({(uint)InstanceTransformPoints.vertexCount, 1, 1}, 0.5, 2, 0.5, 2, 0);
+    InstanceTransformMatricies.Slice({ null, {{3,4}}, {{0,3}} }) = InstanceTransformView * 2 * noise;
+//    InstanceTransformMatricies.Slice({ {{InstanceTransformPoints.vertexCount/2, InstanceTransformPoints.vertexCount}}, {{3,4}}, {{0,3}} }) = InstanceTransformView.Slice({ {{ InstanceTransformPoints.vertexCount/2, InstanceTransformPoints.vertexCount}}, null, null }) * 2;
+    
+    __block auto spNode = std::make_shared<SphereNode>(0.03, 10, 10);
+    spNode->BuildInstances((simd_float4x4*)InstanceTransformMatricies.buffer, InstanceTransformMatricies.shape[0]);
+    
+    auto icoshperenode = IcosphereNode(1, 1);
+    __block auto quadN = std::make_shared<QuadNode>(1, 1);
+    
+    
+    auto RGB = MatrixH<3, float>::noise_texture({1920, 1080, 3}, 2) * 255;
+//    MatrixH<3, float> scaled = noise * 255;
+//    auto rgb = std::make_unique<MatrixH<3, uint8_t>>(3);
+//    std::cout << sizeof(MatrixH<3, float>);
+//    RGB.total_size = noise.total_size ;
+//    RGB.buffer = new uint8_t[noise.total_size];
+//    RGB.buildMetalBuffer();
+//    std::memcpy(RGB.shape, noise.shape, sizeof(size_m) * 3);
+//    std::memcpy(RGB.strides, noise.strides, sizeof(size_m) * 3);
+//    scaled.To(RGB, 0);
+//
+    auto alphaBase = MatrixH<1, uint8_t>({255});
+    __block auto alpha = MatrixH<3, uint8_t>::repeating({1920, 1080}, alphaBase);
+
+    auto noisyImg = MatrixH<3, uint8_t>::concat((MatrixH<3, uint8_t>)RGB, alpha, 2);
+
+    __block MatrixH<3, uint8_t> outputImg;
+    
+    quadN->texture = noisyImg.ToMTLTexture();
+    quadN->isTextured = true;
+    
+//    pRender->_NodesQueuePtr.push_back(spNode);
+    pRender->_NodesQueuePtr.push_back(quadN);
+    alpha = MatrixH<3, uint8_t>::repeating({42, 61}, alphaBase);
+    
+    UIComponent *slider1 = [[UIComponent alloc] init];
+    slider1.title = @"Scale";
+    slider1.type = 0;
+    slider1.value = 0.5;
+    slider1.minValue = 0.0;
+    slider1.maxValue = 4.0;
+    slider1.valueChangedCallback = ^(float newValue) {
+        auto noiseS = MatrixH<3, float>::noise_texture({(uint)InstanceTransformPoints.vertexCount, 1, 1}, [_components objectAtIndex:1].value, [_components objectAtIndex:2].value, [_components objectAtIndex:3].value);
+        MatrixH<3, float> InstanceTransformMatriciesS = MatrixH<3, float>::repeating({ (uint)InstanceTransformPoints.vertexCount}, MatrixH<2, float>::eye(4));
+        InstanceTransformMatriciesS.Slice({ null, {{3,4}}, {{0,3}} }) = InstanceTransformView * [_components objectAtIndex:4].value * noiseS;
+        spNode->BuildInstances((simd_float4x4*)InstanceTransformMatriciesS.buffer, InstanceTransformMatriciesS.shape[0]);
+        
+        auto RGB = noiseS * 255;
+        RGB.shape[0] = 42;
+        RGB.shape[1] = 61;
+        auto noisyImg = MatrixH<3, uint8_t>::concat((MatrixH<3, uint8_t>)RGB, (MatrixH<3, uint8_t>)RGB, (MatrixH<3, uint8_t>)RGB, alpha, 2);
+        quadN->texture = noisyImg.ToMTLTexture();
+        quadN->isTextured = true;
+        // Do something with the value
+    };
+    [_components addObject:slider1];
+    
+    UIComponent *slider2 = [[UIComponent alloc] init];
+    slider2.title = @"Detail";
+    slider2.type = 0;
+    slider2.value = 2;
+    slider2.minValue = 0.0;
+    slider2.maxValue = 4.0;
+    slider2.valueChangedCallback = ^(float newValue) {
+        auto noiseS = MatrixH<3, float>::noise_texture({(uint)InstanceTransformPoints.vertexCount, 1, 1}, [_components objectAtIndex:1].value, [_components objectAtIndex:2].value, [_components objectAtIndex:3].value);
+        MatrixH<3, float> InstanceTransformMatriciesS = MatrixH<3, float>::repeating({ (uint)InstanceTransformPoints.vertexCount}, MatrixH<2, float>::eye(4));
+        InstanceTransformMatriciesS.Slice({ null, {{3,4}}, {{0,3}} }) = InstanceTransformView * [_components objectAtIndex:4].value * noiseS;
+        spNode->BuildInstances((simd_float4x4*)InstanceTransformMatriciesS.buffer, InstanceTransformMatriciesS.shape[0]);
+        
+        
+
+        auto RGB = noiseS * 255;
+        RGB.shape[0] = 42;
+        RGB.shape[1] = 61;
+        auto noisyImg = MatrixH<3, uint8_t>::concat((MatrixH<3, uint8_t>)RGB, (MatrixH<3, uint8_t>)RGB, (MatrixH<3, uint8_t>)RGB, alpha, 2);
+        quadN->texture = noisyImg.ToMTLTexture();
+        quadN->isTextured = true;
+        // Do something with the value
+    };
+    [_components addObject:slider2];
+    
+    UIComponent *slider3 = [[UIComponent alloc] init];
+    slider3.title = @"Roughness";
+    slider3.type = 0;
+    slider3.value = 0.5;
+    slider3.minValue = 0.0;
+    slider3.maxValue = 4.0;
+    slider3.valueChangedCallback = ^(float newValue) {
+        auto noiseS = MatrixH<3, float>::noise_texture({(uint)InstanceTransformPoints.vertexCount, 1, 1}, [_components objectAtIndex:1].value, [_components objectAtIndex:2].value, [_components objectAtIndex:3].value);
+        MatrixH<3, float> InstanceTransformMatriciesS = MatrixH<3, float>::repeating({ (uint)InstanceTransformPoints.vertexCount}, MatrixH<2, float>::eye(4));
+        InstanceTransformMatriciesS.Slice({ null, {{3,4}}, {{0,3}} }) = InstanceTransformView * [_components objectAtIndex:4].value * noiseS;
+        spNode->BuildInstances((simd_float4x4*)InstanceTransformMatriciesS.buffer, InstanceTransformMatriciesS.shape[0]);
+        
+//        auto RGB = MatrixH<3, float>::noise_texture({400, 400, 3}, [_components objectAtIndex:1].value, [_components objectAtIndex:2].value, [_components objectAtIndex:3].value) * 255;
+//        auto noisyImg = MatrixH<3, uint8_t>::concat((MatrixH<3, uint8_t>)RGB, alpha, 2);
+        auto RGB = noiseS * 255;
+        RGB.shape[0] = 42;
+        RGB.shape[1] = 61;
+        auto noisyImg = MatrixH<3, uint8_t>::concat((MatrixH<3, uint8_t>)RGB, (MatrixH<3, uint8_t>)RGB, (MatrixH<3, uint8_t>)RGB, alpha, 2);
+        quadN->texture = noisyImg.ToMTLTexture();
+        quadN->isTextured = true;
+        // Do something with the value
+    };
+    [_components addObject:slider3];
+    
+    UIComponent *slider4 = [[UIComponent alloc] init];
+    slider4.title = @"mult";
+    slider4.type = 0;
+    slider4.value = 2;
+    slider4.minValue = 0.0;
+    slider4.maxValue = 4.0;
+    slider4.valueChangedCallback = ^(float newValue) {
+        auto noiseS = MatrixH<3, float>::noise_texture({(uint)InstanceTransformPoints.vertexCount, 1, 1}, [_components objectAtIndex:1].value, [_components objectAtIndex:2].value, [_components objectAtIndex:3].value);
+        MatrixH<3, float> InstanceTransformMatriciesS = MatrixH<3, float>::repeating({ (uint)InstanceTransformPoints.vertexCount}, MatrixH<2, float>::eye(4));
+        InstanceTransformMatriciesS.Slice({ null, {{3,4}}, {{0,3}} }) = InstanceTransformView * [_components objectAtIndex:4].value * noiseS;
+        spNode->BuildInstances((simd_float4x4*)InstanceTransformMatriciesS.buffer, InstanceTransformMatriciesS.shape[0]);
+        
+        auto RGB = noiseS * 255;
+        RGB.shape[0] = 42;
+        RGB.shape[1] = 61;
+        RGB.calcStrides();
+        auto noisyImg = MatrixH<3, uint8_t>::concat((MatrixH<3, uint8_t>)RGB, (MatrixH<3, uint8_t>)RGB, (MatrixH<3, uint8_t>)RGB, alpha, 2);
+        quadN->texture = noisyImg.ToMTLTexture();
+        quadN->isTextured = true;
+        // Do something with the value
+    };
+    [_components addObject:slider4];
+
+    
+    __block int frame = 0;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+        @autoreleasepool {
+            NSTimer *timer = [NSTimer timerWithTimeInterval:(1.0/30.0)
+                                                     repeats:YES
+                                                       block:^(NSTimer * _Nonnull timer) {
+
+            MatrixH<3, uint8_t> outImg = MatrixH<3, uint8_t>::repeating({1080, 1920}, MatrixH<1, uint8_t>{255, 255, 255, 255});
+//            MatrixH<3, uint8_t> inImg = MatrixH<3, uint8_t>::withShape({1080, 1920, 4});
+            
+            auto MTLpair = GlobalGPUManager.create_custom("custom_kernel1", outImg, outImg, 100 * 100);
+            auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+            auto _dispatchExecutionSize =  MTLSizeMake(1080* 1920, 1, 1);
+                float t = (float)frame / 30.0;
+            [MTLpair.second setBuffer:outImg.metalBuffer offset:0 atIndex:0];
+                [MTLpair.second setBytes:&t length:sizeof(float) atIndex:6];
+            [MTLpair.second dispatchThreads:_dispatchExecutionSize
+                    threadsPerThreadgroup:_threadsPerThreadgroup];
+            [MTLpair.second endEncoding];
+            [MTLpair.first commit];
+            [MTLpair.first waitUntilCompleted];
+
+                
+            
+        //    outImg.print();
+            [pRender updateBaseImage:outImg];
+    
+//
+//    [pRender updateBaseImage:outImg];
+//                NSLog(@"Frame: %d", frame);
+                frame++;
+            }];
+
+            NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
+            [runLoop addTimer:timer forMode:NSDefaultRunLoopMode];
+            [runLoop run];
+        }
+    });
+}
+
+-(void) GeometryNodeTester {
+    auto TriangleObj = CircleNode(1, 40);
+    auto spObj = SphereNode(1, 30, 30);
+    __block MatrixH<2, float> stridedView;
+    stridedView.buffer = (float*)TriangleObj.Verticies + offsetof(Vertex3D, normal) / sizeof(float);
+    stridedView.shape[0] = TriangleObj.vertexCount;
+    stridedView.shape[1] = 4;
+    stridedView.total_size = TriangleObj.vertexCount * 4;
+    stridedView.strides[0] = sizeof(Vertex3D) / sizeof(float);
+    stridedView.strides[1] = 1;
+    stridedView.flags |= NON_OWNERSHIP_FLAG;
+    stridedView.flags |= NON_CONTIGUOUS_FLAG;
+//    stridedView.buildMetalBuffer();
+//    stridedView.printNonCont();
+//    std::cout << TriangleObj.Verticies[0] << "\n";
+//    for (int i = 0; i < sizeof(Vertex3D) / sizeof(float); i++) {
+//        std::cout << *((float*)&TriangleObj.Verticies[0] + i) << "\n";
+//    }
+////    stridedView = stridedView + MatrixH<1, float>{1.0, 0.0, 0.0};
+//    stridedView.printNonCont();
+//    pRender->_NodesQueue.reserve(2);
+
+
+//    TriangleObj.rotation.z = -135;
+//    TriangleObj.position.y += 0.5 + (1/1.415);
+//    
+//    TriangleObj.buildModelMatrix();
+//    auto QuadObj = QuadNode(0.5, 1);
+//    
+//    auto a = MatrixH<1, int>({1, 2, 3});
+    
+//
+    std::cout << "Actual" << "\n";
+    auto arrowObj = ArrowNode(simd_make_float2(0, 0.5), 0.1, BLUE);
+    auto Transforms = new simd_float4x4[spObj.vertexCount];
+
+    MatrixH<3, float> TransformStridedView;
+    TransformStridedView.buffer = (float*)Transforms;
+    TransformStridedView.shape[0] = spObj.vertexCount;
+    TransformStridedView.shape[1] = 4;
+    TransformStridedView.shape[2] = 4;
+    TransformStridedView.total_size = spObj.vertexCount * 16;
+    TransformStridedView.strides[0] = 16;
+    TransformStridedView.strides[1] = 4;
+    TransformStridedView.strides[2] = 1;
+    TransformStridedView.flags |= NON_OWNERSHIP_FLAG;
+//    TransformStridedView.flags |= NON_CONTIGUOUS_FLAG;
+//
+    Vertex3D* spObj_verts = static_cast<Vertex3D*>(spObj.Verticies);
+    TransformStridedView = MatrixH<3, float>::repeating({(size_m)spObj.vertexCount}, MatrixH<2, float>::eye(4));
+    for (int i = 0; i < TransformStridedView.shape[0]; i++) {
+        // Translation
+        TransformStridedView[i, 3, 0] = spObj_verts[i].position.x;
+        TransformStridedView[i, 3, 1] = spObj_verts[i].position.y;
+        TransformStridedView[i, 3, 2] = spObj_verts[i].position.z;
+        
+        // Rotation
+        
+        TransformStridedView[i, 1, 0] = spObj_verts[i].position.x;
+        TransformStridedView[i, 1, 1] = spObj_verts[i].position.y;
+        TransformStridedView[i, 1, 2] = spObj_verts[i].position.z;
+    }
+    std::cout << "View" << "\n";
+//    TransformStridedView.printNonCont();
+
+    
+    arrowObj.buildInstanceFromBuffer(Transforms, spObj.vertexCount);
+    
+//    pRender->_NodesQueue.push_back(std::move(spObj));
+//    pRender->_NodesQueue.push_back(std::move(TriangleObj));
+//    pRender->_NodesQueue.push_back(std::move(arrowObj));
+    
+    auto cylinderobj = CylinderNode(1, 1, 10);
+//    pRender->_NodesQueue.push_back(std::move(cylinderobj));
+    
+    MatrixH<2, float> pts2 = {
+        {0.0f, 0.0f},
+        {1.0f, 0.0f},
+        {1.0f, 1.0f},
+        {0.0f, 1.0f},
+        {-0.5f, 0.5f}
+    };
+    
+    __block auto x = MatrixH<2, float>::Range(-1000, {2000, 1}) / 10;
+    
+    __block auto LineObj = std::make_shared<LineNode>(MatrixH<2, float>::concat(x, x + (-2.0f), 1));
+    pRender->_NodesQueuePtr.push_back(LineObj);
+    
+    mat A = mat(std::string("A"));
+    mat B = mat(std::string("B"));
+    mat C = A + B * B + A;
+    
+    std::cout << C.MSLCode << std::endl;
+////    arrowObj.setTailAt(ORIGIN);
+//
+    auto k = mlx::core::array({ 0.1, 0.2, 0.3, 0.4, 0.5 });
+//    testMain();
+
+//    float A = M_PI / 4;
+//    
+//    auto row1 = simd_make_float4(cos(A), -sin(A), 0, 0);
+//    auto row2 = simd_make_float4(sin(A),  cos(A), 0, 0);
+//    auto row3 = simd_make_float4(0     , 0      , 1, 0);
+//    auto row4 = simd_make_float4(0     , 0      , 0, 1);
+//    
+//    auto mat1 = simd_matrix_from_rows(row1, row2, row3, row4);
+//    
+//    
+////    arrowObj.modelMatrix = simd_mul(mat1, arrowObj.modelMatrix);
+////    arrowObj.buildGlobalMatrix();
+//    
+//    auto rotationNode = GeometryNode<uint16>(std::move(arrowObj));
+//    
+//
+//    auto arrModifier1 = Modifiers();
+//    arrModifier1.MakeModifierArray(10, 10, 10, ORIGIN, simd_make_float3(1, 1, 1));
+//    rotationNode.buildInstanceFromModifier(arrModifier1);
+//
+//    MatrixH<4, float> E = MatrixH<4, float>::zeros({10, 10, 10, 3});
+//    for (int i = 0; i < E.shape[0]; i++) {
+//        for (int j = 0; j < E.shape[1]; j++) {
+//            for (int k = 0; k < E.shape[2]; k++) {
+//                auto magnitude = (float)(1/sqrt(i*i + j*j + k*k));
+//                E[i, j, k] = ( MatrixH<1, float>({(float)i , (float)j , (float)k }) * magnitude );
+//                arrModifier1.transforms[i * 100 + j * 10 +k] = simd_mul(arrModifier1.transforms[i * 100 + j * 10 +k],
+//                                                                        simd_matrix(simd_make_float4(E[i, j, k].toSimdFloat3(), 0),
+//                                                                                    simd_make_float4(E[i, j, k, 1], -E[i, j, k, 0], 0, 0),
+//                                                                                    simd_make_float4(0, 0, 1, 0),
+//                                                                                    simd_make_float4(0, 0, 0, 1)));
+//            }
+//        }
+//    }
+//    
+//    
+//    arrowObj.buildInstanceFromModifier(arrModifier1);
+
+    
+//    auto a = MatrixH<1, float>({1, 2, 3});
+//    auto b = MatrixH<2, float>{{1}, {2}, {3}};
+//    a.print();
+//    b.print();
+//  
+//    auto c = a*b;
+//    c.print();
+
+//    a.printShape();
+
+//    auto g1 = std::vector<GeometryNode<uint16>>({arrowNode});
+//    
+//    auto gridNode = GeometryNode<uint16>(arrowObj);
+//
+//
+//    
+//    auto arrModifier2 = Modifiers();
+//    arrModifier2.MakeModifierArray(5, simd_make_float3(0, 0, 0), simd_make_float3(0, 1, 0));
+//    
+//    
+//    gridNode.buildInstanceFromModifier(arrModifier2);
+//    pRender->_NodesQueue.push_back(std::move(rotationNode));
+    
+    MatrixH<2, float> path = {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {3, 1, 1}};
+    auto a = path[R(0,3)];
+    
+    MatrixH<2, float> points = {{1, 0, 0}, {0, 1, 0}, {-1, 0, 0}, {0, -1, 0}};
+    __block auto theta = MatrixH<2, float>::Range(0, {100 * 50, 1}) * (2 * M_PI / 100);
+    
+    __block auto X_range = theta.zeros();
+//    for (int i = 0; i < 100; i++) {
+    __block auto Line3dobj = std::make_shared<LineNode3D>(MatrixH<2, float>::concat(5*sin(theta), 5*cos(theta), MatrixH<2, float>::zeros({100 * 50, 1}) + theta, 1), points);
+    __block auto arr1 = std::make_shared<ArrowNode>(MatrixH<1, float>{0.0, 1.0, 0.0});
+    __block auto arr2 = std::make_shared<ArrowNode>(MatrixH<1, float>{0.0, 1.0, 0.0});
+//    }
+    pRender->_NodesQueuePtr.push_back(Line3dobj);
+    pRender->_NodesQueuePtr.push_back(arr1);
+    pRender->_NodesQueuePtr.push_back(arr2);
+//    MatrixH<2, float> vecs;
+//    path.Derivative(vecs, 0, 3);
+//    
+////        vecs.print();
+//    
+//    auto vecs_normalised = vecs / (vecs * vecs).SumNoRed(1).sqrt();
+////        vecs_normalised.print();
+//
+//    MatrixH<2, float> iHat = MatrixH<2, float>::zeros({path.shape[0] - 1, 3});
+//    MatrixH<2, float> jHat = MatrixH<2, float>::zeros({path.shape[0] - 1, 3});
+////    
+//    iHat[0] = simd_normalize( simd_cross(vecs_normalised.toSimdFloat3(0), simd_make_float3(0, 0, 1)) );
+//    for (int i = 1; i < path.shape[0]-1; i++) {
+//        float sign =  simd_dot(iHat.toSimdFloat3(i-1), (vecs_normalised.toSimdFloat3(i) - vecs_normalised.toSimdFloat3(i-1))) > 0 ? 1: -1;
+//        MatrixH<1, float> diff = simd_matH(simd_reflect((vecs_normalised[i] - vecs_normalised[i-1]).toSimdFloat3(), iHat[i-1].toSimdFloat3()));
+//        iHat[i] = iHat[i-1] + 1 * sign * diff;
+//        
+//        iHat[i].print();
+//        iHat[i] =  iHat[i] / (iHat[i] * iHat[i]).SumNoRed(0).sqrt();
+//        iHat[i].print();
+//    }
+//    
+////    iHat = iHat / (iHat * iHat).SumNoRed(1).sqrt();
+//    
+//    for (int i = 0; i < path.shape[0] - 1; i++) {
+//        jHat[i] = simd_normalize(simd_cross(iHat.toSimdFloat3(i), vecs_normalised.toSimdFloat3(i)));
+//    }
+//    for (int i = 0; i < path.shape[0] - 1; i++) {
+//        iHat[i] = simd_normalize(simd_cross(jHat.toSimdFloat3(i), vecs_normalised.toSimdFloat3(i)));
+//    }
+//
+//    MatrixH<2, float> conviHat = MatrixH<2, float>::zeros({iHat.shape[0] + 1, iHat.shape[1]});
+//    iHat.conv<1>(conviHat, {1, 1}, 1, ConvMode::Full, ConvModeFull::Extend);
+//    
+//    MatrixH<2, float> convjHat = MatrixH<2, float>::zeros({jHat.shape[0] + 1, jHat.shape[1]});
+//    jHat.conv<1>(convjHat, {1, 1}, 1, ConvMode::Full, ConvModeFull::Extend);
+//    
+//    conviHat = conviHat / (conviHat * conviHat).SumNoRed(1);
+//    convjHat = convjHat / (convjHat * convjHat).SumNoRed(1);
+//    
+//    auto vecsforpath = ArrowNode(simd_make_float2(1, 0), 0.1);
+//    auto ihatforpath = ArrowNode(simd_make_float2(1, 0), 0.1, {1, 0, 0, 1});
+//    auto jhatforpath = ArrowNode(simd_make_float2(1, 0), 0.1, {0, 1, 0, 1});
+//    
+//    MatrixH<4, float> transformsforpath = MatrixH<4, float>::repeating({path.shape[0], 3}, MatrixH<2, float>::eye(4));
+//    transformsforpath.flags |= OWNERSHIP_FLAG;
+//
+//    
+//    for (int i = 0; i < path.shape[0]-1; i++) {
+//        
+//        transformsforpath[i, 0, 3] = MatrixH<1, float>::concat(path[i], MatrixH<1, float>{1}, 0);
+//        transformsforpath[i, 1, 3] = MatrixH<1, float>::concat(path[i], MatrixH<1, float>{1}, 0);
+//        transformsforpath[i, 2, 3] = MatrixH<1, float>::concat(path[i], MatrixH<1, float>{1}, 0);
+//        
+//        transformsforpath[i, 0, 0] = MatrixH<1, float>::concat(vecs[i], MatrixH<1, float>{0}, 0);
+//        transformsforpath[i, 0, 1] = MatrixH<1, float>::concat({-1 * vecs[i, 1], vecs[i, 0], vecs[i, 2]}, MatrixH<1, float>{0}, 0);
+//        
+//        transformsforpath[i, 1, 0] = MatrixH<1, float>::concat(conviHat[i], MatrixH<1, float>{0}, 0);
+//        transformsforpath[i, 1, 1] = MatrixH<1, float>::concat({-1 * conviHat[i, 1], conviHat[i, 0], conviHat[i, 2]}, MatrixH<1, float>{0}, 0);
+//        
+//        transformsforpath[i, 2, 0] = MatrixH<1, float>::concat(convjHat[i], MatrixH<1, float>{0}, 0);
+////        transformsforpath[i, 2, 1] = MatrixH<1, float>::concat({-1 * convjHat[i, 1], convjHat[i, 0], convjHat[i, 2]}, MatrixH<1, float>{0}, 0);
+//    }
+//    
+//    transformsforpath[path.shape[0]-1, 0, 3] = MatrixH<1, float>::concat(path[path.shape[0]-1], MatrixH<1, float>{1}, 0);
+//    transformsforpath[path.shape[0]-1, 1, 3] = MatrixH<1, float>::concat(path[path.shape[0]-1], MatrixH<1, float>{1}, 0);
+//    transformsforpath[path.shape[0]-1, 2, 3] = MatrixH<1, float>::concat(path[path.shape[0]-1], MatrixH<1, float>{1}, 0);
+//    
+//    transformsforpath[path.shape[0]-1, 0, 0] = MatrixH<1, float>::concat(vecs[path.shape[0]-2], MatrixH<1, float>{0}, 0);
+//    transformsforpath[path.shape[0]-1, 0, 1] = MatrixH<1, float>::concat({-1 * vecs[path.shape[0]-2, 1], vecs[path.shape[0]-2, 0], vecs[path.shape[0]-2, 2]}, MatrixH<1, float>{0}, 0);
+//    
+//    transformsforpath[path.shape[0]-1, 1, 0] = MatrixH<1, float>::concat(conviHat[path.shape[0]-1], MatrixH<1, float>{0}, 0);
+//    
+//    transformsforpath[path.shape[0]-1, 2, 0] = MatrixH<1, float>::concat(convjHat[path.shape[0]-1], MatrixH<1, float>{0}, 0);
+//    
+//    transformsforpath.print();
+//    
+//    auto drforpath = transformsforpath.SliceCopy({ null, {{0, 1}} });
+//    drforpath.flags |= OWNERSHIP_FLAG;
+//    
+//    auto ihatpath = transformsforpath.SliceCopy({ null, {{1, 2}} });
+//    ihatpath.flags |= OWNERSHIP_FLAG;
+//    
+//    auto jhatpath = transformsforpath.SliceCopy({ null, {{2, 3}} });
+//    jhatpath.flags |= OWNERSHIP_FLAG;
+//    
+//    
+//    vecsforpath.buildInstanceFromBuffer((simd_float4x4*)drforpath.buffer, path.shape[0] );
+//    ihatforpath.buildInstanceFromBuffer((simd_float4x4*)ihatpath.buffer, path.shape[0] );
+//    jhatforpath.buildInstanceFromBuffer((simd_float4x4*)jhatpath.buffer, path.shape[0] );
+//    
+//    pRender->_NodesQueue.push_back(vecsforpath);
+//    pRender->_NodesQueue.push_back(ihatforpath);
+//    pRender->_NodesQueue.push_back(jhatforpath);
+    
+    std::cout << "" ;
+    
+    __block int frame = 0;
+    [NSTimer scheduledTimerWithTimeInterval:(1.0)
+                                    repeats:YES
+                                      block:^(NSTimer * _Nonnull timer) {
+//        stridedView = stridedView + MatrixH<1, float>{0.01, 0.0, 0.0};
+////////        self->pRender->_NodesQueue[0].childNodes[0].instanceMatricies[0] = RotationZ(0.1 * frame);
+////////        self->pRender->_NodesQueue[0].childNodes[0].BuildInstances();
+////        self->pRender->_NodesQueue[0].rotation.z += 0.1;
+////        self->pRender->_NodesQueue[0].buildModelMatrix();
+//        Line3dobj->UpdatePoints(MatrixH<2, float>::concat(5*sin(theta), 5*cos(theta), MatrixH<2, float>::zeros({100 * 5, 1}) + theta * sin((float)frame / 10), 1), points);
+        
+        
+        auto Y_range = theta.zeros();
+        float t1 = -M_PI/2 + (float)frame ;
+        float t2 = -M_PI/2 - (float)frame ;
+        
+        if (frame < Y_range.shape[0]) {
+            if (frame + 100 > Y_range.shape[0]) {
+                int latter =  Y_range.shape[0] - frame;
+                
+                auto w1 = theta.Slice({ {{frame, frame + latter}} });
+                Y_range[R(frame, frame+latter)] = cos(w1 + t2);
+            } else {
+                auto w1 = theta.Slice({ {{frame, frame + 100}} });
+                Y_range[R(frame, frame+100)] = cos(w1 + t2);
+            }
+            
+        }
+        
+        LineObj->UpdatePoints(MatrixH<2, float>::concat(theta, Y_range, 1));
+        arr1->updateNode({cos(t1), sin(t1),0});
+        arr2->updateNode({cos(t2), sin(t2),0}, arr1->vec);
+        frame++;
+    }];
+    
+}
+
 -(void) MatTester {
     GlobalGPUManager.initTypeCasting(0, 0);
     MatrixH<1, float> a = MatrixH<1, float>::Range(0, {20});
-    (a+a).print();
-    float fValue = -176.0;
-    auto tValue = (uint32_t)(fValue);
-    std::cout << tValue;
+//    a.Sum(0).print();
+//    (a+a).print();
+//    ((MatrixH<1, int>)a).print();
+    
+    MatrixH<1, simd_float2> pts = {
+        simd_make_float2(0.0f, 0.0f),
+        simd_make_float2(1.0f, 0.0f),
+        simd_make_float2(1.0f, 1.0f),
+    };
+    
+    auto c = MatrixH<3, float>::Range(0.0, {3, 4, 2});
+    c.print();
+    ((MatrixH<2, float>)a).print();
+//    c.Sum(2).print();
+//    auto d = (MatrixH<1, simd_float2>)c;
+//    d.print();
+    
+    (c.Transpose({1, 0, 2})).print();
+    
+    auto A = MatrixH<2, float>::eye(3, 3, -1);
+    A.print();
+    
+    mlx::core::array mlxArray = mlx::core::array({1.0f, 2.0f, 3.0f, 4.0f, 4.0f});
+    auto f = [](const mlx::core::array& x) -> mlx::core::array {
+        return (x * x);
+    };
+    
+    mlx::core::array output = f(mlxArray);
+    std::cout << output << "\n";
+    
+    auto f_and_grad = mlx::core::grad(f);
+    auto result = mlx::core::vmap(f_and_grad)(mlxArray);
+    std::cout << result << std::endl;
+    
+    auto Mat1 = MatrixH<2, float>::constant({3, 4}, 1);
+    auto Mat2 = MatrixH<2, float>::constant({4, 3}, 1);
+    auto Mat3 = Mat1.Dot(Mat2);
+    Mat3.print();
+    
+//    auto l1 = Line(pts);
+    
+    
+//    try {
+//        auto [value, grad] = f_and_grad(mlxArray);
+//        std::cout << grad << std::endl;
+//    } catch (const std::exception& e) {
+//        std::cout << "Standard exception: " << e.what() << "\n";
+//    } catch (const std::runtime_error& e) {
+//        std::cout << "Runtime error: " << e.what() << "\n";
+//    } catch (...) {
+//        std::cout << "Unknown exception occurred\n";
+//    }
+    
+//    std::cout << grad << std::endl;
+    
+//    auto x = std::make_unique<Var>("x");
+//    auto expr = build_expr(x);
+
+//    std::string metal_code = generate_metal_function(expr);
+
+//    std::cout << metal_code << std::endl;
+    
+//    MatrixH<1, simd_float2> d = MatrixH<1, simd_float2>::constant({3}, simd_make_float2(0, 0));
+//    c.To(d, 0);
+
+//    d.print();
     
 }
 
@@ -11788,6 +13134,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
         }
     }
 }
+#endif
 
 @end
 //class Intelligence
