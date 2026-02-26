@@ -749,17 +749,22 @@ public:
         std::copy(shapeI.begin(), shapeI.end(), result.shape);
         result.total_size = result.accumul(0, dims);
         result.buffer = new Type[result.total_size];
-        
-        if (result.total_size > 10000) {
-            // C++17 Parallel Policy
-            std::for_each(std::execution::par_unseq, result.buffer, result.buffer + result.total_size, 
-                [lower, upper](float& val) {
-                    // Thread-local generator for parallel safety
-                    static thread_local std::mt19937 generator(std::random_device{}());
-                    // Create distribution locally (it's lightweight)
-                    std::uniform_real_distribution<float> distribution(lower, upper);
-                    val = distribution(generator);
-                });
+        size_t grain_size = 4096;
+        if (result.total_size > grain_size) {
+            size_t iterations = (result.total_size + grain_size - 1) / grain_size;
+
+
+            dispatch_apply(iterations, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(size_t chunk_idx)  {
+                size_t start = chunk_idx * grain_size;
+                size_t end = std::min(start + grain_size, result.total_size);
+                // Thread-local generator for parallel safety
+                static thread_local std::mt19937 generator(std::random_device{}());
+                // Create distribution locally (it's lightweight)
+                std::uniform_real_distribution<float> distribution(lower, upper);
+                for (size_m i = start; i < end; i++) {
+                    result.buffer[i] = distribution(generator);
+                }
+            });
         } else {
             // Fast random generation using thread-local RNG
             static thread_local std::mt19937 generator(std::random_device{}());
@@ -786,17 +791,21 @@ public:
         std::copy(shapeI.begin(), shapeI.end(), result.shape);
         result.total_size = result.accumul(0, dims);
         result.buffer = new Type[result.total_size];
-        
-        if (result.total_size > 10000) {
+        size_t grain_size = 4096;
+        if (result.total_size > grain_size) {
+            size_t iterations = (result.total_size + grain_size - 1) / grain_size;
             // C++17 Parallel Policy
-            std::for_each(std::execution::par_unseq, result.buffer, result.buffer + result.total_size, 
-                [lower, upper](float& val) {
-                    // Thread-local generator for parallel safety
-                    static thread_local std::minstd_rand generator(std::random_device{}());
-                    // Create distribution locally (it's lightweight)
-                    std::uniform_real_distribution<float> distribution(lower, upper);
-                    val = distribution(generator);
-                });
+            dispatch_apply(iterations, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(size_t chunk_idx)  {
+                size_t start = chunk_idx * grain_size;
+                size_t end = std::min(start + grain_size, result.total_size);
+                // Thread-local generator for parallel safety
+                static thread_local std::minstd_rand generator(std::random_device{}());
+                // Create distribution locally (it's lightweight)
+                std::uniform_real_distribution<float> distribution(lower, upper);
+                for (size_m i = start; i < end; i++) {
+                    result.buffer[i] = distribution(generator);
+                }
+            });
         } else {
             // Fast random generation using thread-local RNG
             static thread_local std::minstd_rand generator(std::random_device{}());
@@ -812,6 +821,239 @@ public:
         return result;
     }
     
+    
+    static MatrixH<dims, float> noise_texture(
+        std::initializer_list<size_m> shapeI,
+        float scale = 5.0f,
+        float detail = 2.0f,
+        float roughness = 0.5f,
+        float lacunarity = 2.0f,
+        float offset = 0.0f,
+        float gain = 1.0f,
+        float distortion = 0.0f
+    ) {
+        if (shapeI.size() != dims) {
+            std::cerr << "MatrixH: Shape should not exceed dim of matrix";
+            throw std::invalid_argument("Invalid shape dimensions");
+        }
+        static size_t NoiseC =0;
+        std::cout << "Noise called: " << NoiseC << "\n";
+        NoiseC+=1;
+        MatrixH<dims, float> result;
+        std::copy(shapeI.begin(), shapeI.end(), result.shape);
+        result.total_size = result.accumul(0, dims);
+        result.buffer = new float[result.total_size];
+        
+        // Permutation table for Perlin noise (standard)
+        static const int p[512] = {
+            151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,
+            8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,
+            35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,
+            134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,
+            55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,
+            18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,
+            250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,
+            189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,
+            172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,
+            228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,
+            107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,
+            138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180,
+            // Second half (same as first half)
+            151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,
+            8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,
+            35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,
+            134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,
+            55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,
+            18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,
+            250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,
+            189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,
+            172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,
+            228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,
+            107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,
+            138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180
+        };
+        
+        // Helper functions for Perlin noise
+        auto fade = [](float t) -> float {
+            return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
+        };
+        
+        auto lerp = [](float t, float a, float b) -> float {
+            return a + t * (b - a);
+        };
+        
+        auto grad = [](int hash, float x, float y, float z) -> float {
+            int h = hash & 15;
+            float u = h < 8 ? x : y;
+            float v = h < 4 ? y : h == 12 || h == 14 ? x : z;
+            return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
+        };
+        
+        // Perlin noise function
+        auto perlin = [&](float x, float y, float z) -> float {
+            int X = (int)std::floor(x) & 255;
+            int Y = (int)std::floor(y) & 255;
+            int Z = (int)std::floor(z) & 255;
+            
+            x -= std::floor(x);
+            y -= std::floor(y);
+            z -= std::floor(z);
+            
+            float u = fade(x);
+            float v = fade(y);
+            float w = fade(z);
+            
+            int A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z;
+            int B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z;
+            
+            return lerp(w, lerp(v, lerp(u, grad(p[AA], x, y, z),
+                                          grad(p[BA], x - 1, y, z)),
+                                  lerp(u, grad(p[AB], x, y - 1, z),
+                                          grad(p[BB], x - 1, y - 1, z))),
+                          lerp(v, lerp(u, grad(p[AA + 1], x, y, z - 1),
+                                          grad(p[BA + 1], x - 1, y, z - 1)),
+                                  lerp(u, grad(p[AB + 1], x, y - 1, z - 1),
+                                          grad(p[BB + 1], x - 1, y - 1, z - 1))));
+        };
+        
+        // Fractal noise with octaves
+        auto fractal_noise = [&](float x, float y, float z) -> float {
+            float value = 0.0f;
+            float amplitude = 1.0f;
+            float frequency = 1.0f;
+            float max_value = 0.0f;
+            
+            int octaves = (int)detail;
+            float blend = detail - octaves;
+            
+            for (int i = 0; i < octaves; ++i) {
+                float n = perlin(x * frequency, y * frequency, z * frequency);
+                value += n * amplitude;
+                max_value += amplitude;
+                
+                amplitude *= roughness;
+                frequency *= lacunarity;
+            }
+            
+            // Fractional octave blending
+            if (blend > 0.0f && octaves < 16) {
+                float n = perlin(x * frequency, y * frequency, z * frequency);
+                value += n * amplitude * blend;
+                max_value += amplitude * blend;
+            }
+            
+            return value / max_value;
+        };
+        
+        // Generate noise texture
+        size_m indices[dims];
+        for (size_m i = 0; i < dims; ++i) indices[i] = 0;
+        
+        for (size_m i = 0; i < result.total_size; ++i) {
+            // Calculate normalized coordinates
+            float coords[3] = {0.0f, 0.0f, 0.0f};
+            
+            for (size_m d = 0; d < dims && d < 3; ++d) {
+                coords[d] = (float)indices[d] / (float)result.shape[d];
+            }
+            
+            // Apply scale
+            float x = coords[0] * scale;
+            float y = coords[1] * scale;
+            float z = coords[2] * scale;
+            
+            // Apply distortion if needed
+            if (distortion > 0.0f) {
+                float dx = perlin(x + 13.5f, y + 17.3f, z + 11.7f) * distortion;
+                float dy = perlin(x + 23.1f, y + 31.9f, z + 29.3f) * distortion;
+                float dz = perlin(x + 41.7f, y + 43.2f, z + 47.9f) * distortion;
+                x += dx;
+                y += dy;
+                z += dz;
+            }
+            
+            // Calculate fractal noise with offset and gain
+            float noise_val = fractal_noise(x, y, z);
+            noise_val = (noise_val + offset) * gain;
+            
+            // Clamp to [0, 1] range
+            result.buffer[i] = std::max(0.0f, std::min(1.0f, noise_val * 0.5f + 0.5f));
+            
+            // Update indices
+            for (int d = dims - 1; d >= 0; --d) {
+                indices[d]++;
+                if (indices[d] < result.shape[d]) break;
+                indices[d] = 0;
+            }
+        }
+
+        result.buildMetalBuffer();
+        result.calcStrides();
+        return result;
+    }
+    
+    static MatrixH gaussian(std::initializer_list<size_m> shapeI, Type stddev = 1.0, bool normalize = true) {
+        if (shapeI.size() != dims) {
+            std::cerr << "MatrixH: Shape should not exceed dim of matrix";
+            throw std::invalid_argument("Invalid shape dimensions");
+        }
+        
+        MatrixH result;
+        std::copy(shapeI.begin(), shapeI.end(), result.shape);
+        result.total_size = result.accumul(0, dims);
+        result.buffer = new Type[result.total_size];
+        result.calcStrides();
+        // Get shape dimensions
+        size_m* s = result.shape;
+        
+        if constexpr (dims == 1) {
+            // 1D Gaussian
+            Type center = s[0] / 2.0;
+            for (size_m i = 0; i < s[0]; i++) {
+                Type x = (i - center) / stddev;
+                result.buffer[i * result.strides[0] ] = std::exp(-0.5 * x * x);
+            }
+        } else if constexpr (dims == 2) {
+            // 2D Gaussian
+            Type center_y = (s[0]-1) / 2.0;
+            Type center_x = (s[1]-1) / 2.0;
+            for (size_m i = 0; i < s[0]; i++) {
+                for (size_m j = 0; j < s[1]; j++) {
+                    Type y = (i - center_y) / stddev;
+                    Type x = (j - center_x) / stddev;
+                    result.buffer[i * result.strides[0]+ j * result.strides[1]] = std::exp(-0.5 * (x * x + y * y));
+                }
+            }
+        } else if constexpr (dims == 3) {
+            // 3D Gaussian
+            Type center_z = s[0] / 2.0;
+            Type center_y = s[1] / 2.0;
+            Type center_x = s[2] / 2.0;
+            for (size_m i = 0; i < s[0]; i++) {
+                for (size_m j = 0; j < s[1]; j++) {
+                    for (size_m k = 0; k < s[2]; k++) {
+                        Type z = (i - center_z) / stddev;
+                        Type y = (j - center_y) / stddev;
+                        Type x = (k - center_x) / stddev;
+                        result.buffer[i * result.strides[0] + j * result.strides[1] + k * result.strides[2]] = std::exp(-0.5 * (x * x + y * y + z * z));
+                    }
+                }
+            }
+        }
+        // Normalize if requested
+        if (normalize) {
+            Type sum = 0;
+            for (size_m i = 0; i < result.total_size; i++) {
+                sum += result.buffer[i];
+            }
+            if (sum > 0) {
+                for (size_m i = 0; i < result.total_size; i++) {
+                    result.buffer[i] /= sum;
+                }
+            }
+        }
+        result.buildMetalBuffer();
+        
         return result;
     }
     
@@ -828,6 +1070,16 @@ public:
         
         for (int i=0; i<dims; i++) {
             std::cout << shape[i] << ", ";
+        }
+        if (verbose == true) { std::cout << "}\n"; }
+        
+    }
+    
+    void printStrides(bool verbose = true) const {
+        if (verbose == true) { std::cout << "Strides are { "; }
+        
+        for (int i=0; i<dims; i++) {
+            std::cout << strides[i] << ", ";
         }
         if (verbose == true) { std::cout << "}\n"; }
         
