@@ -10523,7 +10523,7 @@ struct Assets {
     
     cam = Camera3D();
     auto A = MatrixH<1, uint8_t>({1, 0, 0, 0});
-    MatrixH<3, uint8_t> clearImg = MatrixH<3, uint8_t>::repeating({height, width}, A);
+    MatrixH<3, uint8_t> clearImg = MatrixH<3, uint8_t>::repeating({(size_m)height, (size_m)width}, A);
 //    auto c = (MatrixH<3, float>)clearImg;
 //    c.Slice({ {{0, 10}}, {{0, 10}} }).printNonCont();
     
@@ -11659,7 +11659,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
         points_charges_location[i] = {cos(Angle), sin(Angle), 0};
         Angle += 2 * M_PI / (no_of_points);
     }
-    auto transforms = MatrixH<3, float>::repeating({no_of_points}, MatrixH<2, float>::eye(4) );
+    auto transforms = MatrixH<3, float>::repeating({(size_m)no_of_points}, MatrixH<2, float>::eye(4) );
     transforms.shape[2] = 3;
     for (size_t i = 0; i < no_of_points; i++) {
         transforms[i, 3] = points_charges_location[i];
@@ -11965,7 +11965,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 }
 #if !TARGET_OS_IPHONE
 -(void) concatLogic {
-        __block MatrixH<3, uint8_t> img = MatrixH<3, uint8_t>::fromImage(false);
+        __block MatrixH<3, uint8_t> img = MatrixH<3, uint8_t>::fromImage();
         __block MatrixH<3, uint8_t> img2 = MatrixH<3, uint8_t>::constant({img.shape[0], img.shape[1], img.shape[2]}, 0);
 
         img2.drawText("TUSHUUU", {10, 500}, {255, 255, 255, 255}, 300);
@@ -12284,7 +12284,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 
 - (void) convPerChannel {
 //    auto [img, depthMap] = MatrixH<3, uint8_t>::fromImageWithDepth();
-    __block auto img =MatrixH<3, uint8_t>::fromImage(false);
+    __block auto img =MatrixH<3, uint8_t>::fromImage();
     auto floatImg = (MatrixH<3, float>)img / 255.0f;
     auto result = floatImg.zeros();
     __block auto Cube = std::make_shared<QuadNode>(1.0, 1.0);
@@ -12427,7 +12427,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     __block int numOfLandmarksFace = 0;
     __block int numOfLandmarksHand = 0;
 //    __block auto alphaMat = MatrixH<3, uint8_t>::constant({(size_t)frame.rows, (size_t)frame.cols, 1}, 255);
-    __block auto alphaMat = MatrixH<3, uint8_t>::constant({(size_t)cap->height, (size_t)cap->width, 1}, 255);
+    __block auto alphaMat = MatrixH<3, uint8_t>::constant({(size_m)cap->height, (size_m)cap->width, 1}, 255);
     [NSTimer scheduledTimerWithTimeInterval:(1.0/30)
                                     repeats:YES
                                       block:^(NSTimer * _Nonnull timer) {
@@ -13251,8 +13251,8 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     }];
 }
 -(void) Logic {
-    __block MatrixH<3, uint8_t> img = MatrixH<3, uint8_t>::fromImage(false);
-    __block MatrixH<3, uint8_t> imgSa = MatrixH<3, uint8_t>::fromImage(false);
+    __block MatrixH<3, uint8_t> img = MatrixH<3, uint8_t>::fromImage();
+    __block MatrixH<3, uint8_t> imgSa = MatrixH<3, uint8_t>::fromImage();
 
     
     

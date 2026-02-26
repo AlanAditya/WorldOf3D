@@ -1,0 +1,8 @@
+# Ignore Xcode user-specific data
+*.xcuserdatad/
+*.xccheckout
+*.xcscmblueprint
+*.xcscheme
+*.xcschememanagement.plist
+*.xcbkptlist
+

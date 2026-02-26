@@ -32,3 +32,38 @@ void Slice(MatrixH<dims, Type>& slicedMat, std::initializer_list<std::optional<s
         slicedMat.total_size= slicedMat.accumul(0, dims);
         memcpy(slicedMat.buffer, MemArena, sizeof(Type) * slicedMat.total_size);
     }
+
+
+2025-08-17 04:05:20 [(null)] [(null)] i = 0, convolve Dims = 2, j = 1, kernInd = -1, gridInd = 1, gridIndKern = 0, offset = 0, stride = 2
+2025-08-17 04:05:20 [(null)] [(null)] i = 1, convolve Dims = 2, j = 1, kernInd = 0, gridInd = 1, gridIndKern = 1, offset = 2, stride = 2
+2025-08-17 04:05:20 [(null)] [(null)] i = 2, convolve Dims = 2, j = 1, kernInd = 1, gridInd = 1, gridIndKern = 2, offset = 4, stride = 2
+2025-08-17 04:05:20 [(null)] [(null)] i = 3, convolve Dims = 2, j = 1, kernInd = -1, gridInd = 1, gridIndKern = 0, offset = 0, stride = 2
+2025-08-17 04:05:20 [(null)] [(null)] i = 3, convolve Dims = 2, j = 0, kernInd = 0, gridInd = 0, gridIndKern = 0, offset = 0, stride = 10
+2025-08-17 04:05:20 [(null)] [(null)] i = 3
+2025-08-17 04:05:20 [(null)] [(null)] l = 0, inMatIndex= 0
+2025-08-17 04:05:20 [(null)] [(null)] l = 1, inMatIndex= 0
+2025-08-17 04:05:20 [(null)] [(null)] i = 4, convolve Dims = 2, j = 1, kernInd = 0, gridInd = 1, gridIndKern = 1, offset = 2, stride = 2
+2025-08-17 04:05:20 [(null)] [(null)] i = 4, convolve Dims = 2, j = 0, kernInd = 0, gridInd = 0, gridIndKern = 0, offset = 2, stride = 10
+2025-08-17 04:05:20 [(null)] [(null)] i = 4
+2025-08-17 04:05:20 [(null)] [(null)] l = 0, inMatIndex= 2
+2025-08-17 04:05:20 [(null)] [(null)] l = 1, inMatIndex= 2
+2025-08-17 04:05:20 [(null)] [(null)] i = 5, convolve Dims = 2, j = 1, kernInd = 1, gridInd = 1, gridIndKern = 2, offset = 4, stride = 2
+2025-08-17 04:05:20 [(null)] [(null)] i = 5, convolve Dims = 2, j = 0, kernInd = 0, gridInd = 0, gridIndKern = 0, offset = 4, stride = 10
+2025-08-17 04:05:20 [(null)] [(null)] i = 5
+2025-08-17 04:05:20 [(null)] [(null)] l = 0, inMatIndex= 4
+2025-08-17 04:05:20 [(null)] [(null)] l = 1, inMatIndex= 4
+2025-08-17 04:05:20 [(null)] [(null)] i = 6, convolve Dims = 2, j = 1, kernInd = -1, gridInd = 1, gridIndKern = 0, offset = 0, stride = 2
+2025-08-17 04:05:20 [(null)] [(null)] i = 6, convolve Dims = 2, j = 0, kernInd = 1, gridInd = 0, gridIndKern = 1, offset = 10, stride = 10
+2025-08-17 04:05:20 [(null)] [(null)] i = 6
+2025-08-17 04:05:20 [(null)] [(null)] l = 0, inMatIndex= 10
+2025-08-17 04:05:20 [(null)] [(null)] l = 1, inMatIndex= 10
+2025-08-17 04:05:20 [(null)] [(null)] i = 7, convolve Dims = 2, j = 1, kernInd = 0, gridInd = 1, gridIndKern = 1, offset = 2, stride = 2
+2025-08-17 04:05:20 [(null)] [(null)] i = 7, convolve Dims = 2, j = 0, kernInd = 1, gridInd = 0, gridIndKern = 1, offset = 12, stride = 10
+2025-08-17 04:05:20 [(null)] [(null)] i = 7
+2025-08-17 04:05:20 [(null)] [(null)] l = 0, inMatIndex= 12
+2025-08-17 04:05:20 [(null)] [(null)] l = 1, inMatIndex= 12
+2025-08-17 04:05:20 [(null)] [(null)] i = 8, convolve Dims = 2, j = 1, kernInd = 1, gridInd = 1, gridIndKern = 2, offset = 4, stride = 2
+2025-08-17 04:05:20 [(null)] [(null)] i = 8, convolve Dims = 2, j = 0, kernInd = 1, gridInd = 0, gridIndKern = 1, offset = 14, stride = 10
+2025-08-17 04:05:20 [(null)] [(null)] i = 8
+2025-08-17 04:05:20 [(null)] [(null)] l = 0, inMatIndex= 14
+2025-08-17 04:05:20 [(null)] [(null)] l = 1, inMatIndex= 14

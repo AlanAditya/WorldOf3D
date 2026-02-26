@@ -30,7 +30,7 @@ int main(int argc, const char * argv[]) {
         MetalViewController *viewController = [[MetalViewController alloc] initWithDevice:metalDevice origin:window.frame.origin];
         viewController->CommandQueue = [metalDevice newCommandQueue];
         [view setDelegate:viewController];
-//        [view setNeedsDisplay:false];
+//        [view setNeedsDisplay:false];	
         
         [window setContentView:view];
         [app setActivationPolicy:NSApplicationActivationPolicyRegular];
