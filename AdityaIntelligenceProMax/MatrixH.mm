@@ -474,18 +474,211 @@ struct nested_initializer_list<T, 0> {
 enum Flags : unsigned int {
     NON_OWNERSHIP_FLAG = 1u << 0,  // Bit 0
     NON_CONTIGUOUS_FLAG = 1u << 1,  // Bit 1
+    COMPUTE_GRAPH = 1u << 2 // Bit 2
 };
 
 
-template <int dims, typename Type>
-class MatrixH : MatrixBase {
+class OppNode {
 public:
-    Type* buffer;
+    std::shared_ptr<MatrixBase> A;
+    std::shared_ptr<MatrixBase> B;
+    
+    std::string name;
+    virtual std::string generateMSL() = 0;
+    OppNode(const OppNode&) = default;
+    OppNode(OppNode&&) noexcept = default;
+    OppNode& operator=(const OppNode&) = default;
+    OppNode& operator=(OppNode&&) noexcept = default;
+    OppNode(std::shared_ptr<MatrixBase> A, std::shared_ptr<MatrixBase> B): A(A), B(B) {
+        
+    }
+};
+
+struct PairHash {
+    std::size_t operator()(const std::pair<int, DType>& key) const noexcept {
+        return std::hash<int>{}(key.first) ^ (std::hash<int>{}(static_cast<int>(key.second)) << 1);
+    }
+};
+
+struct PairEqual {
+    bool operator()(const std::pair<int, DType>& a, const std::pair<int, DType>& b) const noexcept {
+        return a.first == b.first && a.second == b.second;
+    }
+};
+
+class AddNode: public OppNode {
+public:
+    AddNode(std::shared_ptr<MatrixBase> A, std::shared_ptr<MatrixBase> B): OppNode(A, B) {
+         
+    }
+    AddNode(const AddNode&) = default;
+    AddNode(AddNode&&) noexcept = default;
+    AddNode& operator=(const AddNode&) = default;
+    AddNode& operator=(AddNode&&) noexcept = default;
+
+    
+    std::string generateMSL() override {
+        std::string LHS;
+        std::string RHS;
+        
+        using HandlerFn = std::string(*)(std::shared_ptr<MatrixBase>);
+        
+        std::unordered_map<std::pair<int, DType>, HandlerFn, PairHash, PairEqual> table = {
+            {{1, DType::Float},  handleMatrix<1, float>},
+            {{2, DType::Float},  handleMatrix<2, float>},
+            {{3, DType::Float},  handleMatrix<3, float>},
+        };
+        
+        LHS = table.at({A->mDims, A->dtype})(A);
+        RHS = table.at({B->mDims, B->dtype})(B);
+        return LHS + "+" +  RHS;
+    }
+    
+    template<int dims, typename Type>
+    static std::string handleMatrix(std::shared_ptr<MatrixBase> base_ptr);
+};
+
+// Range type for slicing
+struct Range {
+    int start, end;
+    constexpr Range(int s, int e) : start(s), end(e) {}
+};
+
+// Proxy object to enable colon syntax
+struct Slice {
+    int value;
+    
+    // Implicit conversion from int - this is the key!
+    constexpr Slice(int v) : value(v) {}
+    
+    // The magic: overload operator| to mimic colon
+    constexpr Range operator|(const Slice& other) const {
+        return Range(value, other.value);
+    }
+};
+
+
+struct TensorRef {
+    void* raw;           // points to MatrixH<dims,Type>
+    const std::type_info* type;
+};
+struct TapeNode {
+    // Parents of this node
+    std::vector<TensorRef> parents;
+
+    // Backward function: input is this node's gradient
+    std::function<void(const TensorRef& grad)> backward;
+
+    // Gradient accumulated during backward pass
+    TensorRef grad;
+
+    // For memory management (optional)
+    int refcount = 0;
+};
+
+template<int dims, typename T>
+TensorRef wrap(MatrixH<dims, T>* t) {
+    return TensorRef{ t, &typeid(MatrixH<dims, T>) };
+}
+
+template<int dims, typename T>
+void attachTape(MatrixH<dims, T>& out, TapeNode* node) {
+//    out.tape = node;
+}
+
+template<int dimsB, typename Type>
+inline void setBufferOrBytes(id<MTLComputeCommandEncoder> commandEncoder,
+                              const MatrixH<dimsB, Type>& tensor,
+                              NSUInteger index)  {
+    if (tensor.metalBuffer) {
+        [commandEncoder setBuffer:tensor.metalBuffer offset:0 atIndex:index];
+    } else {
+        size_t byteLength;
+        if (tensor.flags & NON_CONTIGUOUS_FLAG) {
+            // For non-contiguous: calculate actual buffer span
+            // From first element to last element including stride gaps
+            byteLength = (tensor.strides[0] * tensor.shape[0]) * sizeof(Type);
+        } else {
+            // For contiguous: use total size
+            byteLength = tensor.total_size * sizeof(Type);
+        }
+        
+        [commandEncoder setBytes:tensor.buffer length:byteLength atIndex:index];
+    }
+}
+
+//template<int dims, typename T>
+//void accumulate_grad(MatrixH<dims, T>& parent, const TensorRef& grad_out) {
+//    if (!parent.tape->grad.raw) {
+//        parent.tape->grad = grad_out;   // first time
+//    } else {
+//        // parent.tape->grad += grad_out
+//        add_into(parent.tape->grad, grad_out);
+//    }
+//}
+enum class OpType { NONE, ADD, MATMUL };
+struct Primitive {
+    OpType op;
+    Primitive(OpType o = OpType::NONE) : op(o) {}
+    virtual ~Primitive() = default;
+    virtual void evaluate_inputs(MatrixBase* output) = 0;
+};
+
+template <int dims, typename Type>
+struct SimmilarPrimitive : public Primitive {
+    std::shared_ptr<MatrixH<dims, Type>> Mat1;
+    std::shared_ptr<MatrixH<dims, Type>> Mat2;
+
+    SimmilarPrimitive(OpType o, std::shared_ptr<MatrixH<dims, Type>> m1, std::shared_ptr<MatrixH<dims, Type>> m2)
+        : Primitive(o), Mat1(m1), Mat2(m2) {}
+
+    // NEW: Implement the bridge to traverse further down
+    void evaluate_inputs(MatrixBase* output) override {
+        Mat1->evaluate();
+        Mat2->evaluate();
+        if (op == OpType::ADD) {
+            Mat1->BroadcastedAdd(*static_cast<MatrixH<dims, Type>*>(output), *Mat2);
+        }
+    }
+};
+
+template <int InDims, int OutDims, typename Type>
+struct UnsqeezePrimitive : public Primitive {
+    std::shared_ptr<MatrixH<InDims, Type>> input;
+    int axis;
+
+    UnsqeezePrimitive(std::shared_ptr<MatrixH<InDims, Type>> in, int axis) : input(in) {}
+
+    void evaluate_inputs(MatrixBase* output) override {
+        input->evaluate();
+        auto out_casted = static_cast<MatrixH<OutDims, Type>*>(output);
+        memcpy(out_casted->buffer, input->buffer, sizeof(Type) * out_casted->total_size);
+    }
+};
+
+template <int dims, typename Type>
+class MatrixH : public MatrixBase {
+public:
+    Type* buffer = nullptr;
     size_m shape[dims];
     size_m strides[dims];
     size_t total_size;
     id<MTLBuffer> metalBuffer = nil;
     uint8_t flags = 0;
+    Primitive* tape = nullptr;
+    std::atomic<uint32_t>* refCount = nil;
+//    kes
+//    using ParentList = std::vector<std::shared_ptr<MatrixH<dims, Type>>>;
+//    __attribute__((annotate("lldb_hidden"))) ParentList* parentNodes = nullptr;
+    
+//    std::function<MatrixH<dims, Type>(MatrixH<dims, Type>&)>* gradFunc = nullptr;
+//    std::conditional_t<
+//        !std::is_same<Type, Point3D>::value,
+//        Type,
+//        std::nullptr_t
+//    > grad;
+    
+    
     
     using initializer_type = typename nested_initializer_list<Type, dims>::type;
     MatrixH(initializer_type nestedList) requires (dims != 0) : MatrixBase(dims, dtype_from_type<Type>())  {
@@ -571,20 +764,83 @@ public:
         }
     }
     
+    explicit MatrixH(std::initializer_list<Type> list) {
+        total_size = list.size();
+        shape[0] = list.size();
+        buffer = new Type[total_size];
+        memcpy(buffer, list.begin(), sizeof(Type) * list.size());
+        strides[0] = 1;
+        
+        if (total_size > 10) {
+            buildMetalBuffer();
+        }
+    }
 
+    MatrixH<dims, Type> addWithTape(MatrixH<dims, Type>& A, MatrixH<dims, Type>& B) {
+        MatrixH<dims, Type> out;
+        // ... compute out = A + B on CPU or Metal ...
+
+        // Create tape node
+        TapeNode* node = new TapeNode;
+        node->parents = { wrap(&A), wrap(&B) };
+
+        // Define backward function
+        node->backward = [&](const TensorRef& grad_out) {
+            // dA = grad_out
+//            accumulate_grad(A, grad_out);
+            // dB = grad_out
+//            accumulate_grad(B, grad_out);
+        };
+
+        attachTape(out, node);
+        return out;
+    }
     
     static MatrixH<dims, Type> solid() {
         MatrixH<dims, Type> outputM;
     }
     
-    MatrixH<dims, Type> copy() {
+    MatrixH<dims, Type> cloneData() {
         MatrixH<dims, Type> result;
-        result.buffer = new Type[total_size];
-        memcpy(buffer, result.buffer, sizeof(Type) * result.total_size);
         result.total_size = total_size;
-        memcpy(result.shape, shape, sizeof(size_t) * dims);
-        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:result.total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-        }];
+        
+        size_t eff_total_size = effectiveBufferSize();
+        result.buffer = new Type[eff_total_size];
+        memcpy(result.buffer, buffer, eff_total_size * sizeof(Type));
+        
+    }
+    
+    void evaluate() {
+        if (tape) {
+            // 1. Recursively go down the graph to ensure inputs are ready
+            tape->evaluate_inputs(this);
+                
+            // 2. Compute THIS node's data (The actual math kernels go here)
+            std::cout << "Executing OpType: " << static_cast<int>(tape->op) << " for a " << dims << "D matrix.\n";
+//            if (tape->op == OpType::ADD) {
+//                auto casted_tape = static_cast<SimmilarPrimitive<dims, Type>*>(tape);
+//                casted_tape->Mat1->BroadcastedAdd(*this, *casted_tape->Mat2);
+//            }
+        }
+//        is_computed = true; // Mark as done so we don't calculate it twice
+        }
+    
+    template <int dimO>
+    void cloneData(MatrixH<dimO, Type>& mat) {
+        mat.total_size = total_size;
+        
+        size_t eff_total_size = effectiveBufferSize();
+        mat.buffer = new Type[eff_total_size];
+        memcpy(mat.buffer, buffer, eff_total_size * sizeof(Type));
+    }
+    
+    MatrixH<dims, Type> copy() {
+        MatrixH<dims, Type> result = cloneData();
+        result.total_size = total_size;
+        result.flags = flags;
+        memcpy(result.shape, shape, sizeof(size_m) * dims);
+        memcpy(result.strides, strides, sizeof(size_m) * dims);
+        result.buildMetalBuffer();
         return result;
     }
     
