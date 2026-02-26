@@ -4042,11 +4042,148 @@ public:
         return result;
     }
     
+    void SliceBuffer(Type* outBuff, Type* inBuff, size_t stride, size_t size, uint rows) {
+        for (int i = 0; i < rows; i++) {
+            memcpy(outBuff + i * size, inBuff + i * stride, size * sizeof(Type));
+        }
+    }
+    
+    
+    
+    void SliceCopy(MatrixH<dims, Type>& slicedMat, std::initializer_list<std::optional<std::pair<size_t, size_t>>> slice) {
+        uint index = 0;
+        size_t offsets[dims];
+        bool firstNonNullStrideFound = false;
+        memset(offsets, 0, dims * sizeof(size_m));
+        memcpy(slicedMat.shape, shape, dims * sizeof(size_m));
+        Type* MemArena;
+        
+        for (auto i : slice) {
+            if (i.has_value()) {
+                offsets[index] = i->first;
+                size_t stride = slicedMat.accumul(index, dims);
+                slicedMat.shape[index] = i->second - i->first;
+                size_t size = slicedMat.accumul(index, dims);
+                size_t elementStride = slicedMat.accumul(index+1, dims);
+                
+                uint noOfOp = slicedMat.accumul(0, index);
+                if (!firstNonNullStrideFound) {
+                    MemArena = new Type[slicedMat.accumul(index, dims)];
+                    SliceBuffer(MemArena, buffer + offsets[index] * elementStride, stride, size, noOfOp);
+                    firstNonNullStrideFound = true;
+                    index++;
+                    continue;
+                    
+                }
+                SliceBuffer(MemArena, MemArena + offsets[index] * elementStride, stride, size, noOfOp);
+            }
+            index++;
+        }
+        slicedMat.calcStrides();
+//        slicedMat.total_size = slicedMat.accumul(0, dims);
+        slicedMat.total_size = slicedMat.strides[0] * slicedMat.shape[0];
+        memcpy(slicedMat.buffer, MemArena, sizeof(Type) * slicedMat.total_size);
+    }
+    
+    MatrixH<dims, Type> SliceCopy(std::initializer_list<std::optional<std::pair<size_t, size_t>>> slice) {
+        uint index = 0;
+        size_t offsets[dims];
+        bool firstNonNullStrideFound = false;
+        
+        size_t acc = 1;
+        for (auto i : slice) {
+            if (i.has_value()) {
+                acc *= i->second - i->first;
+            }
+            else {
+                acc *= shape[index];
+            }
+            index ++;
+        }
+        
+        acc *= accumul(index, dims);
+        MatrixH<dims, Type> slicedMat(acc);
+        
+        index = 0;
+        memset(offsets, 0, dims * sizeof(size_m));
+        memcpy(slicedMat.shape, shape, dims * sizeof(size_m));
+        Type* MemArena;
+        
+        for (auto i : slice) {
+            
+            if (i.has_value()) {
+                offsets[index] = i->first;
+                size_t stride = slicedMat.accumul(index, dims);
+                slicedMat.shape[index] = i->second - i->first;
+                size_t size = slicedMat.accumul(index, dims);
+                
+                size_t elementStride = slicedMat.accumul(index+1, dims);
+                
+                uint noOfOp = slicedMat.accumul(0, index);
+                std::cout << "Stride: " << stride << "size: " << size << "no of Opp: " << noOfOp << "\n";
+                if (!firstNonNullStrideFound) {
+//                    MemArena = new Type[slicedMat.accumul(index, dims)]; // not wrong wrong
+                    MemArena = new Type[slicedMat.accumul(0, index+1) * accumul(index+1, dims)];
+                    SliceBuffer(MemArena, buffer + offsets[index] * elementStride, stride, size, noOfOp);
+                    firstNonNullStrideFound = true;
+                    index++;
+                    continue;
+                    
+                }
+                SliceBuffer(MemArena, MemArena + offsets[index] * elementStride, stride, size, noOfOp);
+            }
+            index++;
+        }
+        slicedMat.calcStrides();
+        slicedMat.total_size = acc;
+        memcpy(slicedMat.buffer, MemArena, sizeof(Type) * slicedMat.total_size);
+        return slicedMat;
+    }
+    
+    MatrixH<dims, Type> Slice(std::initializer_list<std::optional<std::pair<size_t, size_t>>> slice) {
+        uint index = 0;
+        size_m offsets[dims];
+        bool firstNonNullStrideFound = false;
+        memset(offsets, 0, dims * sizeof(size_m));
+        
+#ifdef SAFE_MODE
+            if (slice.size() > dims) { std::cerr << "MatrixH: slice has "<< slice.size() << " args for a " << dims << "D matrix "<< "\n"; }
+#endif
+        
+        MatrixH<dims, Type> slicedMat;
+        
+        for (auto i : slice) {
+            if (i.has_value()) {
+#ifdef SAFE_MODE
+                if (i->second > shape[index]) { std::cerr << "MatrixH: index "<< i->second << " excedes the shape " << shape[index] << "of axis "<< index << "\n"; }
+                if (i->first > shape[index]) { std::cerr << "MatrixH: index "<< i->second << " excedes the shape " << shape[index] << "of axis "<< index << "\n"; }
+#endif
+                slicedMat.shape[index] = i->second - i->first;
+                offsets[index] = i->first;
+            }
+            else {
+                slicedMat.shape[index] = shape[index];
+            }
+            
+            index ++;
+        }
+        memcpy(slicedMat.shape + slice.size(), shape + slice.size(),(dims-slice.size()) * sizeof(size_m));
+        memcpy(slicedMat.strides, strides, dims * sizeof(size_m));
+        slicedMat.total_size = slicedMat.accumul(0, dims);
+        slicedMat.flags |= NON_OWNERSHIP_FLAG;
+        slicedMat.flags |= NON_CONTIGUOUS_FLAG;
+        slicedMat.buffer = buffer + dotArray(offsets, strides, dims);
+        if (slicedMat.total_size > 10) {
+            slicedMat.buildMetalBuffer();
+        }
+        
+        return slicedMat;
+    }
     
 //    void operator=(const MatrixH<dims, Type> &other) {
 //        if (buffer && total_size == other.total_size) {
 //            memcpy(buffer, other.buffer, other.total_size * sizeof(Type));
-//            memcpy(shape, other.shape, dims * sizeof(size_t));
+//            memcpy(shape, other.shape, dims * sizeof(size_m));
 ////            delete [] other.buffer;
 //            
 //        } else {
@@ -4056,11 +4193,60 @@ public:
 //            buffer = new Type[other.total_size];
 //            total_size = other.total_size;
 //            memcpy(buffer, other.buffer, other.total_size * sizeof(Type));
-//            memcpy(shape, other.shape, dims * sizeof(size_t));
+//            memcpy(shape, other.shape, dims * sizeof(size_m));
 //        }
 //    }
     
 };
+
+using MatF1 = MatrixH<1, float>;
+
+template<int dims, typename Type>
+std::string AddNode::handleMatrix(std::shared_ptr<MatrixBase> base_ptr) {
+    MatrixH<dims, Type>* mat = reinterpret_cast<MatrixH<dims, Type>*>(base_ptr.get());
+//    if (mat->operationNodes->size() > 1) {
+//        return (*mat->operationNodes)[0].generateMSL();
+//    }
+    return "x";
+}
+template std::string AddNode::handleMatrix<1, float>(std::shared_ptr<MatrixBase>);
+template std::string AddNode::handleMatrix<2, float>(std::shared_ptr<MatrixBase>);
+//template std::string AddNode::handleMatrix<3, float>(std::shared_ptr<MatrixBase>);
+template std::string AddNode::handleMatrix<4, float>(std::shared_ptr<MatrixBase>);
+//class matrix {
+//public:
+//    size_m* shape;
+//    char* buffer;
+//    int dims = 0;
+//    size_t totalsize = 0;
+//    
+//    template<typename U>
+//    void construct(std::initializer_list<typename std::conditional<
+//                   std::is_arithmetic_v<U>, U, std::initializer_list<U>>::type> list) {
+////        dims += 1;
+////        size_m* temp = new size_m[dims];
+////        if (shape) { memcpy(temp, shape, (dims-1) * sizeof(size_m)); delete [] shape; }
+////        shape = temp;
+////        shape[dims-1] = list.size();
+////        if constexpr (std::is_arithmetic_v<U>) {
+////            totalsize += list.size();
+////        } else {
+////            for (auto& sub : list) {
+////                construct(sub);
+////            }
+////        }
+//    }
+//    
+//    void printShape() {
+//        std::cout << "[ ";
+//        for (int i =0; i< dims; i++) {
+//            std::cout << shape[i] <<", ";
+//        }
+//        std::cout << "\n";
+//    }
+//};
+
+
 
 template <int dims, typename Type>
 MatrixH<dims, Type> sin(const MatrixH<dims, Type>& mat) {
@@ -4094,6 +4280,7 @@ MatrixH<1, float> simd_matH(simd_float3 inp) {
 // MARK: - HAND DETECTOR AI
 static MatrixH<1, uint8_t> RED = {255, 0, 0, 255};
 static MatrixH<1, uint8_t> GREEN = {0, 255, 255, 255};
+static MatrixH<1, float> BLUE = MatrixH<1, float>({89.0, 149.0, 173.0, 255.0}) / 255.0;
 
 class HandDetector {
 public:
