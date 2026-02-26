@@ -1083,7 +1083,7 @@ public:
         }
         
         [commandEncoder setBytes:&type length:sizeof(int) atIndex:3];
-        [commandEncoder setBytes:&stride length:sizeof(size_t) atIndex:4];
+        [commandEncoder setBytes:&stride length:sizeof(size_m) atIndex:4];
         [commandEncoder setComputePipelineState:GlobalGPUManager.MulAllCompute];
         [commandEncoder dispatchThreads:_dispatchExecutionSize
                   threadsPerThreadgroup:_threadsPerThreadgroup];
@@ -1110,8 +1110,19 @@ public:
         MatrixH<dims, Type> result;
         result.buffer = new Type[total_size];
         result.total_size = total_size;
-        memcpy(result.shape, shape, sizeof(size_t) * dims);
+        memcpy(result.shape, shape, sizeof(size_m) * dims);
+        memcpy(result.strides, strides, sizeof(size_m) * dims);
         result.buildMetalBuffer();
+        
+        
+//        result.parentNodes.push_back(std::make_shared<MatrixH<dims, Type>>(*this));
+//        result.parentNodes.push_back(std::make_shared<MatrixH<dims, Type>>(other));
+//        result.gradFunc = [](MatrixH<dims, Type>& selfs) {
+//            auto p1 = selfs.parentNodes[0]->gradFunc ? selfs.parentNodes[0]->gradFunc(*selfs.parentNodes[0]) : selfs.parentNodes[0]->ones();
+//            auto p2 = selfs.parentNodes[1]->gradFunc ? selfs.parentNodes[1]->gradFunc(*selfs.parentNodes[1]) :  selfs.parentNodes[1]->ones();
+//            return (p1) * *(selfs.parentNodes[1])+
+//                       p2 * *(selfs.parentNodes[0]);
+//        };
         
         if (!GlobalGPUManager.MulAllInit) {
             GlobalGPUManager.initMulAll();
@@ -1312,7 +1323,7 @@ public:
         return output;
     }
     
-    MatrixH<dims, Type> ones() {
+    MatrixH<dims, Type> ones() const {
         MatrixH<dims, Type> output;
         memcpy(output.shape, shape, dims * sizeof(size_m));
         output.calcStrides();
@@ -1323,7 +1334,7 @@ public:
         return output;
     }
     
-    MatrixH<dims, Type> zeros() {
+    MatrixH<dims, Type> zeros() const {
         MatrixH<dims, Type> output;
         memcpy(output.shape, shape, dims * sizeof(size_m));
         output.calcStrides();
@@ -1343,6 +1354,16 @@ public:
         output.buffer = new Type[output.total_size];
         output.buildMetalBuffer();
         return output;
+    }
+    
+    void initWithCurrentShape() {
+        if (buffer && !(flags & NON_OWNERSHIP_FLAG)) {
+            delete [] buffer;
+        }
+        calcStrides();
+        total_size = accumul(0, dims);
+        buffer = new Type[total_size];
+        buildMetalBuffer();
     }
     
 //    template <typename = std::enable_if_t<(dims == 2)>>
@@ -1404,7 +1425,7 @@ public:
         }
     }
     
-    simd_float2 Normalise(simd_int2 deviceCoord) {
+    simd_float2 NormaliseShapeToScreen(simd_int2 deviceCoord) {
         simd_float2 size = simd_make_float2(shape[1], shape[0]);
         
         return simd_make_float2((float)deviceCoord.x, (float)deviceCoord.y) / size;
@@ -1528,6 +1549,23 @@ public:
          }
         CVPixelBufferUnlockBaseAddress(pixelBuffer, 0);
         return pixelBuffer;
+    }
+    
+    static MatrixH<3, uint8_t> fromCVmat(cv::Mat image) {
+        cv::Mat m = image;
+        if (!m.isContinuous()) m = m.clone();
+
+        MatrixH<3, uint8_t> result;
+        
+        result.shape[0] = m.rows;
+        result.shape[1] = m.cols;
+        result.shape[2] = m.channels();
+        result.calcStrides();
+        result.total_size = result.accumul(0, 3);
+        result.buffer = new uint8_t[result.total_size];
+        memcpy(result.buffer, m.data, result.total_size);
+        result.buildMetalBuffer();
+        return result;
     }
     
     static MatrixH<3, uint8_t> fromImage(bool includeDepth) {
@@ -1694,6 +1732,8 @@ public:
 
         [blitEncoder endEncoding];
         [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+
     }
     
     id<MTLTexture> ToMTLTexture() {
@@ -1972,7 +2012,7 @@ public:
         
         
         this->To(result, 0);
-
+        result.calcStrides();
         return result;
     }
     
@@ -1983,6 +2023,84 @@ public:
     explicit operator MatrixH<dimsNew, Type>() {
         return this->unsqueeze<dimsNew-dims>();
     }
+    
+    
+    
+//    template<int DimsNew>
+//    explicit operator MatrixH<DimsNew, float>() const {
+//        MatrixH<DimsNew, float> result;
+//        uint8_t dimBias = 0;
+//        int code = 00;
+//        if (std::is_same<Type, simd_float2>::value) {
+//            result.total_size = total_size * 2;
+//            result.shape[DimsNew-1] = 2;
+//            dimBias = 1;
+//        } else if (std::is_same<Type, simd_float3>::value) {
+//            result.total_size = total_size * 3;
+//            result.shape[DimsNew-1] = 3;
+//            dimBias = 1;
+//        } else if (std::is_same<Type, simd_float4>::value) {
+//            result.total_size = total_size * 4;
+//            result.shape[DimsNew-1] = 4;
+//            dimBias = 1;
+//        } else if (std::is_same<Type, simd_float2x2>::value) {
+//            result.total_size = total_size * 4;
+//            result.shape[DimsNew-1] = 2;
+//            result.shape[DimsNew-2] = 2;
+//            dimBias = 2;
+//        } else if (std::is_same<Type, simd_float3x3>::value) {
+//            result.total_size = total_size * 9;
+//            result.shape[DimsNew-1] = 3;
+//            result.shape[DimsNew-2] = 3;
+//            dimBias = 2;
+//        } else if (std::is_same<Type, simd_float4x4>::value) {
+//            result.total_size = total_size * 16;
+//            result.shape[DimsNew-1] = 4;
+//            result.shape[DimsNew-2] = 4;
+//            dimBias = 2;
+//        }
+//        else {
+//            result.total_size = total_size;
+//        }
+//        
+//        result.buffer = new float[total_size];
+//        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:result.total_size * sizeof(uint8_t) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+//        }];
+//        std::memcpy(result.shape + (DimsNew - dims) - dimBias, shape, sizeof(size_m) * dims);
+//        std::fill(result.shape, result.shape + (DimsNew - dims) - dimBias, 1);
+//        
+//        this->To<DimsNew, float>(result, 1);
+//        
+//
+//        return result;
+//    }
+//    
+//    template<int DimsNew>
+//    explicit operator MatrixH<DimsNew, uint8_t>() const {
+//        MatrixH<DimsNew, uint8_t> result;
+//        result.total_size = total_size;
+//        result.buffer = new uint8_t[total_size];
+//        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:result.total_size * sizeof(uint8_t) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+//        }];
+//        std::memcpy(result.shape, shape, sizeof(size_m) * dims);
+//        std::fill(result.shape + dims, result.shape + DimsNew, 1);
+//        
+//        if (std::is_same<Type, uint8_t>::value) {
+//            this->To<DimsNew, uint8_t>(result, 1);
+//        }
+//        else if (std::is_same<Type, int16_t>::value) {
+//            this->To<DimsNew, uint8_t>(result, 3);
+//        }
+//        else {
+//            std::cerr << "MatrixH: Type Not Suported Yet" << "\n";
+//        }
+//
+//        return result;
+//    }
+    
+    
+    
+    
     
     
     MatrixH<dims, Type> Transpose(const std::initializer_list<size_m>& axis) {
@@ -2003,17 +2121,18 @@ public:
         
 
         
-        size_m inputStrides[dims];
-        size_t acc = 1;
-        for (int i = dims-1; i >= 0; i--) {
-            inputStrides[i] = acc;
-            acc *= shape[i];
-        }
+//        size_m inputStrides[dims];
+//        size_t acc = 1;
+//        for (int i = dims-1; i >= 0; i--) {
+//            inputStrides[i] = acc;
+//            acc *= shape[i];
+//        }
         
-        acc = 1;
+        size_m acc = 1;
         size_m outputStrides[dims];
         for (int i = dims-1; i >= 0; i--) {
             outputStrides[*(axis.begin() + i)] = acc;
+            output.strides[i] = acc;
             if (*(axis.begin() + i) >= dims) {std::cerr << "MatrixH: Rearranged axis should not increase dims" << "\n"; }
             acc *= shape[*(axis.begin() + i)];
             output.shape[i] = shape[*(axis.begin() + i)];
@@ -2029,8 +2148,12 @@ public:
         auto _dispatchExecutionSize =  MTLSizeMake(total_size, 1, 1);
         
         [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
-        [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
-        [commandEncoder setBytes:inputStrides length:dims * sizeof(size_m) atIndex:2];
+        if (metalBuffer) {
+            [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        } else {
+            [commandEncoder setBytes:buffer length:total_size*sizeof(Type) atIndex:1];
+        }
+        [commandEncoder setBytes:strides length:dims * sizeof(size_m) atIndex:2];
         [commandEncoder setBytes:outputStrides length:dims * sizeof(size_m) atIndex:3];
         [commandEncoder setBytes:&dimensions length: sizeof(dims) atIndex:4];
         [commandEncoder setComputePipelineState:GlobalGPUManager.TransposeComputeState[typeCode]];
@@ -2085,7 +2208,7 @@ public:
         return output;
     }
     
-    static MatrixH<dims, Type> sqrt(MatrixH<dims, Type>& mat) {
+    static MatrixH<dims, Type> sqrt(const MatrixH<dims, Type>& mat) {
         
         
         uint8_t typeCode = get_dtype_code<Type>();
@@ -2099,6 +2222,7 @@ public:
         output.buffer = new Type[mat.total_size];
         output.buildMetalBuffer();
         memcpy(output.shape, mat.shape, sizeof(size_m) * dims);
+        memcpy(output.strides, mat.strides, sizeof(size_m) * dims);
         
         id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
         id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
@@ -2301,12 +2425,13 @@ public:
         output.buffer = new Type[output.total_size];
         memset(output.buffer, 0, output.total_size * sizeof(Type));
         output.buildMetalBuffer();
+        output.calcStrides();
         std::cout << output.total_size << "\n";
         
-        size_t ElStride = accumul(axis+1, dims);
+        size_m ElStride = accumul(axis+1, dims);
         
-        size_t noOfOpp = shape[axis];
-        size_t axisStride;
+        size_m noOfOpp = shape[axis];
+        size_m axisStride;
         if (axis != dims-1) {
             axisStride = 1;
         }
@@ -2314,14 +2439,14 @@ public:
             axisStride = shape[axis];
         }
         
-        size_t inputStrides[dims-1];
+        size_m inputStrides[dims-1];
         size_t acc = 1;
         for (int i = dims-2; i >= 0; i--) {
             inputStrides[i] = acc;
             acc *= output.shape[i];
         }
         
-        size_t maskedStrides[dims-1];
+        size_m maskedStrides[dims-1];
         memcpy(maskedStrides, inputStrides, sizeof(size_m) * (dims-1));
         
         acc = 1;
@@ -2340,12 +2465,24 @@ public:
          
         size_t outputDims = dims -1;
         [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
-        [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+//        setBufferOrBytes(commandEncoder, output, 0);
+        if (metalBuffer) {
+            [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        } else {
+            [commandEncoder setBytes:buffer length:total_size*sizeof(Type) atIndex:1];
+        }
         [commandEncoder setBytes:&axisStride length: sizeof(size_m) atIndex:2];
         [commandEncoder setBytes:&ElStride length: sizeof(size_m) atIndex:3];
         [commandEncoder setBytes:&noOfOpp length: sizeof(size_m) atIndex:4];
-        [commandEncoder setBytes:&inputStrides length: (dims-1) * sizeof(size_m) atIndex:5];
-        [commandEncoder setBytes:&maskedStrides length: (dims-1)* sizeof(size_m) atIndex:6];
+        
+        if (dims > 1) {
+            [commandEncoder setBytes:&inputStrides length: (dims-1) * sizeof(size_m) atIndex:5];
+            [commandEncoder setBytes:&maskedStrides length: (dims-1)* sizeof(size_m) atIndex:6];
+        } else {
+            size_m inpandmaskedStrides = 1;
+            [commandEncoder setBytes:&inpandmaskedStrides length: sizeof(size_m) atIndex:5];
+            [commandEncoder setBytes:&inpandmaskedStrides length:sizeof(size_m) atIndex:6];
+        }
         [commandEncoder setBytes:&outputDims length:  sizeof(size_m) atIndex:7];
         [commandEncoder setComputePipelineState:GlobalGPUManager.SumComputeState[typeCode]];
         [commandEncoder dispatchThreads:_dispatchExecutionSize
@@ -2360,6 +2497,97 @@ public:
         return output;
     }
     
+    MatrixH<dims, Type> SumNoRed(int axis) {
+        if (axis < 0){
+            axis += dims;
+        }
+        if ((dims-1 < axis)) {
+            std::cerr << "MatrixH: Axis should not excede Dims of " << dims << "\n";
+            throw;
+        }
+        
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        if (!GlobalGPUManager.SumInit[typeCode]) {
+            GlobalGPUManager.initSum_All(typeCode);
+        }
+        
+        MatrixH<dims, Type> output;
+        memcpy(output.shape, shape, dims * sizeof(size_m));
+        output.shape[axis] = 1;
+        output.total_size = output.accumul(0, dims-1);
+        output.buffer = new Type[output.total_size];
+        memset(output.buffer, 0, output.total_size * sizeof(Type));
+        output.buildMetalBuffer();
+        output.calcStrides();
+        std::cout << output.total_size << "\n";
+        
+        size_m ElStride = accumul(axis+1, dims);
+        
+        size_m noOfOpp = shape[axis];
+        size_m axisStride;
+        if (axis != dims-1) {
+            axisStride = 1;
+        }
+        else {
+            axisStride = shape[axis];
+        }
+        
+        size_m inputStrides[dims-1];
+        size_t acc = 1;
+        for (int i = dims-2; i >= 0; i--) {
+            inputStrides[i] = acc;
+            acc *= output.shape[i];
+        }
+        
+        size_m maskedStrides[dims-1];
+        memcpy(maskedStrides, inputStrides, sizeof(size_m) * (dims-1));
+        
+        acc = 1;
+        for (int i = 0; i < axis; i++) {
+            maskedStrides[i] *= shape[axis];
+        }
+//        std::cout << "AxStride: " << axisStride << " ElStride: " << ElStride << " noOfOpp: " << noOfOpp << "\n";
+//        printArray(inputStrides, dims-1);
+//        printArray(maskedStrides, dims-1);
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(output.total_size, 1, 1);
+         
+        size_t outputDims = dims -1;
+        [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
+        if (metalBuffer) {
+            [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        } else {
+            [commandEncoder setBytes:buffer length:total_size * sizeof(Type) atIndex:1];
+        }
+        [commandEncoder setBytes:&axisStride length: sizeof(size_m) atIndex:2];
+        [commandEncoder setBytes:&ElStride length: sizeof(size_m) atIndex:3];
+        [commandEncoder setBytes:&noOfOpp length: sizeof(size_m) atIndex:4];
+        if (dims > 1) {
+            [commandEncoder setBytes:&inputStrides length: (dims-1) * sizeof(size_m) atIndex:5];
+            [commandEncoder setBytes:&maskedStrides length: (dims-1)* sizeof(size_m) atIndex:6];
+        } else {
+            size_m inpandmaskedStrides = 1;
+            [commandEncoder setBytes:&inpandmaskedStrides length: sizeof(size_m) atIndex:5];
+            [commandEncoder setBytes:&inpandmaskedStrides length:sizeof(size_m) atIndex:6];
+        }
+        [commandEncoder setBytes:&outputDims length:  sizeof(size_m) atIndex:7];
+        [commandEncoder setComputePipelineState:GlobalGPUManager.SumComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        
+
+        
+        return output;
+    }
     
     MatrixH<dims, Type> T() const {
         size_t axis[dims];
@@ -2376,26 +2604,28 @@ public:
         output.buffer = new Type[total_size];
         output.buildMetalBuffer();
         
-
         
-        size_t inputStrides[dims];
-        size_t acc = 1;
+        
+//        size_m inputStrides[dims];
+        size_m acc = 1;
         for (int i = dims-1; i >= 0; i--) {
-            inputStrides[i] = acc;
-            acc *= shape[i];
+//            inputStrides[i] = acc;
+//            acc *= shape[i];
+//            
+//            // reverse the axis
             axis[dims-1-i]=i;
         }
         
         
         acc = 1;
-        size_t outputStrides[dims];
+        size_m outputStrides[dims];
         for (int i = dims-1; i >= 0; i--) {
             outputStrides[axis[i]] = acc;
-            if (*(axis + i) >= dims) {std::cerr << "MatrixH: Rearranged axis should not increase dims" << "\n"; }
+            if (axis[i] >= dims) {std::cerr << "MatrixH: Rearranged axis should not increase dims" << "\n"; }
+            output.strides[i] = acc;
             acc *= shape[axis[i]];
             output.shape[i] = shape[axis[i]];
         }
-        
         int dimensions = dims;
         
         id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
@@ -2406,10 +2636,14 @@ public:
         auto _dispatchExecutionSize =  MTLSizeMake(total_size, 1, 1);
         
         [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
-        [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
-        [commandEncoder setBytes:inputStrides length:dims * sizeof(size_t) atIndex:2];
-        [commandEncoder setBytes:outputStrides length:dims * sizeof(size_t) atIndex:3];
-        [commandEncoder setBytes:&dimensions length: sizeof(dims) atIndex:4];
+        if (metalBuffer) {
+            [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        } else {
+            [commandEncoder setBytes:buffer length:total_size*sizeof(Type) atIndex:1];
+        }
+        [commandEncoder setBytes:strides length:dims * sizeof(size_m) atIndex:2];
+        [commandEncoder setBytes:outputStrides length:dims * sizeof(size_m) atIndex:3];
+        [commandEncoder setBytes:&dimensions length: sizeof(dimensions) atIndex:4];
         [commandEncoder setComputePipelineState:GlobalGPUManager.TransposeComputeState[typeCode]];
         [commandEncoder dispatchThreads:_dispatchExecutionSize
                   threadsPerThreadgroup:_threadsPerThreadgroup];
@@ -2440,7 +2674,12 @@ public:
         auto _dispatchExecutionSize =  MTLSizeMake(result.total_size, 1, 1);
         
         [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
-        [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        if (metalBuffer) {
+            [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        } else {
+            [commandEncoder setBytes:buffer length:total_size * sizeof(Type) atIndex:1];
+        }
+        
         
         // BUG FIX: B_transposed must be declared in the same scope as [commandBuffer commit]; to prevent premature deallocation.
         // Previously, B_transposed was declared inside the if block and [commandBuffer commit]; outside the if block, causing its metalBuffer to be
@@ -2454,8 +2693,12 @@ public:
         if (!TransposeB) {
             MatrixH<dims, Type> B_transposed;
             B_transposed = other.T();
-            B_transposed.print();
-            [commandEncoder setBuffer:B_transposed.metalBuffer offset:0 atIndex:2];
+            if (other.metalBuffer) {
+                [commandEncoder setBuffer:B_transposed.metalBuffer offset:0 atIndex:2];
+            } else {
+                [commandEncoder setBytes:B_transposed.buffer length:B_transposed.total_size * sizeof(Type) atIndex:2];
+            }
+
             [commandEncoder setBytes:other.shape length:dims * sizeof(size_m) atIndex:4];
             [commandEncoder setBytes:shape length:dims * sizeof(size_m) atIndex:3];
             
@@ -2469,9 +2712,12 @@ public:
                     
         } else {
             size_m* reverseShapeBuffer = new size_m[dims];
-            other.print();
             reverseBuffer(other.shape, reverseShapeBuffer, dims);
-            [commandEncoder setBuffer:other.metalBuffer offset:0 atIndex:2];
+            if (other.metalBuffer) {
+                [commandEncoder setBuffer:other.metalBuffer offset:0 atIndex:2];
+            } else {
+                [commandEncoder setBytes:other.buffer length:other.total_size * sizeof(Type) atIndex:2];
+            }
             [commandEncoder setBytes:reverseShapeBuffer length:dims * sizeof(size_m) atIndex:4];
             [commandEncoder setBytes:shape length:dims * sizeof(size_m) atIndex:3];
             
@@ -2484,19 +2730,10 @@ public:
             [commandBuffer waitUntilCompleted];
             delete [] reverseShapeBuffer;
         }
-        
-        [commandEncoder setBytes:shape length:dims * sizeof(size_m) atIndex:3];
-        
-        [commandEncoder setComputePipelineState:GlobalGPUManager.GEMMAComputeState[typeCode]];
-        [commandEncoder dispatchThreads:_dispatchExecutionSize
-                  threadsPerThreadgroup:_threadsPerThreadgroup];
-        
-        [commandEncoder endEncoding];
-        [commandBuffer commit];
-        [commandBuffer waitUntilCompleted];
     }
     
     MatrixH<dims, Type> Dot(const MatrixH<dims, Type> &other) {
+#ifdef SAFE_MODE
         if (shape[dims - 1] != other.shape[0]) {
             std::cerr << "ValueError: shapes (" ;
             printShape(false);
@@ -2505,7 +2742,7 @@ public:
             std::cerr << ") not aligned: "<< shape[dims-1]<<" (dim "<< dims-1 <<") != "<< other.shape[0] <<" (dim 0) \n";
             throw;
         }
-        
+#endif
         MatrixH<dims, Type> result = MatrixH<dims, Type>::withShape({shape[0], other.shape[1]});
         Dot(result, other, false);
         return result;
@@ -7447,192 +7684,10 @@ enum class TransformationMode {
 //};
 
 
-class Camera3D {
-    simd_float3 oldPosition = {0.0, 0.0, -3.0};
-    simd_float3 up = {0, 1, 0};
-    simd_float3 right = {1, 0, 0};
-    simd_float3 forward = {0, 0, 1};
-    
-    float azimuthalAngle = 0;
-    float polarAngle = 0;
-    
-    // Projection parameters
-    float fov = M_PI * 0.25f; // 45 degrees field of view
-    float orthoSize = 10.0f;  // Size of orthographic view
-    float aspectRatio = 1;
-    
-    // Camera Limits
-    float farP = 1000;
-    float nearP = 0.1;
-    float minPolarAngle = -M_PI / 2 + 0.1;
-    float maxPolarAngle = M_PI / 2 - 0.1;
-    
-    bool AxisUpdated = false;
-    float scale = 1;
-    float sensitivity = 1;
 
-public:
-    bool updated = false;
-    bool isPerspective = true; // true = perspective, false = orthographic
-    simd_float3 position = {0.0, 0.0, -3.00};
-    simd_float3 target = {0, 0, 0};
-    simd_float4x4 viewMatrix;
-    simd_float4x4 inverseProjectionMatrix;
-    
-    Camera3D() {
-        simd_float3 vec = target - position;
-        forward = simd::normalize(vec);
-        right = simd::normalize(simd::cross(forward, up));
-        up = simd::normalize(simd::cross(right, forward));
-        AxisUpdated = true;
-    }
-    
-    void updateOLD() {
-        oldPosition = position;
-        scale = 1;
-    }
-    
-    void updateMatrix() {
-        if (!updated) {
-            // Create view matrix (look-at)
-            simd_float3 zAxis = simd::normalize(target - position); // Camera forward (towards viewer in RH)
-            simd_float3 xAxis = simd::normalize(simd::cross(up, zAxis)); // Right
-            simd_float3 yAxis = simd::normalize(simd::cross(zAxis, xAxis)); // Up
-            
-            // View matrix (right-handed)
-            simd_float4 row0 = {xAxis.x, xAxis.y, xAxis.z, -simd_dot(xAxis, position)};
-            simd_float4 row1 = {yAxis.x, yAxis.y, yAxis.z, -simd_dot(yAxis, position)};
-            simd_float4 row2 = {zAxis.x, zAxis.y, zAxis.z, -simd_dot(zAxis, position)};
-            simd_float4 row3 = {0,      0,      0,      1         };
-            
-            simd_float4x4 viewMat = simd_matrix_from_rows(row0, row1, row2, row3);
-            
-            // Create projection matrix
-            simd_float4x4 projMat;
-            if (isPerspective) {
-                // Perspective projection matrix (right-handed, 0 to 1 depth)
-                
-                float yScale = 1.0f / tanf(fov * 0.5f);     // cotangent of half FOV
-                float xScale = yScale / aspectRatio;
-                float zRange = (farP - nearP);
-                float zScale = farP / zRange;
-                float wzScale = -farP * nearP / zRange;
 
-                // Construct rows as SIMD4 vectors
-                simd_float4 row0 = { xScale, 0,       0,      0 };
-                simd_float4 row1 = { 0,       yScale, 0,      0 };
-                simd_float4 row2 = { 0,       0,       zScale, wzScale };
-                simd_float4 row3 = { 0,       0,       1,      0 };
-
-                // Build the matrix from rows
-                projMat = simd_matrix_from_rows(row0, row1, row2, row3);
-            } else {
-                // Orthographic projection matrix (0 to 1 depth)
-                float right = orthoSize * aspectRatio * 0.5f;
-                float left = -right;
-                float top = orthoSize * 0.5f;
-                float bottom = -top;
-                float range = farP - nearP;
-                
-                simd_float4 proj0 = {2.0f / (right - left), 0, 0, 0};
-                simd_float4 proj1 = {0, 2.0f / (top - bottom), 0, 0};
-                simd_float4 proj2 = {0, 0, 1.0f / range, 0};
-                simd_float4 proj3 = {0, 0, -nearP / range, 1};
-                
-                projMat = simd_matrix(proj0, proj1, proj2, proj3);
-            }
-            
-//            std::cout << simd_transpose(viewMat) << "\n" << simd_transpose(projMat) << "\n";
-            
-            // Combine projection and view matrices
-            viewMatrix = simd_mul(projMat, viewMat);
-            inverseProjectionMatrix = inverseProjectionMat();
-            updated = true;
-        }
-    }
-    
-    void handleMouseEvents(float deltaX, float deltaY, bool isRightMouseButton, bool isShiftPressed, TransformationMode eventType) {
-            float sensitivity = 0.01f;
-            
-            if (isRightMouseButton || eventType == TransformationMode::Translate) {
-                // Pan camera
-                if (!AxisUpdated) {
-                    simd_float3 vec = target - position;
-                    
-                    forward = simd::normalize(vec);
-                    right = simd::normalize(simd::cross(forward, up));
-                    up = simd::normalize(simd::cross(right, forward));
-                    AxisUpdated = true;
-                }
-                auto dist = simd_length(target-position);
-                auto dP = (up * deltaY + right * deltaX) * 0.05 * sensitivity * dist;
-                target += dP;
-                position += dP;
-                updateOLD();
-            } else if (eventType == TransformationMode::Orbit){
-                // Orbit camera
-                azimuthalAngle += deltaY * sensitivity;
-                polarAngle     += deltaX * sensitivity;
-
-                // Update up vector based on azimuthal angle
-                if (std::cos(azimuthalAngle) < 0.0f) {
-                    up = simd::float3{0, -1, 0};
-                } else {
-                    up = simd::float3{0, 1, 0};
-                }
-
-                // Calculate camera distance
-                float distance = simd::length(target - position);
-
-                // Optionally clamp polar angle
-                // polarAngle = std::fmax(0.01f, std::fmin(static_cast<float>(M_PI) - 0.01f, polarAngle));
-                // Calculate new camera position
-                float x = target.x + distance * std::sin(polarAngle) * std::cos(azimuthalAngle) ;
-                float y = target.y + distance * std::sin(azimuthalAngle) ;
-                float z = target.z + distance * -std::cos(polarAngle) * std::cos(azimuthalAngle);
-
-                // Update camera position
-                position = simd::float3{x, y, z};
-                updateOLD(); // Assuming it's defined
-                AxisUpdated = false;
-            } else if (eventType == TransformationMode::Zoom) {
-                position = target + (oldPosition - target) * (1 / deltaX );
-            }
-            updated = false;
-//            std::cout << position;
-            
-        }
-    void updateRawCamPosition(simd_float3 dPosition) {
-        position += dPosition;
-        target += dPosition;
-        updated = false;
-        
-    }
-    
-    void updateAspectRatio(float ratio) {
-        aspectRatio = ratio;
-        updated = false;
-    }
-    
-    void setFieldOfView(float fovRadians) {
-        fov = fovRadians;
-        updated = false;
-    }
-    
-    void setOrthographicSize(float size) {
-        orthoSize = size;
-        updated = false;
-    }
-    
-    void toggleProjection() {
-        isPerspective = !isPerspective;
-        updated = false;
-        AxisUpdated = false;
-    }
-    
-    simd_float4x4 inverseProjectionMat() {
-        return  simd_inverse(viewMatrix);
-    }
+struct Assets {
+    std::vector<std::shared_ptr<GeometryNode<uint16>>> _NodesQueuePtr;
 };
 
 
@@ -7649,29 +7704,38 @@ public:
         id<MTLRenderPipelineState> LightingRenderPipelineState;
         id<MTLDepthStencilState> BasicDepthStencilState;
         id<MTLTexture> offscreenTexture;
+        id<MTLRenderPipelineState> nodeRenderPipelineState;
         id<MTLRenderPipelineState> instanceRenderPipelineState;
         id<MTLRenderPipelineState> PointCloudRenderPipelineState;
         id<MTLRenderPipelineState> MeshPointCloudRenderPipelineState;
+        id<MTLLibrary> library;
+        NSMutableArray<id<MTLRenderPipelineState>>* customRenderPipelineStates;
+        id<MTLRenderPipelineState> predefinedRenderPipelineState[3];
         size_t width;
         size_t height;
         uint8_t sampleCount;
         std::vector<Shape<uint16>> _objectQueue;
         std::vector<ArrayShape> _objectQueueInstanced;
-        std::vector<PointCloud> _pointCloudQueue;
+//        std::vector<PointCloud> _pointCloudQueue;
         std::vector<ObjMesh> _meshpointCloudObjectQueue;
         std::vector<ObjMesh> _meshObjectQueue;
         std::vector<ObjMesh> _lightingObjectQueue;
         std::vector<Shape<uint16>> _ComposedObjectQueue;
         MTLClearColor worldColour;
+        std::vector<GeometryNode<uint16_t>> _NodesQueue;
+        std::vector<GeometryNode<uint32_t>> _NodesQueue_32;
+        std::vector<std::shared_ptr<GeometryNode<uint16>>> _NodesQueuePtr;
+        Assets* ass;
         Camera3D cam;
     
     }
 
 //@property std::vector<Shape<uint16>> objectQueue;
-- (instancetype)initWithDevice:(id<MTLDevice>)device :(size_t)widthV :(size_t)heightV;
+- (instancetype)initWithDevice:(id<MTLDevice>)device :(size_t)widthV :(size_t)heightV :(uint8_t)sampleCount;
 - (MTLVertexDescriptor*) createPlaneMetalVertexDescriptor;
 
 - (void)updateBaseImage:(MatrixH<3, uint8_t>&) layer;
+- (void)createRenderPiplineState:(NSString*)vertexFunc :(NSString*)fragmentFunc;
 
 @end
 
@@ -7689,8 +7753,9 @@ public:
     height = 1080;
     self->sampleCount = sampleCount;
     worldColour = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
-    id<MTLLibrary> library = [metalDevice newDefaultLibrary];
-
+    customRenderPipelineStates = [[NSMutableArray alloc] init];
+    library = [metalDevice newDefaultLibrary];
+    
     id<MTLFunction> planeVertexFunc = [library newFunctionWithName:@"planeVertexShader"];
     id<MTLFunction> planeFragmentFunc = [library newFunctionWithName:@"planeFragmentShader"];
     
@@ -7709,7 +7774,7 @@ public:
     colorAttachment.rgbBlendOperation = MTLBlendOperationAdd;
     colorAttachment.alphaBlendOperation = MTLBlendOperationAdd;
     colorAttachment.sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
-
+    
     [desc setVertexDescriptor:VertexDesc];
     [desc setVertexFunction:planeVertexFunc];
     [desc setFragmentFunction:planeFragmentFunc];
@@ -7754,13 +7819,13 @@ public:
     MTLDepthStencilDescriptor *depthStencilDesc = [[MTLDepthStencilDescriptor alloc] init];
     depthStencilDesc.depthCompareFunction = MTLCompareFunctionLess;
     depthStencilDesc.depthWriteEnabled = YES;
-
+    
     // Create the depth stencil state from the device.
     BasicDepthStencilState = [metalDevice newDepthStencilStateWithDescriptor:depthStencilDesc];
     
     id<MTLFunction> instanceVertexFunc = [library newFunctionWithName:@"instanceVertexShader"];
     id<MTLFunction> instanceFragmentFunc = [library newFunctionWithName:@"basicFragmentShader"]; // same fragment shader
-
+    
     // Set up the render pipeline descriptor for instanced rendering.
     MTLRenderPipelineDescriptor *instancedDesc = [[MTLRenderPipelineDescriptor alloc] init];
     [[instancedDesc colorAttachments][0] setPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
@@ -7814,13 +7879,89 @@ public:
     [lighting_desc setRasterSampleCount:sampleCount];
     LightingRenderPipelineState = [metalDevice newRenderPipelineStateWithDescriptor:lighting_desc error:&error];
     
+    id<MTLFunction> NodeVertexFunc = [library newFunctionWithName:@"NodeVertexShader"];
+    
+    // Set up the render pipeline descriptor for instanced rendering.
+    MTLRenderPipelineDescriptor *node_Desc = [[MTLRenderPipelineDescriptor alloc] init];
+    [[node_Desc colorAttachments][0] setPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
+    [node_Desc setVertexDescriptor:basicVertexDesc];
+    [node_Desc setVertexFunction:NodeVertexFunc];
+    [node_Desc setFragmentFunction:lightingFragmentFunc];
+    [node_Desc setDepthAttachmentPixelFormat:MTLPixelFormatDepth16Unorm];
+    [node_Desc setRasterSampleCount:sampleCount];
+    
+    // Create the pipeline state object
+    nodeRenderPipelineState = [metalDevice newRenderPipelineStateWithDescriptor:node_Desc error:&error];
+    
+    id<MTLFunction> pointCloudNodeVertexFunc = [library newFunctionWithName:@"pointCloudNodeVertexShader"];
+    
+    // Create a vertex descriptor appropriate for instanced rendering.
+
+    MTLRenderPipelineDescriptor *pointCloudNodeDesc = [[MTLRenderPipelineDescriptor alloc] init];
+    [[pointCloudDesc colorAttachments][0] setPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
+    [pointCloudDesc setVertexDescriptor:pointCloudVertexDesc];
+    [pointCloudDesc setVertexFunction:pointCloudNodeVertexFunc];
+    [pointCloudDesc setFragmentFunction:pointCloudFragmentFunc];
+    [pointCloudDesc setDepthAttachmentPixelFormat:MTLPixelFormatDepth16Unorm];
+    [pointCloudDesc setRasterSampleCount:sampleCount];
+    // Create the pipeline state object
+    id<MTLRenderPipelineState> PointCloudNodeRenderPipelineState = [metalDevice newRenderPipelineStateWithDescriptor:pointCloudDesc error:&error];
+    
+    id<MTLFunction> BillboardNodeVertexFunc = [library newFunctionWithName:@"BillboardNodeVertexShader"];
+    
+    // Set up the render pipeline descriptor for instanced rendering.
+    MTLRenderPipelineDescriptor *node_billboard_Desc = [[MTLRenderPipelineDescriptor alloc] init];
+    [[node_billboard_Desc colorAttachments][0] setPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
+    [node_billboard_Desc setVertexDescriptor:basicVertexDesc];
+    [node_billboard_Desc setVertexFunction:BillboardNodeVertexFunc];
+    [node_billboard_Desc setFragmentFunction:lightingFragmentFunc];
+    [node_billboard_Desc setDepthAttachmentPixelFormat:MTLPixelFormatDepth16Unorm];
+    [node_billboard_Desc setRasterSampleCount:sampleCount];
+    id<MTLRenderPipelineState> BillboardNodeRenderPipelineState = [metalDevice newRenderPipelineStateWithDescriptor:node_billboard_Desc error:&error];
+
+    predefinedRenderPipelineState[0] = nodeRenderPipelineState;
+    predefinedRenderPipelineState[1] = PointCloudNodeRenderPipelineState;
+    predefinedRenderPipelineState[2] = BillboardNodeRenderPipelineState;
+    
+    
     cam = Camera3D();
-    auto A = MatrixH<1, uint8_t>({0, 0, 0, 0});
+    auto A = MatrixH<1, uint8_t>({1, 0, 0, 0});
     MatrixH<3, uint8_t> clearImg = MatrixH<3, uint8_t>::repeating({height, width}, A);
+//    auto c = (MatrixH<3, float>)clearImg;
+//    c.Slice({ {{0, 10}}, {{0, 10}} }).printNonCont();
+    
     offscreenTexture = clearImg.ToMTLTexture();
+//    printArray((uint8_t*)offscreenTexture.buffer.contents, 100);
+    
     return self;
 }
 
+- (void) createRenderPiplineState:(NSString*)vertexFunc :(NSString*)fragmentFunc {
+    id<MTLFunction> CustomVertexFunc   = [library newFunctionWithName:vertexFunc];
+    id<MTLFunction> CustomFragmentFunc = [library newFunctionWithName:fragmentFunc];
+
+    MTLVertexDescriptor* basicVertexDesc = [self createBasicMetalVertexDescriptor];
+
+    // Pipeline descriptor
+    MTLRenderPipelineDescriptor *Custom_Desc = [[MTLRenderPipelineDescriptor alloc] init];
+    Custom_Desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
+    Custom_Desc.vertexDescriptor                = basicVertexDesc;
+    Custom_Desc.vertexFunction                  = CustomVertexFunc;
+    Custom_Desc.fragmentFunction                = CustomFragmentFunc;
+    Custom_Desc.depthAttachmentPixelFormat      = MTLPixelFormatDepth16Unorm;
+    Custom_Desc.rasterSampleCount               = sampleCount;
+
+    NSError *error = nil;
+
+    auto customPipelineState =
+        [metalDevice newRenderPipelineStateWithDescriptor:Custom_Desc error:&error];
+
+    if (error) {
+        NSLog(@"Pipeline creation failed: %@", error);
+    }
+
+    [customRenderPipelineStates addObject:customPipelineState];
+}
 
 
 
@@ -7851,30 +7992,49 @@ public:
     
         offscreenTexture = [metalDevice newTextureWithDescriptor:drawableDesc];
     }
-    
+
     MTLRegion region = MTLRegionMake2D(0, 0, (NSUInteger)width, (NSUInteger)height);
     NSUInteger bytesPerRow = width * 4;  // 4 bytes per pixel for BGRA8
     
     
-    id<MTLBuffer> buffer = [metalDevice newBufferWithBytesNoCopy:layer.buffer length:bytesPerRow * height options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-    }];
+//    id<MTLBuffer> buffer = [metalDevice newBufferWithBytesNoCopy:layer.buffer length:bytesPerRow * height options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+//        delete[] (uint8_t*)pointer;
+//    }];
+
+//    offscreenTexture = layer.ToMTLTexture();
     
-    id<MTLCommandBuffer> commandBuffer = [CommandQueue commandBuffer];
-    id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+    if (layer.metalBuffer) {
+        id<MTLCommandBuffer> commandBuffer = [CommandQueue commandBuffer];
+        id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+        [blitEncoder copyFromBuffer:layer.metalBuffer
+                       sourceOffset:0
+                  sourceBytesPerRow:bytesPerRow
+                sourceBytesPerImage:bytesPerRow * height
+                         sourceSize:region.size
+                          toTexture:offscreenTexture
+                   destinationSlice:0
+                   destinationLevel:0
+                  destinationOrigin:region.origin];
+        
+        [blitEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        // BUG FIX: Previously missing waitUntilCompleted caused the layer to go out of scope  its buffer being freed before the gpu completed the execution . Small textures
+        // (10x10x4) rendered before GPU finished uploading, showing black/corrupted pixels. Large
+        // textures (100x100+) worked by accident because i think that large chucks of memory dond get rycyled so easily so maybe it still had data
 
-    [blitEncoder copyFromBuffer:buffer
-                   sourceOffset:0
-              sourceBytesPerRow:bytesPerRow
-            sourceBytesPerImage:bytesPerRow * height
-                     sourceSize:region.size
-                      toTexture:offscreenTexture
-               destinationSlice:0
-               destinationLevel:0
-              destinationOrigin:region.origin];
-
-    [blitEncoder endEncoding];
-    [commandBuffer commit];
-
+    } else {
+        // Direct CPU-to-texture upload. We don't use layer.metalBuffer here because
+        // MatrixH deliberately avoids creating Metal buffers for small matrices as an
+        // optimization. For small data, the overhead of Metal buffer allocation exceeds
+        // the benefit, so replaceRegion:withBytes: is more efficient.
+        [offscreenTexture replaceRegion:region
+                            mipmapLevel:0
+                              withBytes:layer.buffer
+                            bytesPerRow:bytesPerRow];
+    }
+//    layer.print();
+    
 
 //    [offscreenTexture replaceRegion:region
 //                        mipmapLevel:0
@@ -7889,13 +8049,14 @@ public:
     id<MTLCommandBuffer> cmdBuffer = [CommandQueue commandBuffer];
     
     MTLRenderPassDescriptor *passDescriptor = [view currentRenderPassDescriptor];
-    passDescriptor.defaultRasterSampleCount = 4;
+    
+//    passDescriptor.defaultRasterSampleCount = 4;
 //    id<MTLBlitCommandEncoder> blitEncoder = [cmdBuffer blitCommandEncoder];
 //    [blitEncoder copyFromTexture:offscreenTexture
 //                     sourceSlice:0
 //                     sourceLevel:0
 //                    sourceOrigin:MTLOriginMake(0, 0, 0)
-//                      sourceSize:MTLSizeMake(width, height, 1)
+//                      sourceSize:MTLSizeMake(offscreenTexture.width, offscreenTexture.height, 1)
 //                       toTexture:drawable.texture
 //                destinationSlice:0
 //                destinationLevel:0
@@ -7903,14 +8064,14 @@ public:
 //    [blitEncoder endEncoding];
     
 //    passDescriptor.colorAttachments[0].texture = drawable.texture;
-    passDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
+    passDescriptor.colorAttachments[0].loadAction = MTLLoadActionDontCare;
     passDescriptor.colorAttachments[0].clearColor = worldColour;
-    passDescriptor.colorAttachments[0].storeAction = MTLStoreActionStoreAndMultisampleResolve;
+//    passDescriptor.colorAttachments[0].storeAction = MTLStoreActionStoreAndMultisampleResolve;
     
-
+    passDescriptor.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
     
-    passDescriptor.depthAttachment.loadAction = MTLLoadActionClear;
-    passDescriptor.depthAttachment.storeAction = MTLStoreActionDontCare;
+//    passDescriptor.depthAttachment.loadAction = MTLLoadActionClear;
+//    passDescriptor.depthAttachment.storeAction = MTLStoreActionDontCare;
     passDescriptor.depthAttachment.clearDepth = 1.0;
    
     id<MTLRenderCommandEncoder> cmdEncoder = [cmdBuffer renderCommandEncoderWithDescriptor:passDescriptor];
@@ -7935,8 +8096,8 @@ public:
     [cmdEncoder setFragmentTexture:offscreenTexture atIndex:0];
     [cmdEncoder setRenderPipelineState:PlaneRenderPipelineState];
     [cmdEncoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
-//    [cmdEncoder setCullMode:MTLCullModeNone];
-//    [cmdEncoder setFrontFacingWinding:MTLWindingCounterClockwise];
+    [cmdEncoder setCullMode:MTLCullModeNone];
+    [cmdEncoder setFrontFacingWinding:MTLWindingCounterClockwise];
     if (!cmdEncoder) {
         NSLog(@"Drawable is nil! Nothing will be displayed.");
         return;
@@ -7952,111 +8113,137 @@ public:
     [cmdEncoder setFragmentBytes:&cam.inverseProjectionMatrix length:sizeof(simd_float4x4) atIndex:1];
     [cmdEncoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
     
-    [cmdEncoder setRenderPipelineState:BasicRenderPipelineState];
-
-    for (int i = 0; i < _objectQueue.size(); i++) {
+    if (0 < _objectQueue.size() || 0 < _meshObjectQueue.size()) {
+        [cmdEncoder setRenderPipelineState:BasicRenderPipelineState];
         
-        Shape<uint16> shape = _objectQueue[i];
-        _objectQueue[i].buildBuffers(metalDevice);
-        transform = _objectQueue[i].Transformer();
-        [cmdEncoder setVertexBuffer:_objectQueue[i].vertexBuffer offset:0 atIndex:0];
-        [cmdEncoder setVertexBytes:&transform length:sizeof(simd_float4x4) atIndex:1];
-        [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
-        [cmdEncoder drawIndexedPrimitives:_objectQueue[i].drawType indexCount:shape.indexCount indexType:MTLIndexTypeUInt16 indexBuffer:_objectQueue[i].indexBuffer indexBufferOffset:0];
-        
-    }
-    
-    for (int i = 0; i < _meshObjectQueue.size(); i++) {
-        transform = Identity();
-        [cmdEncoder setVertexBuffer:_meshObjectQueue[i].metalMesh.vertexBuffers[0].buffer offset:0 atIndex:0];
-        [cmdEncoder setVertexBytes:&transform length:sizeof(simd_float4x4) atIndex:1];
-        [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
-        
-        for (int j = 0; j < _meshObjectQueue[i].metalMesh.submeshes.count; j++) {
+        for (int i = 0; i < _objectQueue.size(); i++) {
             
-            [cmdEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_meshObjectQueue[i].metalMesh.submeshes[j].indexCount indexType:_meshObjectQueue[i].metalMesh.submeshes[j].indexType indexBuffer:_meshObjectQueue[i].metalMesh.submeshes[j].indexBuffer.buffer indexBufferOffset:_meshObjectQueue[i].metalMesh.submeshes[j].indexBuffer.offset];
+            Shape<uint16> shape = _objectQueue[i];
+            _objectQueue[i].buildBuffers(metalDevice);
+            transform = _objectQueue[i].Transformer();
+            [cmdEncoder setVertexBuffer:_objectQueue[i].vertexBuffer offset:0 atIndex:0];
+            [cmdEncoder setVertexBytes:&transform length:sizeof(simd_float4x4) atIndex:1];
+            [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
+            [cmdEncoder drawIndexedPrimitives:_objectQueue[i].drawType indexCount:shape.indexCount indexType:MTLIndexTypeUInt16 indexBuffer:_objectQueue[i].indexBuffer indexBufferOffset:0];
+            
         }
         
-    }
-    
-    [cmdEncoder setRenderPipelineState:instanceRenderPipelineState];
-
-    for (int i = 0; i < _objectQueueInstanced.size(); i++) {
-        _objectQueueInstanced[i].buildBuffer(metalDevice);
-        _objectQueueInstanced[i].shape.buildBuffers(metalDevice);
-        transform = _objectQueueInstanced[i].shape.Transformer();
-
-        [cmdEncoder setVertexBuffer:_objectQueueInstanced[i].shape.vertexBuffer offset:0 atIndex:0];
-        [cmdEncoder setVertexBytes:&transform length:sizeof(matrix_float4x4) atIndex:1];
-        [cmdEncoder setVertexBuffer:_objectQueueInstanced[i].transformBuffer offset:0 atIndex:3];
-        [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
-        [cmdEncoder drawIndexedPrimitives:_objectQueueInstanced[i].shape.drawType
-                            indexCount:_objectQueueInstanced[i].shape.indexCount
-                             indexType:MTLIndexTypeUInt16
-                           indexBuffer:_objectQueueInstanced[i].shape.indexBuffer
-                     indexBufferOffset:0
-                         instanceCount:_objectQueueInstanced[i].instanceCount];
-    }
-    
-    [cmdEncoder setRenderPipelineState:PointCloudRenderPipelineState];
-
-    for (int i = 0; i < _pointCloudQueue.size(); i++) {
-        _pointCloudQueue[i].buildBuffers(metalDevice);
-        transform = Identity();
-
-        [cmdEncoder setVertexBuffer:_pointCloudQueue[i].pointsBuffer offset:0 atIndex:0];
-        [cmdEncoder setVertexBytes:&transform length:sizeof(matrix_float4x4) atIndex:1];
-        [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
-        [cmdEncoder drawPrimitives:MTLPrimitiveTypePoint vertexStart:0 vertexCount:_pointCloudQueue[i].points.total_size];
-    }
-    [cmdEncoder setRenderPipelineState:MeshPointCloudRenderPipelineState];
-    for (int i = 0; i < _meshpointCloudObjectQueue.size(); i++) {
-        transform = Identity();
-        [cmdEncoder setVertexBuffer:_meshpointCloudObjectQueue[i].metalMesh.vertexBuffers[0].buffer offset:0 atIndex:0];
-        [cmdEncoder setVertexBytes:&transform length:sizeof(simd_float4x4) atIndex:1];
-        [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
-        
-        for (int j = 0; j < _meshpointCloudObjectQueue[i].metalMesh.submeshes.count; j++) {
+        for (int i = 0; i < _meshObjectQueue.size(); i++) {
+            transform = Identity();
+            [cmdEncoder setVertexBuffer:_meshObjectQueue[i].metalMesh.vertexBuffers[0].buffer offset:0 atIndex:0];
+            [cmdEncoder setVertexBytes:&transform length:sizeof(simd_float4x4) atIndex:1];
+            [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
             
-            [cmdEncoder drawIndexedPrimitives:MTLPrimitiveTypeLineStrip indexCount:_meshpointCloudObjectQueue[i].metalMesh.submeshes[j].indexCount indexType:_meshpointCloudObjectQueue[i].metalMesh.submeshes[j].indexType indexBuffer:_meshpointCloudObjectQueue[i].metalMesh.submeshes[j].indexBuffer.buffer indexBufferOffset:_meshpointCloudObjectQueue[i].metalMesh.submeshes[j].indexBuffer.offset];
+            for (int j = 0; j < _meshObjectQueue[i].metalMesh.submeshes.count; j++) {
+                
+                [cmdEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_meshObjectQueue[i].metalMesh.submeshes[j].indexCount indexType:_meshObjectQueue[i].metalMesh.submeshes[j].indexType indexBuffer:_meshObjectQueue[i].metalMesh.submeshes[j].indexBuffer.buffer indexBufferOffset:_meshObjectQueue[i].metalMesh.submeshes[j].indexBuffer.offset];
+            }
+            
         }
+    }
+    if (_objectQueueInstanced.size() > 0) {
+        [cmdEncoder setRenderPipelineState:instanceRenderPipelineState];
         
+        for (int i = 0; i < _objectQueueInstanced.size(); i++) {
+            _objectQueueInstanced[i].buildBuffer(metalDevice);
+            _objectQueueInstanced[i].shape.buildBuffers(metalDevice);
+            transform = _objectQueueInstanced[i].shape.Transformer();
+            
+            [cmdEncoder setVertexBuffer:_objectQueueInstanced[i].shape.vertexBuffer offset:0 atIndex:0];
+            [cmdEncoder setVertexBytes:&transform length:sizeof(matrix_float4x4) atIndex:1];
+            [cmdEncoder setVertexBuffer:_objectQueueInstanced[i].transformBuffer offset:0 atIndex:3];
+            [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
+            [cmdEncoder drawIndexedPrimitives:_objectQueueInstanced[i].shape.drawType
+                                   indexCount:_objectQueueInstanced[i].shape.indexCount
+                                    indexType:MTLIndexTypeUInt16
+                                  indexBuffer:_objectQueueInstanced[i].shape.indexBuffer
+                            indexBufferOffset:0
+                                instanceCount:_objectQueueInstanced[i].instanceCount];
+        }
+    }
+//    [cmdEncoder setRenderPipelineState:PointCloudRenderPipelineState];
+//
+//    for (int i = 0; i < _pointCloudQueue.size(); i++) {
+//        _pointCloudQueue[i].buildBuffers(metalDevice);
+//        transform = Identity();
+//
+//        [cmdEncoder setVertexBuffer:_pointCloudQueue[i].pointsBuffer offset:0 atIndex:0];
+//        [cmdEncoder setVertexBytes:&transform length:sizeof(matrix_float4x4) atIndex:1];
+//        [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
+//        [cmdEncoder drawPrimitives:MTLPrimitiveTypePoint vertexStart:0 vertexCount:_pointCloudQueue[i].points.total_size];
+//    }
+    if (_meshpointCloudObjectQueue.size() > 0) {
+        [cmdEncoder setRenderPipelineState:MeshPointCloudRenderPipelineState];
+        for (int i = 0; i < _meshpointCloudObjectQueue.size(); i++) {
+            transform = Identity();
+            [cmdEncoder setVertexBuffer:_meshpointCloudObjectQueue[i].metalMesh.vertexBuffers[0].buffer offset:0 atIndex:0];
+            [cmdEncoder setVertexBytes:&transform length:sizeof(simd_float4x4) atIndex:1];
+            [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
+            
+            for (int j = 0; j < _meshpointCloudObjectQueue[i].metalMesh.submeshes.count; j++) {
+                
+                [cmdEncoder drawIndexedPrimitives:MTLPrimitiveTypeLineStrip indexCount:_meshpointCloudObjectQueue[i].metalMesh.submeshes[j].indexCount indexType:_meshpointCloudObjectQueue[i].metalMesh.submeshes[j].indexType indexBuffer:_meshpointCloudObjectQueue[i].metalMesh.submeshes[j].indexBuffer.buffer indexBufferOffset:_meshpointCloudObjectQueue[i].metalMesh.submeshes[j].indexBuffer.offset];
+            }
+            
+        }
+    }
+    if (0 < _lightingObjectQueue.size() || 0 < _ComposedObjectQueue.size()) {
+        [cmdEncoder setRenderPipelineState:LightingRenderPipelineState];
+        for (int i = 0; i < _lightingObjectQueue.size(); i++) {
+            transform = Identity();
+            
+            [cmdEncoder setVertexBuffer:_lightingObjectQueue[i].metalMesh.vertexBuffers[0].buffer offset:0 atIndex:0];
+            [cmdEncoder setVertexBytes:&transform length:sizeof(simd_float4x4) atIndex:1];
+            [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
+            
+            [cmdEncoder setFragmentTexture:_lightingObjectQueue[i].texture atIndex:0];
+            for (int j = 0; j < _lightingObjectQueue[i].metalMesh.submeshes.count; j++) {
+                
+                [cmdEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_lightingObjectQueue[i].metalMesh.submeshes[j].indexCount indexType:_lightingObjectQueue[i].metalMesh.submeshes[j].indexType indexBuffer:_lightingObjectQueue[i].metalMesh.submeshes[j].indexBuffer.buffer indexBufferOffset:_lightingObjectQueue[i].metalMesh.submeshes[j].indexBuffer.offset];
+            }
+            
+        }
+        for (int i = 0; i < _ComposedObjectQueue.size(); i++) {
+            
+            Shape<uint16> shape = _ComposedObjectQueue[i];
+            _ComposedObjectQueue[i].buildBuffers(metalDevice);
+            transform = _ComposedObjectQueue[i].Transformer();
+            [cmdEncoder setVertexBuffer:_ComposedObjectQueue[i].vertexBuffer offset:0 atIndex:0];
+            [cmdEncoder setVertexBytes:&transform length:sizeof(simd_float4x4) atIndex:1];
+            [cmdEncoder setFragmentBytes:&shape.textured length:sizeof(bool) atIndex:0];
+            [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
+            [cmdEncoder setFragmentTexture:_ComposedObjectQueue[i].texture atIndex:0];
+            [cmdEncoder drawIndexedPrimitives:_ComposedObjectQueue[i].drawType indexCount:shape.indexCount indexType:MTLIndexTypeUInt16 indexBuffer:_ComposedObjectQueue[i].indexBuffer indexBufferOffset:0];
+            
+        }
+    }
+//
+//    [cmdEncoder setRenderPipelineState:nodeRenderPipelineState];
+    [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
+    
+    // -1: undefined
+    // 0-100: Predefined
+    // 101-.. Custom
+    int active_state = -1;
+    for (int i=0; i < _NodesQueue.size(); i++) {
+        
+        _NodesQueue[i].draw(cmdEncoder, metalDevice, predefinedRenderPipelineState, customRenderPipelineStates, &cam, active_state);
     }
     
-    [cmdEncoder setRenderPipelineState:LightingRenderPipelineState];
-    for (int i = 0; i < _lightingObjectQueue.size(); i++) {
-        transform = Identity();
+    for (int i=0; i < _NodesQueue_32.size(); i++) {
         
-        [cmdEncoder setVertexBuffer:_lightingObjectQueue[i].metalMesh.vertexBuffers[0].buffer offset:0 atIndex:0];
-        [cmdEncoder setVertexBytes:&transform length:sizeof(simd_float4x4) atIndex:1];
-        [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
-        
-        [cmdEncoder setFragmentTexture:_lightingObjectQueue[i].texture atIndex:0];
-        for (int j = 0; j < _lightingObjectQueue[i].metalMesh.submeshes.count; j++) {
-            
-            [cmdEncoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:_lightingObjectQueue[i].metalMesh.submeshes[j].indexCount indexType:_lightingObjectQueue[i].metalMesh.submeshes[j].indexType indexBuffer:_lightingObjectQueue[i].metalMesh.submeshes[j].indexBuffer.buffer indexBufferOffset:_lightingObjectQueue[i].metalMesh.submeshes[j].indexBuffer.offset];
-        }
-        
-    }
-    for (int i = 0; i < _ComposedObjectQueue.size(); i++) {
-        
-        Shape<uint16> shape = _ComposedObjectQueue[i];
-        _ComposedObjectQueue[i].buildBuffers(metalDevice);
-        transform = _ComposedObjectQueue[i].Transformer();
-        [cmdEncoder setVertexBuffer:_ComposedObjectQueue[i].vertexBuffer offset:0 atIndex:0];
-        [cmdEncoder setVertexBytes:&transform length:sizeof(simd_float4x4) atIndex:1];
-        [cmdEncoder setFragmentBytes:&shape.textured length:sizeof(bool) atIndex:0];
-        [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:2];
-        [cmdEncoder setFragmentTexture:_ComposedObjectQueue[i].texture atIndex:0];
-        [cmdEncoder drawIndexedPrimitives:_ComposedObjectQueue[i].drawType indexCount:shape.indexCount indexType:MTLIndexTypeUInt16 indexBuffer:_ComposedObjectQueue[i].indexBuffer indexBufferOffset:0];
-        
+        _NodesQueue_32[i].draw(cmdEncoder, metalDevice, predefinedRenderPipelineState, customRenderPipelineStates, &cam, active_state);
     }
 
+    for (int i=0; i < _NodesQueuePtr.size(); i++) {
+        
+        _NodesQueuePtr[i]->draw(cmdEncoder, metalDevice, predefinedRenderPipelineState, customRenderPipelineStates, &cam, active_state);
+    }
     
     [cmdEncoder endEncoding];
     [cmdBuffer presentDrawable:drawable];
     [cmdBuffer commit];
-    [cmdBuffer waitUntilCompleted];
+//    [cmdBuffer waitUntilCompleted];
     
 }
 
