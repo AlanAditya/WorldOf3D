@@ -3886,6 +3886,106 @@ public:
         return output;
     }
     
+    
+    template<int kDims>
+    void conv(MatrixH<dims, Type>& result, const MatrixH<kDims, Type> &kernel, int sepAxis = kDims, ConvMode mode = ConvMode::Same, ConvModeFull Fullmode = ConvModeFull::Normal) {
+        
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+
+        
+        size_m elementStride = accumul(sepAxis, dims); //
+//        size_m elementStride = strides[sepAxis-1];
+        size_m noOfOpp;
+        size_m newShape[dims];
+        switch (mode) {
+            case ConvMode::Same:
+                if (!GlobalGPUManager.ConvolveInit[typeCode]) {
+                    GlobalGPUManager.initConvolve_All(typeCode);
+                }
+                noOfOpp = accumul(0, sepAxis);
+                memcpy(newShape, shape, dims * sizeof(size_m));
+                break;
+            case ConvMode::Valid:
+                noOfOpp = 1;
+                for (size_m i = 0; i < sepAxis; ++i) {
+                    newShape[i] = shape[i] - (kernel.shape[i] - 1);
+                    noOfOpp *= newShape[i];
+                }
+                memcpy(newShape + sepAxis, shape + sepAxis, (dims - sepAxis) * sizeof(size_m));
+                break;
+            case ConvMode::Full:
+                if (!GlobalGPUManager.ConvolveFullInit[typeCode]) {
+                    GlobalGPUManager.initConvolve_FULL(typeCode);
+                }
+                noOfOpp = 1;
+                for (size_m i = 0; i < sepAxis; ++i) {
+                    newShape[i] = shape[i] + (kernel.shape[i] - 1);
+                    noOfOpp *= newShape[i];
+                }
+                memcpy(newShape + sepAxis, shape + sepAxis, (dims - sepAxis) * sizeof(size_m));
+                break;
+        }
+        size_m stridesNew[kDims];
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+//        MTLLogStateDescriptor *logStateDesc = [MTLLogStateDescriptor new];
+//        logStateDesc.bufferSize = 1024*1024;
+//        logStateDesc.level = MTLLogLevelInfo;
+//        NSError* error = nil;
+//        id<MTLLogState> logState = [GlobalGPUManager.metalDevice newLogStateWithDescriptor:logStateDesc error:&error];
+//        [logState addLogHandler:^(NSString *substring, NSString *category,
+//                                  MTLLogLevel level, NSString *message)
+//        {
+//        }];
+//        
+//        
+//        MTLCommandBufferDescriptor *cbufDesc = [MTLCommandBufferDescriptor new];
+//        cbufDesc.logState = logState;
+//        
+//        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBufferWithDescriptor:cbufDesc];
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(noOfOpp, 1, 1);
+        
+        [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
+        [commandEncoder setBuffer:metalBuffer offset:0 atIndex:1];
+        if (kernel.metalBuffer) {
+            [commandEncoder setBuffer:kernel.metalBuffer offset:0 atIndex:2];
+        } else {
+            [commandEncoder setBytes:kernel.buffer length:kernel.total_size * sizeof(Type) atIndex:2];
+        }
+        [commandEncoder setBytes:&kernel.total_size length: sizeof(size_t) atIndex:3];
+        [commandEncoder setBytes:shape length: kDims * sizeof(size_m) atIndex:4];
+        [commandEncoder setBytes:kernel.shape length:kDims * sizeof(size_m) atIndex:5];
+//        if (sepAxis == dims) {
+            [commandEncoder setBytes:strides length:kDims * sizeof(size_m) atIndex:6];
+//        } else {
+//            
+//            size_m acc = 1;
+//            for (int i = kDims-1; i >= 0; i--) {
+//                stridesNew[i] = acc;
+//                acc *= shape[i];
+//            }
+//            [commandEncoder setBytes:stridesNew length:kDims * sizeof(size_m) atIndex:6];
+//        }
+        [commandEncoder setBytes:&elementStride length: sizeof(size_m) atIndex:7];
+        [commandEncoder setBytes:&sepAxis length: sizeof(int) atIndex:8];
+        if (mode == ConvMode::Full) {
+            [commandEncoder setBytes:&Fullmode length: sizeof(uint8_t) atIndex:9];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.ConvolveFullComputeState[typeCode]];
+        } else {
+            [commandEncoder setComputePipelineState:GlobalGPUManager.ConvolveComputeState[typeCode]];
+        }
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+    }
+    
     void Dot(MatrixH<dims, Type>& result, const MatrixH<dims, Type> &other, bool TransposeB) {
         
         uint8_t typeCode = get_dtype_code<Type>();
