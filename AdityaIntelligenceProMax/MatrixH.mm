@@ -1758,7 +1758,14 @@ public:
         MatrixH<dims, Type> result;
         result.buffer = new Type[total_size];
         result.total_size = total_size;
-        memcpy(result.shape, shape, sizeof(size_t) * dims);
+        memcpy(result.shape, shape, sizeof(size_m) * dims);
+        memcpy(result.strides, strides, sizeof(size_m) * dims);
+        
+//        result.parentNodes.push_back(std::make_shared<MatrixH<dims, Type>>(*this));
+//        result.gradFunc = [constant](MatrixH<dims, Type>& selfs) {
+//            auto p1 = selfs.parentNodes[0]->gradFunc ? selfs.parentNodes[0]->gradFunc(*selfs.parentNodes[0]) : selfs.parentNodes[0]->ones();
+//            return p1 * constant;
+//        };
         
         if (!GlobalGPUManager.MulAllInit) {
             GlobalGPUManager.initMulAll();
@@ -6894,8 +6901,11 @@ public:
     NSCondition* mHasNewFrame;
 
 #if TARGET_OS_IPHONE
+    //CVImageBufferRef == CVPixelBufferRef the samething 😱😱
     AVCaptureDepthDataOutput* mDepthDataOutput;
     CVPixelBufferRef depthBuffer;
+    CVImageBufferRef mGrabbedDepthBuffer;
+    NSCondition* mHasNewDepthFrame;
 #endif
 }
 -(id) initWithCam:(int)CamNo;
@@ -6904,7 +6914,7 @@ public:
 
 #if TARGET_OS_IPHONE
 -(void) depthDataOutput:(AVCaptureDepthDataOutput *)output didOutputDepthData:(AVDepthData *)depthData timestamp:(CMTime)timestamp connection:(AVCaptureConnection *)connection;
-- (void) getDepth:(MatrixH<3, uint8_t>&) depthFrame;
+- (void) getDepth:(MatrixH<2, float16_t >&) depthFrame;
 #endif
 
 -(void) read:(MatrixH<3, uint8_t>&) frame;
@@ -6925,7 +6935,10 @@ public:
 #endif
 
 #if TARGET_OS_IPHONE
-    mCaptureDevice = [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInWideAngleCamera mediaType:AVMediaTypeVideo position:AVCaptureDevicePositionFront];
+    mCaptureDevice = [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInLiDARDepthCamera
+                                                        mediaType:AVMediaTypeVideo
+                                                         position:AVCaptureDevicePositionBack];
+    
 #endif
     
     mCaptureDeviceInput =  [[AVCaptureDeviceInput alloc] initWithDevice:mCaptureDevice error:&error];
@@ -6980,30 +6993,110 @@ public:
     mCaptureVideoDataOutput.alwaysDiscardsLateVideoFrames = YES;
     
     mCaptureSession = [[AVCaptureSession alloc] init];
+#if !TARGET_OS_IPHONE
     mCaptureSession.sessionPreset = AVCaptureSessionPresetMedium;
     [mCaptureSession addInput: mCaptureDeviceInput];
     [mCaptureSession addOutput: mCaptureVideoDataOutput];
-    
+#endif
 #if TARGET_OS_IPHONE
     
+    [mCaptureSession beginConfiguration];
+    mCaptureSession.sessionPreset = AVCaptureSessionPresetInputPriority;
+
+    // 3. Add Input FIRST (needed to configure the device)
+    if ([mCaptureSession canAddInput:mCaptureDeviceInput]) {
+        [mCaptureSession addInput:mCaptureDeviceInput];
+    }
+
+    // 4. Find a format that supports BOTH Video and Depth
+    AVCaptureDeviceFormat *bestFormat = nil;
+    AVCaptureDeviceFormat *bestDepthFormat = nil;
+
+    for (AVCaptureDeviceFormat *format in mCaptureDevice.formats) {
+        // We only want formats that support Depth
+        NSArray *supportedDepthFormats = format.supportedDepthDataFormats;
+        if (supportedDepthFormats.count > 0) {
+            CMVideoDimensions dim = CMVideoFormatDescriptionGetDimensions(format.formatDescription);
+            
+            // Target a specific resolution.
+            // NOTE: High-res video (1080p) + Depth is expensive.
+            // 640x480 (VGA) is the standard safe choice for smooth Depth+Video.
+            if (dim.width == 1920) {
+                bestFormat = format;
+                
+                // Pick the efficient depth format (usually kCVPixelFormatType_DepthFloat16 or 32)
+                bestDepthFormat = supportedDepthFormats[0];
+                break;
+            }
+        }
+    }
+
+    // 5. Apply the Format
+    if (bestFormat) {
+        if ([mCaptureDevice lockForConfiguration:nil]) {
+            mCaptureDevice.activeFormat = bestFormat;
+            mCaptureDevice.activeDepthDataFormat = bestDepthFormat; // You must set this explicitly!
+            
+            // Optional: Force Frame Rate (e.g., 30 FPS)
+            mCaptureDevice.activeVideoMinFrameDuration = CMTimeMake(1, 30);
+            mCaptureDevice.activeVideoMaxFrameDuration = CMTimeMake(1, 30);
+            
+            [mCaptureDevice unlockForConfiguration];
+            NSLog(@"✅ Manual Format Configured: %@", bestFormat);
+        }
+    } else {
+        NSLog(@"❌ ERROR: No suitable Depth+Video format found!");
+    }
+
+    // --- CRITICAL CHANGE END ---
+
+    // 6. Setup Video Output (Same as your code)
+    mCaptureVideoDataOutput = [[AVCaptureVideoDataOutput alloc] init];
+//    dispatch_queue_t queue = dispatch_queue_create("cameraQueue", DISPATCH_QUEUE_SERIAL);
+    [mCaptureVideoDataOutput setSampleBufferDelegate:self queue:queue];
+    // ... set videoSettings ...
+    [mCaptureSession addOutput:mCaptureVideoDataOutput];
+
+    // 7. Setup Depth Output
     mDepthDataOutput = [[AVCaptureDepthDataOutput alloc] init];
-//    dispatch_queue_t depthQueue = dispatch_queue_create("depthQueue", DISPATCH_QUEUE_SERIAL);
     [mDepthDataOutput setDelegate:self callbackQueue:queue];
-    // Optional: Configure depth data output settings, for example:
     mDepthDataOutput.alwaysDiscardsLateDepthData = YES;
-
-    
-
+    mDepthDataOutput.filteringEnabled = YES; // Start with raw data for speed
+    NSDictionary *videoSettings = @{
+        (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)
+    };
+    mCaptureVideoDataOutput.videoSettings = videoSettings;
     if ([mCaptureSession canAddOutput:mDepthDataOutput]) {
         [mCaptureSession addOutput:mDepthDataOutput];
         
-        AVCaptureConnection *depthConnection = [mDepthDataOutput connectionWithMediaType:AVMediaTypeDepthData];
-        depthConnection.enabled = true;
-//        depthConnection.depthDataDeliveryEnabled = YES;
-        if (depthConnection) {
-            NSLog(@"%@", depthConnection);
-        }
+        // Check connection status immediately
+        AVCaptureConnection *depthConn = [mDepthDataOutput connectionWithMediaType:AVMediaTypeDepthData];
+        depthConn.enabled = YES;
+        NSLog(@"Depth Connection Active: %d", depthConn.active); // This should now be 1
     }
+
+    [mCaptureSession commitConfiguration];
+//    [mCaptureSession startRunning];
+//    
+//    mDepthDataOutput = [[AVCaptureDepthDataOutput alloc] init];
+////    dispatch_queue_t depthQueue = dispatch_queue_create("depthQueue", DISPATCH_QUEUE_SERIAL);
+//    [mDepthDataOutput setDelegate:self callbackQueue:queue];
+//    // Optional: Configure depth data output settings, for example:
+//    mDepthDataOutput.alwaysDiscardsLateDepthData = YES;
+//
+//    
+//
+//    if ([mCaptureSession canAddOutput:mDepthDataOutput]) {
+//        [mCaptureSession addOutput:mDepthDataOutput];
+//        
+//        AVCaptureConnection *depthConnection = [mDepthDataOutput connectionWithMediaType:AVMediaTypeDepthData];
+//        depthConnection.enabled = true;
+////        depthConnection.depthDataDeliveryEnabled = YES;
+//        if (depthConnection) {
+//            NSLog(@"%@", depthConnection);
+//        }
+//    }
+    mHasNewDepthFrame =  [[NSCondition alloc] init];
 #endif
     [mCaptureSession startRunning];
     mHasNewFrame =  [[NSCondition alloc] init];
@@ -7015,7 +7108,6 @@ public:
     (void)output;
     (void)sampleBuffer;
     (void)connection;
-
     CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
     CVBufferRetain(imageBuffer);
     [mHasNewFrame lock];
@@ -7031,21 +7123,83 @@ public:
     // Process depthData here.
     // For example, you can convert the depth data to a CVPixelBuffer:
     CVPixelBufferRef depthBufferLocal = [depthData depthDataMap];
-    std::cout << "Sptth:" << ([depthData depthDataType] == kCVPixelFormatType_DepthFloat32) << "\n";
-    NSLog(@"%b", [depthData depthDataType] == kCVPixelFormatType_DepthFloat32);
+//    std::cout << "Sptth:" << ([depthData depthDataType] == kCVPixelFormatType_DepthFloat32) << "\n";
+    NSLog(@"%b", [depthData depthDataType] == kCVPixelFormatType_DepthFloat16);
     CVBufferRetain(depthBufferLocal);
     
     // Synchronize with your own processing (e.g., copying data)
-    [mHasNewFrame lock];
+    [mHasNewDepthFrame lock];
     CVBufferRelease(depthBuffer);
     depthBuffer = depthBufferLocal;
     // Process depthBuffer as needed...
-    [mHasNewFrame broadcast];
-    [mHasNewFrame unlock];
+    [mHasNewDepthFrame broadcast];
+    [mHasNewDepthFrame unlock];
 }
 
-- (void) getDepth:(MatrixH<3, uint8_t>&) depthFrame {
+- (void)                getDepth:(MatrixH<2, float16_t>&) depthFrame {
+    [mHasNewDepthFrame lock];
+    if (mGrabbedDepthBuffer) {
+        CVBufferRelease(mGrabbedDepthBuffer);
+    }
+    if ([mHasNewDepthFrame waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:1]]) {
+        mGrabbedDepthBuffer = CVPixelBufferRetain(depthBuffer);
+    }
+    [mHasNewDepthFrame unlock];
     
+    if (! mGrabbedDepthBuffer ) {
+        return;
+    }
+    CVPixelBufferLockBaseAddress(mGrabbedDepthBuffer, kCVPixelBufferLock_ReadOnly);
+    if (!depthFrame.buffer) {
+        depthFrame.buffer = new float16_t[width * height];
+        depthFrame.shape[0] = height;
+        depthFrame.shape[1] = width;
+        depthFrame.calcStrides();
+        depthFrame.total_size = width * height;
+        depthFrame.buildMetalBuffer();
+        
+    } else if (depthFrame.shape[0] != height || depthFrame.shape[1] != width) {
+        if (!(depthFrame.flags & NON_OWNERSHIP_FLAG)) {delete [] depthFrame.buffer; }
+        depthFrame.buffer = new float16_t[width * height];
+        depthFrame.shape[0] = height;
+        depthFrame.shape[1] = width;
+        depthFrame.calcStrides();
+        depthFrame.total_size = width * height;
+        depthFrame.buildMetalBuffer();
+    }
+    if (CVPixelBufferGetWidth(mGrabbedDepthBuffer) != width) {
+        
+        vImage_Buffer srcBuf = {
+            .data     = CVPixelBufferGetBaseAddress(mGrabbedDepthBuffer),
+            .height   = CVPixelBufferGetHeight(mGrabbedDepthBuffer),
+            .width    = CVPixelBufferGetWidth(mGrabbedDepthBuffer),
+            .rowBytes = CVPixelBufferGetBytesPerRow(mGrabbedDepthBuffer)
+        };
+        
+        vImage_Buffer dstBuf = {
+            .data     = depthFrame.buffer,
+            .height   = (unsigned long)height,
+            .width    = (unsigned long)width,
+            .rowBytes = width * sizeof(float16_t)
+        };
+        
+        vImageScale_Planar16F(&srcBuf, &dstBuf, NULL, kvImageHighQualityResampling);
+    } else {
+
+        char* rawPtr = (char*)CVPixelBufferGetBaseAddress(mGrabbedDepthBuffer);
+        // all the properties given by Core video methods are in bytes like strides and row bytes so adding them to a typed pointer will lead to issues as it adds + i * sizeof(Type)
+        if (CVPixelBufferGetBytesPerRow(mGrabbedDepthBuffer) == depthFrame.shape[1] * sizeof(float16_t)) {
+            memcpy(depthFrame.buffer, rawPtr, depthFrame.total_size * sizeof(float16_t));
+        } else {
+            for (int i = 0; i < height; i++) {
+                memcpy(depthFrame.buffer + i * width, rawPtr + i * CVPixelBufferGetBytesPerRow(mGrabbedDepthBuffer), width * sizeof(float16_t));
+            }
+        }
+    }
+    CVPixelBufferUnlockBaseAddress(mGrabbedDepthBuffer, kCVPixelBufferLock_ReadOnly);
+    CVBufferRelease(mGrabbedDepthBuffer);
+    
+    mGrabbedDepthBuffer = NULL;
 }
 #endif
 
@@ -7078,6 +7232,7 @@ public:
             memcpy(frame.buffer, baseaddress, frame.total_size);
         } else {
             frame.shape[0] =  height; frame.shape[1] =  width; frame.shape[2] =  4;
+            frame.calcStrides();
             frame.total_size = width * height * 4;
             frame.buffer = new uint8_t[frame.total_size];
             frame.buildMetalBuffer();
@@ -7103,9 +7258,9 @@ public:
 
 // Mic Capture
 
-#if !TARGET_OS_IPHONE
+//#if !TARGET_OS_IPHONE
 @interface MicReader : NSObject<AVCaptureAudioDataOutputSampleBufferDelegate>
-#endif
+//#endif
 {
     @public
     /// The number of samples per frame — the height of the spectrogram.
@@ -7246,7 +7401,7 @@ public:
     
     // Create audio data output
     mCaptureAudioDataOutput = [[AVCaptureAudioDataOutput alloc] init];
-    
+#if !TARGET_OS_IPHONE
     // Configure audio settings - CRITICAL: Set sample rate
     NSDictionary* audioSettings = @{
         AVFormatIDKey: @(kAudioFormatLinearPCM),
@@ -7256,7 +7411,9 @@ public:
         AVSampleRateKey: @(44100.0) // IMPORTANT: Set sample rate
     };
     
+
     mCaptureAudioDataOutput.audioSettings = audioSettings;
+#endif
     [mCaptureAudioDataOutput setSampleBufferDelegate:self queue:CaptureQueue];
     
     // Create and configure session
@@ -8332,7 +8489,7 @@ public:
             
             faceIndices = newFaces;
         }
-        
+        Vertex3D* verts = static_cast<Vertex3D*>(Verticies);
         // Copy vertices to geometry buffer
         for (size_t i = 0; i < vertices.size(); i++) {
             simd_float3 pos = vertices[i];
@@ -8342,7 +8499,7 @@ public:
             float u = 0.5f + atan2f(normal.z, normal.x) / (2.0f * M_PI);
             float v = 0.5f - asinf(normal.y) / M_PI;
             
-            Verticies[i] = {
+            verts[i] = {
                 pos,
                 colour.toSimdFloat4(),
                 {u, v},
@@ -8402,16 +8559,16 @@ private:
 class CylinderNode: public GeometryNode<uint16> {
 public:
     CylinderNode(float r, float l, int rS, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(new Vertex3D[rS * 2 + 2 ], rS * 2 + 2, new uint16[rS * 3 + 6*rS + rS * 3], rS * 3 + 6*rS + rS * 3) {
-        
-        Verticies[0] = {{0, 0, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, -1.0}};
-        Verticies[vertexCount - 1] = {{0, l, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, 1.0}};
+        Vertex3D* verts = static_cast<Vertex3D*>(Verticies);
+        verts[0] = {{0, 0, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, -1.0}};
+        verts[vertexCount - 1] = {{0, l, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, 1.0}};
         float theta = 0;
         float stride = 2 * M_PI / rS;
         simd_float3 axisVec = {0, l, 0};
         for (int i = 0; i < rS; i++) {
             simd_float3 rVhat = r * simd_make_float3(cos(theta), 0, sin(theta));
-            Verticies[1 + i] = {rVhat * r, colour.toSimdFloat4(), {1, 0}, simd_normalize(rVhat + simd_make_float3(0, 1, 0))};
-            Verticies[1 + rS + i] = {rVhat * r + axisVec, colour.toSimdFloat4(), {1, 0}, simd_normalize(rVhat + simd_make_float3(0, 1, 0))};
+            verts[1 + i] = {rVhat * r, colour.toSimdFloat4(), {1, 0}, simd_normalize(rVhat + simd_make_float3(0, 1, 0))};
+            verts[1 + rS + i] = {rVhat * r + axisVec, colour.toSimdFloat4(), {1, 0}, simd_normalize(rVhat + simd_make_float3(0, 1, 0))};
             theta += stride;
         }
 
@@ -8696,7 +8853,7 @@ public:
         VertexBufferView.strides[0] = points.shape[0] * ( sizeof(Vertex3D) / sizeof(float) );
         VertexBufferView.strides[1] = sizeof(Vertex3D) / sizeof(float);
         VertexBufferView.strides[2] = 1;
-        VertexBufferView.flags |= OWNERSHIP_FLAG;
+        VertexBufferView.flags |= NON_OWNERSHIP_FLAG;
         VertexBufferView.flags |= NON_CONTIGUOUS_FLAG;
         VertexBufferView.total_size = VertexBufferView.accumul(0, 3);
         
@@ -9683,11 +9840,6 @@ void updateDottedLine(simd_float3 dir, int count, simd_float4x4* transform) {
     }
 }
 
-enum class TransformationMode {
-    Orbit,
-    Translate,
-    Zoom
-};
 
 //class Camera3D {
 //    simd_float3 oldPosition = {0.0, 0.0, -3.0};
@@ -10690,7 +10842,6 @@ struct Assets {
 //    
 //    currentMouseDrag.xyz *= 2;
 //    currentMousePos = 2 * currentMousePos - 1.0f;
-//    
 //    simd_float4 rayInViewSpace = simd_make_float4(currentMousePos, 0, 1);
 //    simd_float4 intPoint;
 //    for (int i = 0; i < renderer->_objectQueue.size(); i++) {
