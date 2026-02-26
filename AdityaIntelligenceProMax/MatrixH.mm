@@ -5678,76 +5678,77 @@ public:
 }
 @end
 
-struct Vertex3D {
-    simd_float3 position;
-    simd_float4 colour;
-    simd_float2 textureCoordinates;
-    simd_float3 normal = {0.0, 0.0, 1.0};
-};
 
-struct Point3D {
-    simd_float3 position;
-    simd_float4 colour;
-};
 
-class PointCloud {
-public:
-    MatrixH<1, Point3D> points;
-    id<MTLBuffer> pointsBuffer = nil;
-    
-    simd_float3 position= {0.0, 0.0, 0.0};
-    simd_float3 scale = {1.0, 1.0, 1.0};
-    simd_float3 rotation = {0.0, 0.0, 0.0};
-    
-    bool update = true;
-    
-    
-    static PointCloud fromGrid(size_t rows, size_t cols, simd_float4 colour, simd_float3 start, simd_float3 end) {
-        PointCloud output(rows * cols);
-        simd_float3 diff = end - start;
-        diff.x /= cols;
-        diff.y /= rows;
-        diff.z /= rows * cols;
-        for ( int i = 0; i < rows; i++) {
-            for (int j=0; j < cols; j++) {
-                output.points.buffer[i * cols + j] = {{start.x + j * diff.x, start.y + i * diff.y, start.z + (i * j) * diff.z}, colour};
-            }
-        }
-        return output;
-    }
-    
-    static PointCloud fromImage(simd_float3 start, simd_float3 end) {
-        MatrixH<3, uint8_t> img = MatrixH<3, uint8_t>::fromImage(true);
-        size_t rows =img.shape[0];
-        size_t cols = img.shape[1];
-        PointCloud output(img.shape[0] * img.shape[1]);
-        simd_float3 diff = end - start;
-        diff.x /= cols;
-        diff.y /= rows;
-        diff.z /= rows * cols;
-        for ( int i = 0; i < rows; i++) {
-            for (int j=0; j < cols; j++) {
-                output.points.buffer[i * cols + j] = {{start.x + j * diff.x, start.y + i * diff.y, start.z + (i * j) * diff.z}, img.toSimdFloat4(i, j) / 255};
-            }
-        }
-        return output;
-    }
-    
-//    static PointCloud fromModel(simd_float3 start, simd_float3 end) {
-//
+
+
+std::ostream& operator<<(std::ostream& os, const Vertex3D& v) {
+    os << "Position: (" << v.position.x << ", " << v.position.y << ", " << v.position.z << ")  "
+       << "Color: (" << v.colour.x << ", " << v.colour.y << ", " << v.colour.z << ", " << v.colour.w << ")  "
+       << "TexCoord: (" << v.textureCoordinates.x << ", " << v.textureCoordinates.y << ")  "
+       << "Normal: (" << v.normal.x << ", " << v.normal.y << ", " << v.normal.z << ")";
+    return os;
+}
+
+
+//class PointCloud {
+//public:
+//    MatrixH<1, Point3D> points;
+//    id<MTLBuffer> pointsBuffer = nil;
+//    
+//    simd_float3 position= {0.0, 0.0, 0.0};
+//    simd_float3 scale = {1.0, 1.0, 1.0};
+//    simd_float3 rotation = {0.0, 0.0, 0.0};
+//    
+//    bool update = true;
+//    
+//    
+//    static PointCloud fromGrid(size_t rows, size_t cols, simd_float4 colour, simd_float3 start, simd_float3 end) {
+//        PointCloud output(rows * cols);
+//        simd_float3 diff = end - start;
+//        diff.x /= cols;
+//        diff.y /= rows;
+//        diff.z /= rows * cols;
+//        for ( int i = 0; i < rows; i++) {
+//            for (int j=0; j < cols; j++) {
+////                output.points.buffer[i * cols + j] = {{start.x + j * diff.x, start.y + i * diff.y, start.z + (i * j) * diff.z}, colour};
+//            }
+//        }
 //        return output;
 //    }
-    
-    void buildBuffers(id<MTLDevice> metalDevice) {
-        if (!pointsBuffer || update) {
-            pointsBuffer = [metalDevice newBufferWithLength: points.total_size * sizeof(Point3D) options:MTLResourceStorageModeShared];
-            memcpy([pointsBuffer contents], points.buffer, points.total_size*sizeof(Point3D));
-            
-            std::cout << "buffer built" << "\n";
-        }
-        update = false;
-    }
-};
+//    
+//    static PointCloud fromImage(simd_float3 start, simd_float3 end) {
+//        MatrixH<3, uint8_t> img = MatrixH<3, uint8_t>::fromImage(true);
+//        size_t rows =img.shape[0];
+//        size_t cols = img.shape[1];
+//        PointCloud output(img.shape[0] * img.shape[1]);
+//        simd_float3 diff = end - start;
+//        diff.x /= cols;
+//        diff.y /= rows;
+//        diff.z /= rows * cols;
+//        for ( int i = 0; i < rows; i++) {
+//            for (int j=0; j < cols; j++) {
+////                output.points.buffer[i * cols + j] = {{start.x + j * diff.x, start.y + i * diff.y, start.z + (i * j) * diff.z}, img.toSimdFloat4(i, j) / 255};
+//            }
+//        }
+//        return output;
+//    }
+//    
+////    static PointCloud fromModel(simd_float3 start, simd_float3 end) {
+////
+////        return output;
+////    }
+//    
+//    void buildBuffers(id<MTLDevice> metalDevice) {
+//        if (!pointsBuffer || update) {
+//            pointsBuffer = [metalDevice newBufferWithLength: points.total_size * sizeof(Point3D) options:MTLResourceStorageModeShared];
+//            memcpy([pointsBuffer contents], points.buffer, points.total_size*sizeof(Point3D));
+//            
+//            std::cout << "buffer built" << "\n";
+//        }
+//        update = false;
+//    }
+//};
 
 class ObjMesh {
 public:
@@ -5771,16 +5772,16 @@ public:
 
         // Store texture coordinates in attribute[1]
         mtlVertexDescriptor.attributes[1].format = MTLVertexFormatFloat4;
-        mtlVertexDescriptor.attributes[1].offset = sizeof(simd_float3);
+        mtlVertexDescriptor.attributes[1].offset = offsetof(Vertex3D, colour);
         mtlVertexDescriptor.attributes[1].bufferIndex = 0;
 
         
         mtlVertexDescriptor.attributes[2].format = MTLVertexFormatFloat2;
-        mtlVertexDescriptor.attributes[2].offset = sizeof(simd_float3) + sizeof(simd_float4);
+        mtlVertexDescriptor.attributes[2].offset = offsetof(Vertex3D, textureCoordinates);
         mtlVertexDescriptor.attributes[2].bufferIndex = 0;
         
         mtlVertexDescriptor.attributes[3].format = MTLVertexFormatFloat3;
-        mtlVertexDescriptor.attributes[3].offset = sizeof(simd_float3) + sizeof(simd_float4) + sizeof(simd_float2);
+        mtlVertexDescriptor.attributes[3].offset = offsetof(Vertex3D, normal);
         mtlVertexDescriptor.attributes[3].bufferIndex = 0;
         
         // Set stride to twice the bytes per float2.
@@ -5935,9 +5936,11 @@ public:
 //            vertexBuffer = [metalDevice newBufferWithLength:vertexCount * sizeof(Vertex3D) options:MTLResourceStorageModeShared];
 //            memcpy([vertexBuffer contents], Verticies, vertexCount*sizeof(Vertex3D));
             vertexBuffer = [metalDevice newBufferWithBytesNoCopy:Verticies length:vertexCount * sizeof(Vertex3D)  options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+                delete [] pointer;
             }];
             
             indexBuffer = [metalDevice newBufferWithBytesNoCopy:indices length:indexCount * sizeof(T)  options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+                delete [] pointer;
             }];
             
 //            indexBuffer = [metalDevice newBufferWithLength:indexCount * sizeof(T) options:MTLResourceStorageModeShared];
@@ -6272,36 +6275,39 @@ public:
     };
     uint16 indicesL[3] = {0, 1, 2};
     TriangleNode(float side, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(new Vertex3D[3], 3, new uint16[3]{0, 1, 2}, 3) {  // Allocate indices dynamically
-        Verticies[0] = {{0, 0, 0}, colour.toSimdFloat4()};
-        Verticies[1] = {{side, 0, 0}, colour.toSimdFloat4()};
-        Verticies[2] = {{0, side, 0}, colour.toSimdFloat4()};
+        Vertex3D* verts = static_cast<Vertex3D*>(Verticies);
+        verts[0] = {{0, 0, 0}, colour.toSimdFloat4()};
+        verts[1] = {{side, 0, 0}, colour.toSimdFloat4()};
+        verts[2] = {{0, side, 0}, colour.toSimdFloat4()};
     }
     
     TriangleNode(float base, float height,MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(new Vertex3D[3], 3, new uint16[3]{0, 1, 2}, 3) {  // Allocate indices dynamically
-        Verticies[0] = {{-base/2, 0, 0}, colour.toSimdFloat4()};
-        Verticies[1] = {{base/2, 0, 0}, colour.toSimdFloat4()};
-        Verticies[2] = {{0, height, 0}, colour.toSimdFloat4()};
+        Vertex3D* verts = static_cast<Vertex3D*>(Verticies);
+        verts[0] = {{-base/2, 0, 0}, colour.toSimdFloat4()};
+        verts[1] = {{base/2, 0, 0}, colour.toSimdFloat4()};
+        verts[2] = {{0, height, 0}, colour.toSimdFloat4()};
     }
 };
 
 class QuadNode: public GeometryNode<uint16> {
 public:
     QuadNode(float l, float h, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}, uint8_t centre = 0): GeometryNode<uint16>(new Vertex3D[4], 4, new uint16[6], 6) {
+        Vertex3D* verts = static_cast<Vertex3D*>(Verticies);
         if (centre == 0) {
-            Verticies[0]  = { { -l/2, -h/2, 0 },  colour.toSimdFloat4(), {0, 0}, { 0.f,  0.f,  1.f } };
-            Verticies[1]  = { { +l/2, -h/2, 0 },  colour.toSimdFloat4(), {1, 0}, { 0.f,  0.f,  1.f } };
-            Verticies[2]  = { { +l/2, +h/2, 0 },  colour.toSimdFloat4(), {1, 1}, { 0.f,  0.f,  1.f } };
-            Verticies[3]  = { { -l/2, +h/2, 0 },  colour.toSimdFloat4(), {0, 1}, { 0.f,  0.f,  1.f } };
+            verts[0]  = { { -l/2, -h/2, 0 },  colour.toSimdFloat4(), {0, 0}, { 0.f,  0.f,  1.f } };
+            verts[1]  = { { +l/2, -h/2, 0 },  colour.toSimdFloat4(), {1, 0}, { 0.f,  0.f,  1.f } };
+            verts[2]  = { { +l/2, +h/2, 0 },  colour.toSimdFloat4(), {1, 1}, { 0.f,  0.f,  1.f } };
+            verts[3]  = { { -l/2, +h/2, 0 },  colour.toSimdFloat4(), {0, 1}, { 0.f,  0.f,  1.f } };
         } else if (centre == 1) {
-            Verticies[0]  = { { 0, -h/2, 0 },  colour.toSimdFloat4(), {0, 0}, { 0.f,  0.f,  1.f } };
-            Verticies[1]  = { { +l, -h/2, 0 },  colour.toSimdFloat4(), {1, 0}, { 0.f,  0.f,  1.f } };
-            Verticies[2]  = { { +l, +h/2, 0 },  colour.toSimdFloat4(), {1, 1}, { 0.f,  0.f,  1.f } };
-            Verticies[3]  = { { 0, +h/2, 0 },  colour.toSimdFloat4(), {0, 1}, { 0.f,  0.f,  1.f } };
+            verts[0]  = { { 0, -h/2, 0 },  colour.toSimdFloat4(), {0, 0}, { 0.f,  0.f,  1.f } };
+            verts[1]  = { { +l, -h/2, 0 },  colour.toSimdFloat4(), {1, 0}, { 0.f,  0.f,  1.f } };
+            verts[2]  = { { +l, +h/2, 0 },  colour.toSimdFloat4(), {1, 1}, { 0.f,  0.f,  1.f } };
+            verts[3]  = { { 0, +h/2, 0 },  colour.toSimdFloat4(), {0, 1}, { 0.f,  0.f,  1.f } };
         } else if (centre == 2) {
-            Verticies[0]  = { { -l/2, 0, 0 },  colour.toSimdFloat4(), {0, 0}, { 0.f,  0.f,  1.f } };
-            Verticies[1]  = { { +l/2, 0, 0 },  colour.toSimdFloat4(), {1, 0}, { 0.f,  0.f,  1.f } };
-            Verticies[2]  = { { +l/2, +h, 0 },  colour.toSimdFloat4(), {1, 1}, { 0.f,  0.f,  1.f } };
-            Verticies[3]  = { { -l/2, +h, 0 },  colour.toSimdFloat4(), {0, 1}, { 0.f,  0.f,  1.f } };
+            verts[0]  = { { -l/2, 0, 0 },  colour.toSimdFloat4(), {0, 0}, { 0.f,  0.f,  1.f } };
+            verts[1]  = { { +l/2, 0, 0 },  colour.toSimdFloat4(), {1, 0}, { 0.f,  0.f,  1.f } };
+            verts[2]  = { { +l/2, +h, 0 },  colour.toSimdFloat4(), {1, 1}, { 0.f,  0.f,  1.f } };
+            verts[3]  = { { -l/2, +h, 0 },  colour.toSimdFloat4(), {0, 1}, { 0.f,  0.f,  1.f } };
         }
         
         uint16_t indicesC[] = {
@@ -6425,12 +6431,13 @@ public:
 class CircleNode: public GeometryNode<uint16> {
 public:
     CircleNode(float r, int n, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(new Vertex3D[ n + 1], n + 1, new uint16[3 * n], 3 * n) {
-        Verticies[0] = {{0, 0, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, 1.0}};
-        std::cout << Verticies[0] << "\n";
+        Vertex3D* verts = static_cast<Vertex3D*>(Verticies);
+        verts[0] = {{0, 0, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, 1.0}};
+        std::cout << verts[0] << "\n";
         float theta = 0;
         float stride = 2 * M_PI / n;
         for (int i = 0; i < n; i++) {
-            Verticies[1+i] = {{r * cos(theta), r * sin(theta), 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, 1.0}};
+            verts[1+i] = {{r * cos(theta), r * sin(theta), 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, 1.0}};
             theta += stride;
         }
         
@@ -6449,10 +6456,11 @@ public:
 class SphereNode: public GeometryNode<uint16> {
 public:
     SphereNode(float r, int rS, int lS, MatrixH<1, float> colour = {1.0, 1.0, 1.0, 1.0}): GeometryNode<uint16>(new Vertex3D[rS * lS + 2 ], rS * lS + 2, new uint16[rS * 3 + 6*rS*(lS-1) + rS * 3],rS * 3 + 6*rS*(lS-1) + rS * 3) {
+        Vertex3D* verts = static_cast<Vertex3D*>(Verticies);
         // ls Linear subdivisions
         // rs radial subdivisions
-        Verticies[0] = {{0, r, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, 1.0}};
-        Verticies[vertexCount - 1] = {{0, -r, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, -1.0}};
+        verts[0] = {{0, r, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, 1.0}};
+        verts[vertexCount - 1] = {{0, -r, 0}, colour.toSimdFloat4(), {0, 0}, {0.0, 0.0, -1.0}};
         float theta = 0;
         float stride = 2 * M_PI / rS;
         float polarAngle = M_PI / (lS + 1);
@@ -6463,7 +6471,7 @@ public:
             for (int i = 0; i < rS; i++) {
                 simd_float3 rV = rMag * simd_make_float3(cos(theta), 0, sin(theta));
                 simd_float3 yV = simd_make_float3(0, r * cos(polarAngle), 0);
-                Verticies[1+h*rS + i] = {yV + rV, colour.toSimdFloat4(), {1, 0}, (yV+rV)/r};
+                verts[1+h*rS + i] = {yV + rV, colour.toSimdFloat4(), {1, 0}, (yV+rV)/r};
                 theta += stride;
             }
 //            yV -= simd_make_float3(0, (2*r/(lS+1)), 0);
@@ -7141,8 +7149,88 @@ public:
 };
 
 
+class PointCloudNode: public GeometryNode<uint16> {
+public:
+    PointCloudNode(const MatrixH<2, float>& points_pos, const MatrixH<2, float>& points_color): GeometryNode<uint16>(new Point3D[points_pos.shape[0]], points_pos.shape[0], new uint16[points_pos.shape[0]], points_pos.shape[0]) {
+        if (points_pos.shape[0] != points_color.shape[0]) {
+            throw std::runtime_error("GeometryNode: points_pos and points_color must have the same number of points.");
+        }
+        if (points_pos.shape[1] != 3) {
+            throw std::runtime_error("GeometryNode: points_pos must have shape Nx3.");
+        }
+        if (points_color.shape[1] != 4) {
+            throw std::runtime_error("GeometryNode: points_color must have shape Nx4.");
+        }
+        renderPipelineType = RenderPipelineType::Predefined;
+        RenderStateNo = static_cast<int>(PredefinedRenderPipelineState::PointCloud);
+        drawType = MTLPrimitiveTypePoint;
+        vertexType = VertexType::Point;
+        
+        if (points_pos.total_size == 0) { return; }
+        buildBuffers(GlobalGPUManager.metalDevice);
+        MatrixH<2, float> VertexBufferView;
+        VertexBufferView.buffer = (float*)Verticies;
+        VertexBufferView.shape[0] = points_pos.shape[0];
+        VertexBufferView.shape[1] = 3;
+        VertexBufferView.strides[0] = sizeof(Point3D) / sizeof(float);
+        VertexBufferView.strides[1] = 1;
+        VertexBufferView.flags |= NON_OWNERSHIP_FLAG;
+        VertexBufferView.flags |= NON_CONTIGUOUS_FLAG;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
+        VertexBufferView.metalBuffer = vertexBuffer;
+        
+        MatrixH<2, float>::copyGPUinplace(VertexBufferView, points_pos, 0, false);
+        VertexBufferView.shape[1] = 4; // as colour is simd_float4
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
+        MatrixH<2, float>::copyGPUinplace(VertexBufferView, points_color, offsetof(Point3D, colour) / sizeof(float), true);
+        VertexBufferView.shape[1] = 8;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
+        
 
+    }
+    void updatePoints(const MatrixH<2, float>& points_pos, const MatrixH<2, float>& points_color) {
+        if (points_pos.shape[0] != points_color.shape[0]) {
+            throw std::runtime_error("GeometryNode: points_pos and points_color must have the same number of points.");
+        }
 
+        if (points_pos.shape[0] != vertexCount || points_color.shape[0] != vertexCount) {
+            delete [] Verticies;
+            delete [] indices;
+            
+            Verticies = new Point3D[points_pos.shape[0]];
+            indices = new uint16[points_pos.shape[0]];
+            
+            vertexCount =  points_pos.shape[0];
+            indexCount = points_pos.shape[0];
+            update = true;
+        }
+        
+        if (points_pos.shape[1] != 3) {
+            throw std::runtime_error("GeometryNode: points_pos must have shape Nx3.");
+        }
+        if (points_color.shape[1] != 4) {
+            throw std::runtime_error("GeometryNode: points_color must have shape Nx4.");
+        }
+        buildBuffers(GlobalGPUManager.metalDevice);
+        MatrixH<2, float> VertexBufferView;
+        VertexBufferView.buffer = (float*)Verticies;
+        VertexBufferView.shape[0] = points_pos.shape[0];
+        VertexBufferView.shape[1] = 3;
+        VertexBufferView.strides[0] = sizeof(Point3D) / sizeof(float);
+        VertexBufferView.strides[1] = 1;
+        VertexBufferView.flags |= NON_OWNERSHIP_FLAG;
+        VertexBufferView.flags |= NON_CONTIGUOUS_FLAG;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
+        VertexBufferView.metalBuffer = vertexBuffer;
+        
+        MatrixH<2, float>::copyGPUinplace(VertexBufferView, points_pos, 0, false);
+        VertexBufferView.shape[1] = 4; // as colour is simd_float4
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
+        MatrixH<2, float>::copyGPUinplace(VertexBufferView, points_color, offsetof(Point3D, colour) / sizeof(float), true);
+        VertexBufferView.shape[1] = 8;
+        VertexBufferView.total_size = VertexBufferView.accumul(0, 2);
+    }
+};
 
 // Helper structure for 2D points during triangulation
 struct Point2D {
@@ -7495,7 +7583,7 @@ struct Point2D {
 class ConvexPolygon: public Shape<uint16> {
 public:
     ConvexPolygon(MatrixH<1, simd_float2>& points): Shape<uint16>(new Vertex3D[points.total_size], points.total_size, new uint16[3 + 3*(points.total_size-3)], 3 + 3*(points.total_size-3)) {
-        
+        Vertex3D* verts = static_cast<Vertex3D*>(Verticies);
         for (int i = 0; i < points.total_size; i ++) {
             Verticies[i]  = { { points[i].x, points[i].y, 0 },  {0.0f, 1.0f, 0.0f, 1.0}, {0, 0}, { 0.f,  0.f,  1.f } };
         }
@@ -7509,14 +7597,21 @@ public:
 
 class Line: public Shape<uint16> {
 public:
-    Line(MatrixH<1, simd_float2>& points): Shape<uint16>(new Vertex3D[2 * points.total_size], 2 * points.total_size, new uint16[6 * points.total_size], 6 * points.total_size) {
+    Line(MatrixH<2, float>& points): Shape<uint16>(new Vertex3D[2 * points.total_size], 2 * points.total_size, new uint16[6 * points.total_size], 6 * points.total_size) {
+        points.print();
+        MatrixH<2, float> derivativeTemp;
+        points.Derivative(derivativeTemp, 0, false);
+        MatrixH<2, float> derivative = derivativeTemp.SliceCopy({{{0, derivativeTemp.shape[0]-1}}});
+        derivativeTemp.print();
+        derivative.print();
+        derivative.T().print();
+        auto perpendicular = MatrixH<2, float>({{0, -1}, {1, 0}});
+        auto normals = perpendicular.Dot(derivative.T()).T();
+        normals.print();
         
-        MatrixH<1, simd_float2> derivative;
-        points.Derivative(derivative, 0, false);
-        auto derivativeInMat = (MatrixH<2, float>)derivative;
-        
-        for (int i = 0; i < points.total_size; i ++) {
-            Verticies[i]  = { { points[i].x, points[i].y, 0 },  {0.0f, 1.0f, 0.0f, 1.0}, {0, 0}, { 0.f,  0.f,  1.f } };
+        for (int i = 0; i < points.shape[0]; i++) {
+            Verticies[2*i]   = { { points[i, 0], points[i, 1], 0 },  {0.0f, 1.0f, 0.0f, 1.0}, {0, 0}, { 0.f,  0.f,  1.f } };
+            Verticies[2*i+1] = { { points[i, 0], points[i, 1], 0 },  {0.0f, 1.0f, 0.0f, 1.0}, {0, 0}, { 0.f,  0.f,  1.f } };
         }
         for (int i = 0; i < points.total_size - 2; i ++) {
             indices[3*i + 0] = 0;
@@ -7529,15 +7624,26 @@ public:
 class Text3D: public Shape<uint16> {
 public:
     Text3D(): Shape<uint16>(nullptr, 0, nullptr, 0) {
+        #if !TARGET_OS_IPHONE
         MatrixH<1, simd_float2> pts = generatePtsFromText(@"Hello World", 10,  [NSFont systemFontOfSize:14.0]);
+        #endif
+        #if TARGET_OS_IPHONE
+        MatrixH<1, simd_float2> pts = generatePtsFromText(@"Hello World", 10,  [UIFont systemFontOfSize:14.0]);
+        #endif
         indexCount = 3 + 3*(pts.total_size-3);
         vertexCount = pts.total_size;
         indices = new uint16[indexCount];
         Verticies = new Vertex3D[vertexCount];
         updateShape(pts, *this);
     }
+    
     #if !TARGET_OS_IPHONE
-    static MatrixH<1, simd_float2> generatePtsFromText(NSString* text, size_t size, NSFont* font) {
+    using sys_font = NSFont;
+    #endif
+    #if TARGET_OS_IPHONE
+    using sys_font = UIFont;
+    #endif
+    static MatrixH<1, simd_float2> generatePtsFromText(NSString* text, size_t size, sys_font* font) {
         MatrixH<1, simd_float2> points;
         CFStringRef cfText = (__bridge CFStringRef)text;
         CTFontRef CTfont = (__bridge CTFontRef)font;
@@ -7768,6 +7874,7 @@ struct ArrayShape {
 //            
 //            memcpy([transformBuffer contents], transform, instanceCount * sizeof(simd_float4x4));
             transformBuffer = [metalDevice newBufferWithBytesNoCopy:transform length:instanceCount * sizeof(simd_float4x4) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+                delete [] pointer;
             }];
             std::cout << "buffer built transform" << "\n";
         }
@@ -8604,7 +8711,7 @@ struct Assets {
     [cmdEncoder endEncoding];
     [cmdBuffer presentDrawable:drawable];
     [cmdBuffer commit];
-//    [cmdBuffer waitUntilCompleted];
+//    [cmdBuffer waitUntilCompleted]; // BUGFIX: Delaying the cpu
     
 }
 
@@ -8637,11 +8744,11 @@ struct Assets {
 
     // Store texture coordinates in attribute[1]
     mtlVertexDescriptor.attributes[1].format = MTLVertexFormatFloat3;
-    mtlVertexDescriptor.attributes[1].offset = sizeof(simd_float3);
+    mtlVertexDescriptor.attributes[1].offset = offsetof(Point3D, colour);
     mtlVertexDescriptor.attributes[1].bufferIndex = 0;
 
     // Set stride to the bytes per float3 and float4.
-    mtlVertexDescriptor.layouts[0].stride = sizeof(simd_float3)+sizeof(simd_float4);
+    mtlVertexDescriptor.layouts[0].stride = sizeof(Point3D);
     mtlVertexDescriptor.layouts[0].stepRate = 1;
     mtlVertexDescriptor.layouts[0].stepFunction = MTLVertexStepFunctionPerVertex;
     
@@ -8657,15 +8764,16 @@ struct Assets {
 
     // Store texture coordinates in attribute[1]
     mtlVertexDescriptor.attributes[1].format = MTLVertexFormatFloat4;
-    mtlVertexDescriptor.attributes[1].offset = sizeof(simd_float3);
+    mtlVertexDescriptor.attributes[1].offset = offsetof(Vertex3D, colour);
     mtlVertexDescriptor.attributes[1].bufferIndex = 0;
 
+    
     mtlVertexDescriptor.attributes[2].format = MTLVertexFormatFloat2;
-    mtlVertexDescriptor.attributes[2].offset = sizeof(simd_float3) + sizeof(simd_float4);
+    mtlVertexDescriptor.attributes[2].offset = offsetof(Vertex3D, textureCoordinates);
     mtlVertexDescriptor.attributes[2].bufferIndex = 0;
     
     mtlVertexDescriptor.attributes[3].format = MTLVertexFormatFloat3;
-    mtlVertexDescriptor.attributes[3].offset = sizeof(simd_float3) + sizeof(simd_float4) + sizeof(simd_float2);
+    mtlVertexDescriptor.attributes[3].offset = offsetof(Vertex3D, normal);
     mtlVertexDescriptor.attributes[3].bufferIndex = 0;
     
     // Set stride to twice the bytes per float2.
@@ -8680,6 +8788,8 @@ struct Assets {
 - (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size {
     cam.updateAspectRatio(size.width / size.height);
 }
+
+
 
 @end
 
