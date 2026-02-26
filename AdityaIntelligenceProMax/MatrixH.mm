@@ -395,7 +395,7 @@ struct nested_initializer_list {
 };
 
 enum Flags : unsigned int {
-    OWNERSHIP_FLAG = 1u << 0,  // Bit 0
+    NON_OWNERSHIP_FLAG = 1u << 0,  // Bit 0
     NON_CONTIGUOUS_FLAG = 1u << 1,  // Bit 1
 };
 
