@@ -8164,65 +8164,150 @@ public:
     
     if (self) {
         self.pressedKeys = [NSMutableSet set];
+        #if !TARGET_OS_IPHONE
         self.cameraTimer = [NSTimer scheduledTimerWithTimeInterval:(1.0 / 120.0)
                                                             target:self
                                                           selector:@selector(updateCamera)
                                                           userInfo:nil
                                                            repeats:YES];
+        #endif
         shiftPressed = false;
         isActiveView = true;
     }
     return self;
 }
 
+#if TARGET_OS_IPHONE
+    - (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+        NSArray<UITouch *> *allTouches = [[event allTouches] allObjects];
+        NSUInteger touchCount = [allTouches count];
+        
+        Renderer *renderer = (Renderer *)self.delegate;
+
+        // --- CASE 1: Two-Finger Pan (Priority) ---
+        // We handle this FIRST to prevent accidentally clicking objects while trying to pan
+        printf("%lu fingers detected. \n", static_cast<unsigned long>(touchCount));
+        if (touchCount == 2) {
+            
+            float totalDeltaX = 0;
+            float totalDeltaY = 0;
+            
+            // Calculate the average movement of BOTH fingers
+            // This fixes the issue where one stationary finger cancels out the movement
+            for (UITouch *t in allTouches) {
+                CGPoint cur = [t locationInView:self];
+                CGPoint prev = [t previousLocationInView:self];
+                totalDeltaX += (cur.x - prev.x);
+                totalDeltaY += (cur.y - prev.y);
+            }
+            
+            float avgDeltaX = totalDeltaX / 2.0f;
+            float avgDeltaY = totalDeltaY / 2.0f;
+            
+            // Optional: Touch screens need a slight boost compared to mouse
+            float touchSensitivity = 2.5f;
+            
+            // Send Translate Command immediately and return
+            renderer->cam.handleMouseEvents(avgDeltaX * touchSensitivity,
+                                            avgDeltaY * touchSensitivity,
+                                            NO,
+                                            NO, // isShift
+                                            TransformationMode::Translate);
+            return;
+        }
+
+        // --- CASE 2: Single Finger (Orbit or Object Drag) ---
+        if (touchCount == 1) {
+            UITouch *touch = [touches anyObject];
+            CGPoint currentPos = [touch locationInView:self];
+            CGPoint previousPos = [touch previousLocationInView:self];
+            
+            float deltaX = currentPos.x - previousPos.x;
+            float deltaY = currentPos.y - previousPos.y;
+            
+            bool onShape = false;
+            
+            // --- Object Dragging Logic ---
+            CGPoint mouseLocation = currentPos;
+            simd_float2 currentMousePos = simd_make_float2((mouseLocation.x / self.frame.size.width), (mouseLocation.y / self.frame.size.height));
+            simd_float4 currentMouseDrag = simd_make_float4((deltaX / (float)self.frame.size.width), (-deltaY / (float)self.frame.size.height), 0, 1);
+            
+            currentMouseDrag.xyz *= 2;
+            currentMousePos = 2 * currentMousePos - 1.0f;
+            simd_float4 rayInViewSpace = simd_make_float4(currentMousePos, 0, 1);
+            simd_float4 intPoint;
+            
+            for (int i = 0; i < renderer->_objectQueue.size(); i++) {
+                if (renderer->_objectQueue[i].dragable) {
+                    // ... (Keep your existing Raycast logic exactly as is) ...
+                    if (renderer->_objectQueue[i].intersectRay(simd_make_float4(0, 0, 1, 1), rayInViewSpace, renderer->cam.viewMatrix, intPoint, true)) {
+                        onShape = true;
+                        // ... (Your existing drag logic) ...
+                        currentMouseDrag *= intPoint.w;
+                        currentMouseDrag.z = intPoint.z;
+                        currentMouseDrag.zw *= 0;
+                        currentMouseDrag = simd_mul(renderer->cam.inverseProjectionMatrix, currentMouseDrag);
+                        renderer->_objectQueue[i].position += simd_make_float3(currentMouseDrag.x, currentMouseDrag.y, 0);
+                        renderer->_objectQueue[i].triggerCallbacks();
+                        break;
+                    }
+                }
+            }
+            
+            // --- Orbit Logic (Only if we didn't touch an object) ---
+            if (!onShape) {
+                renderer->cam.handleMouseEvents(deltaX, -deltaY, NO, NO, TransformationMode::Orbit);
+            }
+        }
+    }
+    
+    - (void)didMoveToWindow {
+        [super didMoveToWindow];
+        // iOS doesn't strictly require makeFirstResponder for gestures, but good for menus
+        [self becomeFirstResponder];
+
+        // 1. Add the Pinch Gesture
+        UIPinchGestureRecognizer *pinch = [[UIPinchGestureRecognizer alloc]
+                                           initWithTarget:self
+                                           action:@selector(handlePinch:)];
+        [self addGestureRecognizer:pinch];
+    }
+
+    - (void)handlePinch:(UIPinchGestureRecognizer *)gesture {
+        // 2. Get the scale (iOS starts at 1.0)
+        float currentScale = gesture.scale;
+
+        Renderer *renderer = (Renderer *)self.delegate;
+        if (renderer) {
+            // macOS: passed (1 + mag).
+            // iOS: 'scale' IS (1 + mag), so pass it directly.
+            renderer->cam.handleMouseEvents(currentScale, currentScale, NO, NO, TransformationMode::Zoom);
+        }
+
+        // 3. CRITICAL: Reset the scale to 1.0
+        // On iOS, the scale accumulates. If you don't reset it,
+        // the zoom will accelerate exponentially (1.1 * 1.2 * 1.3...).
+        // By resetting to 1.0, we get the "delta" change for the next frame.
+//        gesture.scale = 1.0;
+
+        // 4. Handle End State
+        if (gesture.state == UIGestureRecognizerStateEnded) {
+            renderer->cam.updateOLD();
+        }
+    }
+#endif
+#if !TARGET_OS_IPHONE
 - (void)mouseDragged:(NSEvent *)event {
     float deltaX = event.deltaX;
     float deltaY = event.deltaY;
     BOOL isShift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
     bool onShape = false;
-    
     Renderer *renderer = (Renderer *)self.delegate;
-    NSPoint mouseLocation = [self convertPoint:[event locationInWindow] fromView:nil];
-    simd_float2 currentMousePos = simd_make_float2((mouseLocation.x / self.frame.size.width), (mouseLocation.y / self.frame.size.height));
-    simd_float4 currentMouseDrag = simd_make_float4((deltaX / (float)self.frame.size.width), (-deltaY / (float)self.frame.size.height), 0, 1);
-    
-    currentMouseDrag.xyz *= 2;
-    currentMousePos = 2 * currentMousePos - 1.0f;
-    simd_float4 rayInViewSpace = simd_make_float4(currentMousePos, 0, 1);
-    simd_float4 intPoint;
-    for (int i = 0; i < renderer->_objectQueue.size(); i++) {
-        if (renderer->_objectQueue[i].dragable) {
-            if (renderer->_objectQueue[i].intersectRay(simd_make_float4(0, 0, 1, 1), rayInViewSpace, renderer->cam.viewMatrix, intPoint, true)) {
-                onShape = true;
-                currentMouseDrag *= intPoint.w;
-                currentMouseDrag.z = intPoint.z;
-                currentMouseDrag.zw *= 0;
-                std::cout << "current W " <<  intPoint.w << "\n";
-                std::cout << "intersection pont: "<< intPoint << " cursor in ViewSpace: " << rayInViewSpace << "current MouseDrag" << currentMouseDrag << "\n";
-                currentMouseDrag = simd_mul(renderer->cam.inverseProjectionMatrix, currentMouseDrag);
-                std::cout << currentMouseDrag << "\n";
-                renderer->_objectQueue[i].position += simd_make_float3(currentMouseDrag.x,currentMouseDrag.y,0);
-                renderer->_objectQueue[i].triggerCallbacks();
-                break;
-            }
-        }
-         
-    }
-
-    if (!onShape) {
-        renderer->cam.handleMouseEvents(deltaX, -deltaY, NO, isShift, TransformationMode::Orbit);
-    }
-}
-
-//- (void)mouseDragged:(NSEvent *)event {
-//    float deltaX = event.deltaX;
-//    float deltaY = event.deltaY;
-//    BOOL isShift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
-//    bool onShape = false;
-//    
-//    Renderer *renderer = (Renderer *)self.delegate;
 //    NSPoint mouseLocation = [self convertPoint:[event locationInWindow] fromView:nil];
 //    simd_float2 currentMousePos = simd_make_float2((mouseLocation.x / self.frame.size.width), (mouseLocation.y / self.frame.size.height));
+//    simd_float4 currentMouseDrag = simd_make_float4((deltaX / (float)self.frame.size.width), (-deltaY / (float)self.frame.size.height), 0, 1);
+//    
+//    currentMouseDrag.xyz *= 2;
 //    currentMousePos = 2 * currentMousePos - 1.0f;
 //    
 //    simd_float4 rayInViewSpace = simd_make_float4(currentMousePos, 0, 1);
@@ -8231,25 +8316,26 @@ public:
 //        if (renderer->_objectQueue[i].dragable) {
 //            if (renderer->_objectQueue[i].intersectRay(simd_make_float4(0, 0, 1, 1), rayInViewSpace, renderer->cam.viewMatrix, intPoint, true)) {
 //                onShape = true;
-//                simd_float4 intPointInWorldSpace = simd_mul(renderer->cam.inverseProjectionMatrix, intPoint);
-//                if (!updatedOldRay) {
-//                    intPointInWorldSpaceOld = intPointInWorldSpace;
-//                    updatedOldRay = true;
-//                }
-//                renderer->_objectQueue[i].position += (intPointInWorldSpace - intPointInWorldSpaceOld).xyz;
-//                intPointInWorldSpaceOld = intPointInWorldSpace;
-//                // so that if two faces of same obj behind each other they dont get double draged
+//                currentMouseDrag *= intPoint.w;
+//                currentMouseDrag.z = intPoint.z;
+//                currentMouseDrag.zw *= 0;
+//                std::cout << "current W " <<  intPoint.w << "\n";
+//                std::cout << "intersection pont: "<< intPoint << " cursor in ViewSpace: " << rayInViewSpace << "current MouseDrag" << currentMouseDrag << "\n";
+//                currentMouseDrag = simd_mul(renderer->cam.inverseProjectionMatrix, currentMouseDrag);
+//                std::cout << currentMouseDrag << "\n";
+//                renderer->_objectQueue[i].position += simd_make_float3(currentMouseDrag.x,currentMouseDrag.y,0);
+//                renderer->_objectQueue[i].triggerCallbacks();
 //                break;
 //            }
 //        }
 //         
 //    }
-//
-//    if (!onShape) {
-//        renderer->cam.handleMouseEvents(deltaX, -deltaY, NO, isShift, TransformationMode::Orbit);
-//    }
-//}
 
+//    if (!onShape) {
+        renderer->cam.handleMouseEvents(deltaX, -deltaY, NO, NO, isShift ? TransformationMode::Translate : TransformationMode::Orbit);
+//    }
+}
+    
 - (void)rightMouseDragged:(NSEvent *)event {
     float deltaX = event.deltaX;
     float deltaY = event.deltaY;
@@ -8325,7 +8411,7 @@ public:
 //        case 1:
 //            deltaZ = 0.1;
 //            break;
-//        
+//
 //    }
 
 }
@@ -8377,6 +8463,45 @@ public:
     // Reset or accumulate magnification based on your camera logic
 //    gesture.magnification = 0.0;
 }
+#endif
+
+//- (void)mouseDragged:(NSEvent *)event {
+//    float deltaX = event.deltaX;
+//    float deltaY = event.deltaY;
+//    BOOL isShift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
+//    bool onShape = false;
+//    
+//    Renderer *renderer = (Renderer *)self.delegate;
+//    NSPoint mouseLocation = [self convertPoint:[event locationInWindow] fromView:nil];
+//    simd_float2 currentMousePos = simd_make_float2((mouseLocation.x / self.frame.size.width), (mouseLocation.y / self.frame.size.height));
+//    currentMousePos = 2 * currentMousePos - 1.0f;
+//    
+//    simd_float4 rayInViewSpace = simd_make_float4(currentMousePos, 0, 1);
+//    simd_float4 intPoint;
+//    for (int i = 0; i < renderer->_objectQueue.size(); i++) {
+//        if (renderer->_objectQueue[i].dragable) {
+//            if (renderer->_objectQueue[i].intersectRay(simd_make_float4(0, 0, 1, 1), rayInViewSpace, renderer->cam.viewMatrix, intPoint, true)) {
+//                onShape = true;
+//                simd_float4 intPointInWorldSpace = simd_mul(renderer->cam.inverseProjectionMatrix, intPoint);
+//                if (!updatedOldRay) {
+//                    intPointInWorldSpaceOld = intPointInWorldSpace;
+//                    updatedOldRay = true;
+//                }
+//                renderer->_objectQueue[i].position += (intPointInWorldSpace - intPointInWorldSpaceOld).xyz;
+//                intPointInWorldSpaceOld = intPointInWorldSpace;
+//                // so that if two faces of same obj behind each other they dont get double draged
+//                break;
+//            }
+//        }
+//         
+//    }
+//
+//    if (!onShape) {
+//        renderer->cam.handleMouseEvents(deltaX, -deltaY, NO, isShift, TransformationMode::Orbit);
+//    }
+//}
+
+
 
 
 @end
@@ -8463,6 +8588,132 @@ public:
     }
 };
 
+
+//// MARK: Tracer
+//
+//struct Expr {
+//    virtual std::string to_metal() const = 0;
+//    virtual ~Expr() = default;
+//};
+//
+//struct Var : Expr {
+//    std::string name;
+//    Var(std::string n) : name(n) {}
+//    std::string to_metal() const override { return name; }
+//};
+//
+//struct Const : Expr {
+//    float value;
+//    Const(float v) : value(v) {}
+//    std::string to_metal() const override { return std::to_string(value); }
+//};
+//
+//struct Add : Expr {
+//    std::unique_ptr<Expr> lhs, rhs;
+//    Add(std::unique_ptr<Expr> l, std::unique_ptr<Expr> r) : lhs(std::move(l)), rhs(std::move(r)) {}
+//    std::string to_metal() const override {
+//        return "(" + lhs->to_metal() + " + " + rhs->to_metal() + ")";
+//    }
+//};
+//
+//struct Mul : Expr {
+//    std::unique_ptr<Expr> lhs, rhs;
+//    Mul(std::unique_ptr<Expr> l, std::unique_ptr<Expr> r) : lhs(std::move(l)), rhs(std::move(r)) {}
+//    std::string to_metal() const override {
+//        return "(" + lhs->to_metal() + " * " + rhs->to_metal() + ")";
+//    }
+//};
+//
+//struct Sin : Expr {
+//    std::unique_ptr<Expr> arg;
+//    Sin(std::unique_ptr<Expr> a) : arg(std::move(a)) {}
+//    std::string to_metal() const override {
+//        return "sin(" + arg->to_metal() + ")";
+//    }
+//};
+//
+//std::unique_ptr<Expr> operator+(std::unique_ptr<Expr>& a, std::unique_ptr<Expr>& b) {
+//    return std::make_unique<Add>(a, b);
+//}
+//
+//std::unique_ptr<Expr> operator*(std::unique_ptr<Expr>& a, std::unique_ptr<Expr>& b) {
+//    return std::make_unique<Mul>(a, b);
+//}
+//
+//std::unique_ptr<Expr> operator*(std::unique_ptr<Expr>&& a, std::unique_ptr<Expr>&& b) {
+//    return std::make_unique<Mul>(a, b);
+//}
+//
+//std::unique_ptr<Expr> operator*(float a, std::unique_ptr<Expr>& b) {
+//    return std::make_unique<Mul>(std::make_unique<Const>(a), b);
+//}
+//
+//std::unique_ptr<Expr> sin(std::unique_ptr<Expr>& a) {
+//    return std::make_unique<Sin>(a);
+//}
+//
+//std::string generate_metal_function(std::unique_ptr<Expr> expr, const std::string& func_name = "f") {
+//    return "float " + func_name + "(float x) {\n    return " + expr->to_metal() + ";\n}";
+//}
+//
+//std::unique_ptr<Expr> build_expr(std::unique_ptr<Expr> x) {
+//    return 2.0 * x * x + sin(x); // This builds an expression tree
+//}
+
+@interface UIComponent : NSObject
+
+    @property (nonatomic, strong) NSString *cid;
+    @property (nonatomic, strong) NSString *title;
+    @property (nonatomic, assign) NSInteger type;
+    @property (nonatomic, assign) float value;
+    @property (nonatomic, assign) float minValue;
+    @property (nonatomic, assign) float maxValue;
+    @property (nonatomic, copy) void (^valueChangedCallback)(float newValue);
+
+- (instancetype)initWithTitle:(NSString *)title
+                         type:(NSInteger)type
+                        value:(float)value
+                     minValue:(float)minValue
+                     maxValue:(float)maxValue
+                     callback:(std::function<void(float)>)callback;
+@end
+
+@implementation UIComponent
+{
+@public
+    std::function<void(float)> callbackFloat;  // <--- holds your callback!
+
+}
+
+- (instancetype)initWithTitle:(NSString *)title
+                         type:(NSInteger)type
+                        value:(float)value
+                     minValue:(float)minValue
+                     maxValue:(float)maxValue
+                     callback:(std::function<void(float)>)callback {
+    self = [super init];
+    if (self) {
+        _cid = [[NSUUID UUID] UUIDString];  // Auto-generate
+        _title = title;
+        _type = type;
+        _value = value;
+        _minValue = minValue;
+        _maxValue = maxValue;
+        callbackFloat = callback;
+    }
+    return self;
+}
+
+@end
+
+#import "SidePannel.h"
+
+//Xcode will find and link old .dylib files sitting anywhere in your project directory, even if they're not in "Link Binary With Libraries" or any build settings. This causes runtime symbol errors because it uses the old version instead of the one you explicitly linked.
+//Fix: Delete old dylib copies from your project directory. Xcode searches the project tree and picks up matching filenames automatically.
+int main2(cv::Mat& camera_frame, cv::Mat& outMat);
+int facial_landmarks(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int& num_landmarks);
+int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int& num_landmarks);
+
 @interface Intelligence : NSObject
 {
 @public
@@ -8477,7 +8728,11 @@ public:
 
 @property (nonatomic, strong) MTKView *view1;
 @property (nonatomic, strong) MTKView *view2;
+@property (nonatomic, strong) SidePannel* sidePanel;
 @property (strong, nonatomic) AVPlayer *player;
+@property (nonatomic, strong) NSMutableArray<UIComponent *> *components;
+@property (nonatomic, strong) Renderer* pRender;
+
 -(void) Logic;
 -(void) concatLogic;
 -(void) PointCloudLogic;
