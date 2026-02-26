@@ -4,6 +4,31 @@
 //
 //  Created by Manoj Kumar on 09/03/25.
 //
+#include <opencv2/opencv.hpp>
+#ifdef YES
+#undef YES
+#endif
+#ifdef NO
+#undef NO
+#endif
+#include <dlfcn.h>
+#include <stdio.h>
+#include <random>
+#include <dispatch/dispatch.h>
+#include <stdlib.h>
+#include <unistd.h>
+// Include MediaPipe headers here
+//#include "Bitch.h"
+
+// Redefine for Objective-C compatibility
+//#ifndef YES
+//#define YES ((BOOL)1)
+//#endif
+//#ifndef NO
+//#define NO  ((BOOL)0)
+//#endif
+
+//#include <absl/status/status.h>
 
 #import <Foundation/Foundation.h>
 #import <MetalKit/MetalKit.h>
@@ -1428,12 +1453,273 @@ public:
         return result;
     }
     
-    template <int dims2>
-    MatrixH<dims, Type> operator*(const MatrixH<dims2, Type>& other){
-        return MulMat(other);
+    static void copyGPUinplace( MatrixH<dims, Type>& outMat, const MatrixH<dims, Type>& inMat, int offset, bool commit = true) {
+#ifdef SAFE_MODE
+        if (inMat.total_size > outMat.total_size) {
+            std::cerr << "MatrixH: CopyInplace operation requires both mats to be of same size." << "\n";
+            throw;
+        }
+#endif
+        id<MTLCommandBuffer> commandBuffer = GlobalGPUManager.getCommandBuffer();
+//        Blit fast path for the GPU. A compute shader (even a 1D one) requires the GPU's ALU execution units to run the copy loop. A Blit command skips the ALUs entirely and uses the GPU's direct memory access (DMA) engines to blast the bytes across VRAM. It is drastically faster.
+        if (!(inMat.flags & NON_CONTIGUOUS_FLAG) && !(outMat.flags & NON_CONTIGUOUS_FLAG)) {
+            id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+            [blitEncoder copyFromBuffer:inMat.metalBuffer
+                           sourceOffset:offset * sizeof(Type)
+                               toBuffer:outMat.metalBuffer
+                      destinationOffset:offset * sizeof(Type)
+                                   size:inMat.total_size * sizeof(Type)];
+            [blitEncoder endEncoding];
+            if (commit) {
+                [commandBuffer commit];
+                [commandBuffer waitUntilCompleted];
+            }
+            return;
+        }
+        uint8_t typeCode = get_dtype_code<Type>();
+        
+        auto res = collapse_dims(inMat.shape, outMat.strides, inMat.strides, dims, INT32_MAX);
+        uint32_t cdims = res.out_dims;
+        
+        
+        id<MTLComputeCommandEncoder> commandEncoder = GlobalGPUManager.getCommandEncoder();
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(16, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(inMat.total_size, 1, 1);
+        [commandEncoder setBuffer:outMat.metalBuffer offset:0 atIndex:0];
+        [commandEncoder setBuffer:inMat.metalBuffer offset:0 atIndex:1];
+        [commandEncoder setBytes:res.stridesA length:cdims * sizeof(size_m) atIndex:2];
+        [commandEncoder setBytes:res.stridesB  length:cdims * sizeof(size_m) atIndex:3];
+        [commandEncoder setBytes:&offset length:sizeof(int) atIndex:4];
+        if (cdims == 1) {
+            if (!GlobalGPUManager.CopyInplace[typeCode][0]) {
+                GlobalGPUManager.initCopyInplace(typeCode, 0);
+            }
+            [commandEncoder setComputePipelineState:GlobalGPUManager.CopyInplace_ComputeState[typeCode][0]];
+        } else if (cdims == 2) {
+            if (!GlobalGPUManager.CopyInplace[typeCode][1]) {
+                GlobalGPUManager.initCopyInplace(typeCode, 1);
+            }
+            _dispatchExecutionSize =  MTLSizeMake(res.shape[1], res.shape[0], 1);
+            [commandEncoder setComputePipelineState:GlobalGPUManager.CopyInplace_ComputeState[typeCode][1]];
+        } else if (cdims == 3) {
+            if (!GlobalGPUManager.CopyInplace[typeCode][2]) {
+                GlobalGPUManager.initCopyInplace(typeCode, 2);
+            }
+            _dispatchExecutionSize =  MTLSizeMake(res.shape[2], res.shape[1], res.shape[0]);
+            [commandEncoder setComputePipelineState:GlobalGPUManager.CopyInplace_ComputeState[typeCode][2]];
+        
+        } else {
+            if (!GlobalGPUManager.CopyInplace[typeCode][3]) {
+                GlobalGPUManager.initCopyInplace(typeCode, 3);
+            }
+            size_m acc = 1;
+            for (int i = 0; i < cdims-2; i++) {acc *= res.shape[i]; }
+            _dispatchExecutionSize =  MTLSizeMake(res.shape[cdims-1], res.shape[cdims-2], acc);
+            [commandEncoder setBytes:res.shape length:cdims * sizeof(size_m) atIndex:5];
+            [commandEncoder setBytes:&cdims length:sizeof(uint32_t) atIndex:6];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.CopyInplace_ComputeState[typeCode][3]];
+        }
+        
+        
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                  threadsPerThreadgroup:_threadsPerThreadgroup];
+        if (commit) {
+            [commandEncoder endEncoding];
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+            GlobalGPUManager.gCommandBuffer = nil;
+            GlobalGPUManager.gCommandEncoder=nil;
+        }
     }
     
-    static MatrixH<dims, Type> concat(MatrixH<dims, Type>& Mat1, MatrixH<dims, Type>& Mat2, int axis) {
+    static void copyCPUinplace( MatrixH<dims, Type>& outMat, const MatrixH<dims, Type>& inMat, int offset, bool commit = true) {
+#ifdef SAFE_MODE
+        if (inMat.total_size > outMat.total_size) {
+            std::cerr << "MatrixH: CopyInplace operation requires both mats to be of same size." << "\n";
+            throw;
+        }
+#endif
+        
+        if (!(inMat.flags & NON_CONTIGUOUS_FLAG) && !(outMat.flags & NON_CONTIGUOUS_FLAG)) {
+            memcpy(outMat.buffer, inMat.buffer, inMat.total_size * sizeof(Type));
+            return;
+        }
+                
+        auto res = collapse_dims(inMat.shape, outMat.strides, inMat.strides, dims, INT32_MAX);
+        auto cdims = res.out_dims;
+        // us stands for unsafe and fast subscripting so it doesnt suppor negative indices and is super fast.
+        if (cdims == 1) {
+            for (uint32_t i = 0; i < inMat.total_size; i++) {
+                outMat.buffer[i * res.stridesA[0]] = inMat.buffer[i * res.stridesB[0]];
+            }
+        } else if (cdims == 2) {
+            if (res.stridesA[cdims-1] == 1 && res.stridesB[cdims-1] == 1) {
+                for (uint32_t i = 0; i < res.shape[0]; i++) { memcpy(outMat.buffer + res.stridesA[0] * i, outMat.buffer + res.stridesB[0] * i, res.shape[1] * sizeof(Type)); }
+                return;
+            }
+            for (uint32_t i = 0; i < res.shape[0]; i++) {
+                for (uint32_t j = 0; j < res.shape[1]; j++) {
+                    outMat.buffer[i * res.stridesA[0] + j * res.stridesA[1]] = inMat.buffer[i * res.stridesB[0] + j * res.stridesB[1]];                }
+            }
+        } else if (cdims == 3) {
+            if (res.stridesA[cdims-1] == 1 && res.stridesB[cdims-1] == 1) {
+                for (uint32_t i = 0; i < res.shape[0]; i++) {
+                    for (uint32_t j = 0; j < res.shape[1]; j++) { memcpy(outMat.buffer + res.stridesA[0] * i + res.stridesA[1] * j, outMat.buffer + res.stridesB[0] * i + res.stridesB[1] * j, res.shape[2] * sizeof(Type)); }
+                }
+                return;
+            }
+            for (uint32_t i = 0; i < res.shape[0]; i++) {
+                for (uint32_t j = 0; j < res.shape[1]; j++) {
+                    for (uint32_t k = 0; k < res.shape[2]; k++) {
+                        outMat.buffer[i * res.stridesA[0] + j * res.stridesA[1] + k * res.stridesA[2]] = inMat.buffer[i * res.stridesB[0] + j * res.stridesB[1] + k * res.stridesB[2]];
+                    }
+                }
+            }
+        
+        } else {
+            uint32_t outer_iterations = 1;
+            for (uint32_t o = 0; o <= cdims - 4; o++) {
+                outer_iterations *= res.shape[o];
+            }
+            for (uint32_t o = 0; o < outer_iterations; o++) {
+                uint32_t inMatIndex = 0;
+                uint32_t outMatIndex = 0;
+                uint32_t rem = o;
+                for (int i = dims-4; i >=0; i--) {
+                    inMatIndex  += (rem % res.shape[i]) * res.stridesB[i];
+                    outMatIndex += (rem % res.shape[i]) * res.stridesA[i];
+                    rem /= res.shape[i];
+                }
+                if (res.stridesA[cdims-1] == 1 && res.stridesB[cdims-1] == 1) {
+                    for (uint32_t i = 0; i < res.shape[0]; i++) {
+                        for (uint32_t j = 0; j < res.shape[1]; j++) { memcpy(outMat.buffer + res.stridesA[cdims-3] * i + res.stridesA[cdims-2] * j, outMat.buffer + res.stridesB[cdims-3] * i + res.stridesB[cdims-2] * j, res.shape[dims-1] * sizeof(Type)); }
+                    }
+                    break;
+                }
+                for (uint32_t i = 0; i < res.shape[cdims-3]; i++) {
+                    for (uint32_t j = 0; j < res.shape[cdims-2]; j++) {
+                        for (uint32_t k = 0; k < res.shape[cdims-1]; k++) {
+                            outMat.buffer[outMatIndex + i * res.stridesA[cdims-3] + j * res.stridesA[cdims-2] + k * res.stridesA[cdims-1]] = inMat.buffer[inMatIndex + i * res.stridesB[cdims-3] + j * res.strides[cdims-2] + k * inMat.strides[cdims-1]];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    static std::pair<MatrixH<2 * dims, Type>, MatrixH<2 * dims, Type>> meshGrid(const MatrixH<dims, Type> X, const MatrixH<dims, Type> Y) {
+        
+        MatrixH<2 * dims, Type> gridX;
+        memcpy(gridX.shape, X.shape, dims * sizeof(size_m));
+        memcpy(gridX.shape + dims, Y.shape, dims * sizeof(size_m));
+        gridX.initWithCurrentShape();
+        
+        MatrixH<2 * dims, Type> gridY;
+        memcpy(gridY.shape, X.shape, dims * sizeof(size_m));
+        memcpy(gridY.shape + dims, Y.shape, dims * sizeof(size_m));
+        gridY.initWithCurrentShape();
+
+        MatrixH<2 * dims, Type> X_buffer_view;
+        X_buffer_view.buffer = X.buffer;
+        memcpy(X_buffer_view.shape, gridX.shape, 2 * dims * sizeof(size_m));
+        memcpy(X_buffer_view.strides, X.strides, dims * sizeof(size_m));
+        memset(X_buffer_view.strides + dims, 0, dims * sizeof(size_m));
+        
+        X_buffer_view.total_size = X_buffer_view.accumul(0, 2 * dims);
+        X_buffer_view.flags |= NON_CONTIGUOUS_FLAG;
+        X_buffer_view.flags |= NON_OWNERSHIP_FLAG;
+        X_buffer_view.metalBuffer = X.metalBuffer;
+
+        
+        
+        MatrixH<2 * dims, Type> Y_buffer_view;
+        Y_buffer_view.buffer = Y.buffer;
+        
+        memcpy(Y_buffer_view.shape, gridY.shape, 2 * dims * sizeof(size_m));
+        memcpy(Y_buffer_view.strides + dims, Y.strides, dims * sizeof(size_m));
+        memset(Y_buffer_view.strides, 0, dims * sizeof(size_m));
+        
+        Y_buffer_view.total_size = Y_buffer_view.accumul(0, 2 * dims);
+        Y_buffer_view.metalBuffer = Y.metalBuffer;
+        Y_buffer_view.flags |= NON_CONTIGUOUS_FLAG;
+        Y_buffer_view.flags |= NON_OWNERSHIP_FLAG;
+
+        MatrixH<2 * dims, Type>::copyGPUinplace(gridY, Y_buffer_view, 0, false);
+        MatrixH<2 * dims, Type>::copyGPUinplace(gridX, X_buffer_view, 0, true);
+        
+        
+        
+        return std::make_pair(std::move(gridX), std::move(gridY));
+    }
+    
+    static std::tuple<MatrixH<3 * dims, Type>, MatrixH<3 * dims, Type>, MatrixH<3 * dims, Type>> meshGrid(const MatrixH<dims, Type> X, const MatrixH<dims, Type> Y,  const MatrixH<dims, Type> Z) {
+        
+        MatrixH<3 * dims, Type> gridX;
+        memcpy(gridX.shape, X.shape, dims * sizeof(size_m));
+        memcpy(gridX.shape + dims, Y.shape, dims * sizeof(size_m));
+        memcpy(gridX.shape + 2 * dims, Z.shape, dims * sizeof(size_m));
+        gridX.initWithCurrentShape();
+        
+        MatrixH<3 * dims, Type> gridY;
+        memcpy(gridY.shape, gridX.shape, 3 * dims * sizeof(size_m));
+        gridY.initWithCurrentShape();
+        
+        MatrixH<3 * dims, Type> gridZ;
+        memcpy(gridZ.shape, gridX.shape, 3 * dims * sizeof(size_m));
+        gridZ.initWithCurrentShape();
+
+        MatrixH<3 * dims, Type> X_buffer_view;
+        X_buffer_view.buffer = X.buffer;
+        memcpy(X_buffer_view.shape, gridX.shape, 3 * dims * sizeof(size_m));
+        memcpy(X_buffer_view.strides, X.strides, dims * sizeof(size_m));
+        memset(X_buffer_view.strides + dims, 0, 2 * dims * sizeof(size_m)); // sets Y and Z strides to 0
+        
+        X_buffer_view.total_size = X_buffer_view.accumul(0, 3 * dims);
+        X_buffer_view.flags |= NON_CONTIGUOUS_FLAG;
+        X_buffer_view.flags |= NON_OWNERSHIP_FLAG;
+        X_buffer_view.metalBuffer = X.metalBuffer;
+
+        MatrixH<3 * dims, Type> Y_buffer_view;
+        Y_buffer_view.buffer = Y.buffer;
+        
+        memcpy(Y_buffer_view.shape, gridY.shape, 3 * dims * sizeof(size_m));
+        memcpy(Y_buffer_view.strides + dims, Y.strides, dims * sizeof(size_m));
+        memset(Y_buffer_view.strides, 0, dims * sizeof(size_m)); // sets X strides to 0
+        memset(Y_buffer_view.strides + 2 * dims, 0, dims * sizeof(size_m)); // sets Z strides to 0
+        
+        Y_buffer_view.total_size = Y_buffer_view.accumul(0, 3 * dims);
+        Y_buffer_view.metalBuffer = Y.metalBuffer;
+        Y_buffer_view.flags |= NON_CONTIGUOUS_FLAG;
+        Y_buffer_view.flags |= NON_OWNERSHIP_FLAG;
+        
+        MatrixH<3 * dims, Type> Z_buffer_view;
+        Z_buffer_view.buffer = Z.buffer;
+        
+        memcpy(Z_buffer_view.shape, gridZ.shape, 3 * dims * sizeof(size_m));
+        memcpy(Z_buffer_view.strides + 2 * dims, Z.strides, dims * sizeof(size_m));
+        memset(Z_buffer_view.strides, 0, dims * sizeof(size_m)); // sets X and Y strides to 0
+        
+        Z_buffer_view.total_size = Z_buffer_view.accumul(0, 3 * dims);
+        Z_buffer_view.metalBuffer = Z.metalBuffer;
+        Z_buffer_view.flags |= NON_CONTIGUOUS_FLAG;
+        Z_buffer_view.flags |= NON_OWNERSHIP_FLAG;
+
+        MatrixH<3 * dims, Type>::copyGPUinplace(gridY, Y_buffer_view, 0, false);
+        MatrixH<3 * dims, Type>::copyGPUinplace(gridX, X_buffer_view, 0, false);
+        MatrixH<3 * dims, Type>::copyGPUinplace(gridZ, Z_buffer_view, 0, true);
+        
+        
+        return std::make_tuple(std::move(gridX), std::move(gridY), std::move(gridZ));
+    }
+    
+    static MatrixH<dims, Type> concat(const MatrixH<dims, Type>& Mat1, const MatrixH<dims, Type>& Mat2, int axis) {
+#ifdef SAFE_MODE
+        if (Mat1.flags & NON_CONTIGUOUS_FLAG || Mat2.flags & NON_CONTIGUOUS_FLAG) {
+            std::cerr << "MatrixH: Concat operation requires contigious buffer mats: " << "\n";
+            throw;
+        }
+#endif
         MatrixH<dims, Type> output;
         for (int i = 0; i < dims; i++) {
             if (i == axis) {
@@ -1461,7 +1747,19 @@ public:
         return output;
     }
     
-    static void concat(MatrixH<dims, Type>& Mat1, MatrixH<dims, Type>& Mat2, MatrixH<dims, Type>& output, int axis) {
+    static MatrixH<dims, Type> concatGPU(const MatrixH<dims, Type>& Mat1, const MatrixH<dims, Type>& Mat2, int axis, size_m batch_size = 1) {
+#ifdef SAFE_MODE
+        if (Mat1.flags & NON_CONTIGUOUS_FLAG || Mat2.flags & NON_CONTIGUOUS_FLAG) {
+            std::cerr << "MatrixH: Concat operation requires contigious buffer mats: " << "\n";
+            throw;
+        }
+#endif
+        uint8_t typeCode = get_dtype_code<Type>();
+        if (!GlobalGPUManager.Concat_2M[typeCode]) {
+            GlobalGPUManager.initConcat_2M_GPU(typeCode);
+        }
+        
+        MatrixH<dims, Type> output;
         for (int i = 0; i < dims; i++) {
             if (i == axis) {
                 output.shape[i] = Mat1.shape[i] + Mat2.shape[i];
@@ -1469,11 +1767,227 @@ public:
                 output.shape[i] = Mat1.shape[i];
             }
         }
+        output.calcStrides();
+        output.total_size = output.accumul(0, dims);
+        output.buffer = new Type[output.total_size];
+        output.buildMetalBuffer();
+        size_t noOfOpp = output.accumul(0, axis);
+        size_m stride = (size_m)output.accumul(axis, dims);
         
+        size_m strideMat1 =(size_m) Mat1.accumul(axis, dims);
+        
+        size_m strideMat2 = (size_m)Mat2.accumul(axis, dims);
+        
+
+        
+        id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
+        id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
+        
+        auto _threadsPerThreadgroup = MTLSizeMake(32, 1, 1);
+        auto _dispatchExecutionSize =  MTLSizeMake(noOfOpp, 1, 1);
+        [commandEncoder setBuffer:output.metalBuffer offset:0 atIndex:0];
+        setBufferOrBytes(commandEncoder, Mat1, 1);
+        setBufferOrBytes(commandEncoder, Mat2, 2);
+        [commandEncoder setBytes:&stride length:sizeof(size_m) atIndex:3];
+        [commandEncoder setBytes:&strideMat1 length:sizeof(size_m) atIndex:4];
+        [commandEncoder setBytes:&strideMat2 length:sizeof(size_m) atIndex:5];
+        [commandEncoder setBytes:&batch_size length:sizeof(size_m) atIndex:6];
+        
+        [commandEncoder setComputePipelineState:GlobalGPUManager.Concat_2M_ComputeState[typeCode]];
+        [commandEncoder dispatchThreads:_dispatchExecutionSize
+                   threadsPerThreadgroup:_threadsPerThreadgroup];
+        
+        [commandEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        
+        
+        return output;
+    }
+    
+    static MatrixH<dims+1, Type> concatGPU_ID(const MatrixH<dims, Type>& Mat1, const MatrixH<dims, Type>& Mat2, const MatrixH<dims, Type>& Mat3, int axis) {
+#ifdef SAFE_MODE
+        if (Mat1.total_size != Mat2.total_size || Mat2.total_size != Mat3.total_size) {
+            std::cerr << "MatrixH: Concat operation requires same size mats: " << "\n";
+            throw;
+        }
+#endif
+        uint8_t typeCode = get_dtype_code<Type>();
+        if (!GlobalGPUManager.Concat_2M[typeCode]) {
+            GlobalGPUManager.initConcat_2M_GPU(typeCode);
+        }
+        
+        MatrixH<dims+1, Type> output;
+        memcpy(output.shape, Mat1.shape, axis * sizeof(size_m));
+        memcpy(output.shape + (axis + 1), Mat1.shape + (axis), (dims - axis) * sizeof(size_m));
+        output.shape[axis] = 3;
+        output.total_size = Mat1.total_size * 3;
+        output.calcStrides();
+        // strides are the property of buffer and should be calculated with its total size in mind;
+        // Fix for garbage point clouds: newBufferWithBytesNoCopy requires page-aligned memory.
+        size_t sizeBytes = Mat1.total_size * 3 * sizeof(Type);
+        size_t pageSize = sysconf(_SC_PAGESIZE);
+        // Round up to full page size for safety (though just alignment is strictly required for address)
+        size_t alignedSize = (sizeBytes + pageSize - 1) & ~(pageSize - 1);
+        
+        void* raw_mem = nullptr;
+        if (posix_memalign(&raw_mem, pageSize, alignedSize) != 0) {
+            std::cerr << "MatrixH: Failed to allocate aligned memory" << "\n";
+            throw std::bad_alloc();
+        }
+        
+        output.buffer = (Type*)raw_mem;
+        output.total_size = Mat1.total_size * 3;
+        output.flags |= NON_OWNERSHIP_FLAG; // Prevent ~MatrixH from deleting buffer
+        
+        output.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:raw_mem
+                                                                             length:alignedSize
+                                                                            options:MTLResourceStorageModeShared
+                                                                        deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+            free(pointer);
+        }];
+        
+        output.flags |= NON_CONTIGUOUS_FLAG;
+        output.shape[axis] = 1;
+        output.total_size = Mat1.total_size;
+        
+        MatrixH<dims+1, Type> View;
+        memcpy(View.shape, output.shape, (dims+1) * sizeof(size_m));
+        View.shape[axis] = 1;
+        View.calcStrides();
+        View.total_size = Mat1.total_size;
+        View.flags |= NON_OWNERSHIP_FLAG;
+        
+        size_m offset = output.strides[axis];
+        
+        View.buffer = Mat1.buffer;
+        View.metalBuffer = Mat1.metalBuffer;
+        MatrixH<dims+1, Type>::copyGPUinplace(output, View, 0, false);
+        
+        View.buffer = Mat2.buffer;
+        View.metalBuffer = Mat2.metalBuffer;
+        MatrixH<dims+1, Type>::copyGPUinplace(output, View, offset, false);
+        
+        View.buffer = Mat3.buffer;
+        View.metalBuffer = Mat3.metalBuffer;
+        MatrixH<dims+1, Type>::copyGPUinplace(output, View, 2*offset, true);
+        
+        output.shape[axis] = 3;
+        output.total_size = Mat1.total_size * 3;
+        output.flags &= ~NON_CONTIGUOUS_FLAG;
+        return output;
+    }
+    
+    
+    
+    static MatrixH<dims, Type> concat(const MatrixH<dims, Type>& Mat1, const MatrixH<dims, Type>& Mat2, const MatrixH<dims, Type>& Mat3, int axis) {
+#ifdef SAFE_MODE
+        if (Mat1.flags & NON_CONTIGUOUS_FLAG || Mat2.flags & NON_CONTIGUOUS_FLAG || Mat3.flags & NON_CONTIGUOUS_FLAG ) {
+            std::cerr << "MatrixH: Concat operation requires contigious buffer mats: " << "\n";
+            throw;
+        }
+#endif
+            
+        MatrixH<dims, Type> output;
+        for (int i = 0; i < dims; i++) {
+            if (i == axis) {
+                output.shape[i] = Mat1.shape[i] + Mat2.shape[i] + Mat3.shape[i];
+            } else {
+#ifdef SAFE_MODE
+                if (Mat1.shape[i] != Mat2.shape[i] || Mat1.shape[i] != Mat3.shape[i]) {
+                    std::cerr << "MatrixH: Concat operation requiresn shapes be equal for all dims except the axis and at dim: " << i << Mat1.shape[i]<<" != " << Mat2.shape[i]<<" != " <<  Mat3.shape[i] << "\n";
+                    throw;
+                }
+#endif
+                output.shape[i] = Mat1.shape[i];
+            }
+        }
+        output.calcStrides();
+        output.total_size = output.accumul(0, dims);
+        output.buffer = new Type[output.total_size];
+        output.buildMetalBuffer();
+        size_t noOfOpp = output.accumul(0, axis);
+        size_t stride = output.accumul(axis, dims);
+        
+        size_t strideMat1 = Mat1.accumul(axis, dims);
+        size_t strideMat2 = Mat2.accumul(axis, dims);
+        size_t strideMat3 = Mat3.accumul(axis, dims);
+        
+        for (int i = 0; i < noOfOpp; i++) {
+            memcpy(output.buffer + i * stride, Mat1.buffer + i * strideMat1, strideMat1 * sizeof(Type));
+            memcpy(output.buffer + strideMat1 + i * stride, Mat2.buffer + i * strideMat2, strideMat2 * sizeof(Type));
+            memcpy(output.buffer + strideMat1 + strideMat2 + i * stride, Mat3.buffer + i * strideMat3, strideMat3 * sizeof(Type));
+        }
+        
+        return output;
+    }
+    
+    static MatrixH<dims, Type> concat(const MatrixH<dims, Type>& Mat1, const MatrixH<dims, Type>& Mat2, const MatrixH<dims, Type>& Mat3, const MatrixH<dims, Type>& Mat4, int axis) {
+        MatrixH<dims, Type> output;
+#ifdef SAFE_MODE
+        if (Mat1.flags & NON_CONTIGUOUS_FLAG || Mat2.flags & NON_CONTIGUOUS_FLAG || Mat3.flags & NON_CONTIGUOUS_FLAG ) {
+            std::cerr << "MatrixH: Concat operation requires contigious buffer mats: " << "\n";
+            throw;
+        }
+#endif
+        for (int i = 0; i < dims; i++) {
+            if (i == axis) {
+                output.shape[i] = Mat1.shape[i] + Mat2.shape[i] + Mat3.shape[i] + Mat4.shape[i];
+            } else {
+#ifdef SAFE_MODE
+                if (Mat1.shape[i] != Mat2.shape[i] || Mat1.shape[i] != Mat3.shape[i] || Mat1.shape[i] != Mat4.shape[i]) {
+                    std::cerr << "MatrixH: Concat operation requires shapes be equal for all dims except the axis and at dim: " << i << Mat1.shape[i]<<" != " << Mat2.shape[i]<<" != " <<  Mat3.shape[i]<<" != " <<  Mat4.shape[i] << "\n";
+                    throw;
+                }
+    
+#endif
+                output.shape[i] = Mat1.shape[i];
+            }
+        }
+        output.calcStrides();
+        output.total_size = output.accumul(0, dims);
+        output.buffer = new Type[output.total_size];
+        output.buildMetalBuffer();
+        size_t noOfOpp = output.accumul(0, axis);
+        size_t stride = output.accumul(axis, dims);
+        
+        size_t strideMat1 = Mat1.accumul(axis, dims);
+        size_t strideMat2 = Mat2.accumul(axis, dims);
+        size_t strideMat3 = Mat3.accumul(axis, dims);
+        size_t strideMat4 = Mat4.accumul(axis, dims);
+        
+        for (int i = 0; i < noOfOpp; i++) {
+            memcpy(output.buffer + i * stride, Mat1.buffer + i * strideMat1, strideMat1 * sizeof(Type));
+            memcpy(output.buffer + strideMat1 + i * stride, Mat2.buffer + i * strideMat2, strideMat2 * sizeof(Type));
+            memcpy(output.buffer + strideMat1 + strideMat2 + i * stride, Mat3.buffer + i * strideMat3, strideMat3 * sizeof(Type));
+            memcpy(output.buffer + strideMat1 + strideMat2 + strideMat3 + i * stride, Mat4.buffer + i * strideMat4, strideMat4 * sizeof(Type));
+        }
+        
+        return output;
+    }
+    
+    static void concat_(const MatrixH<dims, Type>& Mat1, const MatrixH<dims, Type>& Mat2, MatrixH<dims, Type>& output, int axis) {
+#ifdef SAFE_MODE
+        if (Mat1.flags & NON_CONTIGUOUS_FLAG || Mat2.flags & NON_CONTIGUOUS_FLAG ) {
+            std::cerr << "MatrixH: Concat operation requires contigious buffer mats: " << "\n";
+            throw;
+        }
+#endif
+            
+        for (int i = 0; i < dims; i++) {
+            if (i == axis) {
+                output.shape[i] = Mat1.shape[i] + Mat2.shape[i];
+            } else {
+                output.shape[i] = Mat1.shape[i];
+            }
+        }
+        output.calcStrides();
         if (output.total_size != output.accumul(0, dims)) {
             delete [] output.buffer;
             output.total_size = output.accumul(0, dims);
             output.buffer = new Type[output.total_size];
+            output.buildMetalBuffer();
         }
 
         size_t noOfOpp = output.accumul(0, axis);
@@ -1489,16 +2003,28 @@ public:
         }
     }
     
-    static void concatID(MatrixH<dims, Type>& Mat1, MatrixH<dims, Type>& Mat2, MatrixH<dims+1, Type>& output) {
+    static void concatID(const MatrixH<dims, Type>& Mat1, const MatrixH<dims, Type>& Mat2, MatrixH<dims+1, Type>& output) {
+#ifdef SAFE_MODE
+        if (Mat1.flags & NON_CONTIGUOUS_FLAG || Mat2.flags & NON_CONTIGUOUS_FLAG ){
+            std::cerr << "MatrixH: Concat operation requires contigious buffer mats: " << "\n";
+            throw;
+        }
+#endif
         int axis = dims+1;
         for (int i = 0; i < dims; i++) {
             if (i == axis) {
                 output.shape[i] = Mat1.shape[i] + Mat2.shape[i];
             } else {
+#ifdef SAFE_MODE
+                if (Mat1.shape[i] != Mat2.shape[i]) {
+                    std::cerr << "MatrixH: Concat operation requires shapes be equal for all dims except the axis and at dim: " << i << Mat1.shape[i]<<" != " << Mat2.shape[i] << "\n";
+                    throw;
+                }
+#endif
                 output.shape[i] = Mat1.shape[i];
             }
         }
-        
+        output.calcStrides();
         if (output.total_size != output.accumul(0, dims)) {
             delete [] output.buffer;
             output.total_size = output.accumul(0, dims);
@@ -1521,13 +2047,25 @@ public:
         return output;
     }
     
-    static MatrixH<dims+1, Type> concatID(MatrixH<dims, Type>& Mat1, MatrixH<dims, Type>& Mat2) {
+    static MatrixH<dims+1, Type> concatID(const MatrixH<dims, Type>& Mat1, const MatrixH<dims, Type>& Mat2) {
+#ifdef SAFE_MODE
+        if (Mat1.flags & NON_CONTIGUOUS_FLAG || Mat2.flags & NON_CONTIGUOUS_FLAG ) {
+            std::cerr << "MatrixH: Concat operation requires contigious buffer mats: " << "\n";
+            throw;
+        }
+#endif
         MatrixH<dims+1, Type> output;
         int axis = dims+1;
         for (int i = 0; i < dims; i++) {
             if (i == axis) {
                 output.shape[i] = Mat1.shape[i] + Mat2.shape[i];
             } else {
+#ifdef SAFE_MODE
+                if (Mat1.shape[i] != Mat2.shape[i]) {
+                    std::cerr << "MatrixH: Concat operation requires shapes be equal for all dims except the axis and at dim: " << i << Mat1.shape[i]<<" != " << Mat2.shape[i] << "\n";
+                    throw;
+                }
+#endif
                 output.shape[i] = Mat1.shape[i];
             }
         }
@@ -1546,6 +2084,120 @@ public:
         for (int i = 0; i < noOfOpp; i++) {
             memcpy(output.buffer + i * stride, Mat1.buffer + i * strideMat1, strideMat1 * sizeof(Type));
             memcpy(output.buffer + strideMat1 + i * stride, Mat2.buffer + i * strideMat2, strideMat2 * sizeof(Type));
+        }
+        
+        return output;
+    }
+    
+    static MatrixH<dims+1, Type> concatID(const MatrixH<dims, Type>& Mat1, const MatrixH<dims, Type>& Mat2, const MatrixH<dims, Type>& Mat3, const MatrixH<dims, Type>& Mat4, int axis) {
+#ifdef SAFE_MODE
+        if (Mat1.flags & NON_CONTIGUOUS_FLAG || Mat2.flags & NON_CONTIGUOUS_FLAG || Mat3.flags & NON_CONTIGUOUS_FLAG || Mat4.flags & NON_CONTIGUOUS_FLAG ){
+            std::cerr << "MatrixH: Concat operation requires contigious buffer mats: " << "\n";
+            throw;
+        }
+#endif
+        MatrixH<dims+1, Type> output;
+//        int axis = dims+1;
+        for (int i = 0; i < axis; i++) {
+
+#ifdef SAFE_MODE
+                if (Mat1.shape[i] != Mat2.shape[i] || Mat1.shape[i] != Mat3.shape[i] || Mat1.shape[i] != Mat4.shape[i]) {
+                    std::cerr << "MatrixH: Concat operation requires shapes be equal for all dims except the axis and at dim: " << i << Mat1.shape[i]<<" != " << Mat2.shape[i]<<" != " <<  Mat3.shape[i]<<" != " <<  Mat4.shape[i] << "\n";
+                    throw;
+                }
+#endif
+            output.shape[i] = Mat1.shape[i];
+        }
+        
+        output.shape[axis] = 4;
+        for (int i = axis+1; i < dims+1; i++) {
+
+#ifdef SAFE_MODE
+                if (Mat1.shape[i] != Mat2.shape[i] || Mat1.shape[i] != Mat3.shape[i] || Mat1.shape[i] != Mat4.shape[i]) {
+                    std::cerr << "MatrixH: Concat operation requires shapes be equal for all dims except the axis and at dim: " << i << Mat1.shape[i]<<" != " << Mat2.shape[i]<<" != " <<  Mat3.shape[i]<<" != " <<  Mat4.shape[i] << "\n";
+                    throw;
+                }
+#endif
+                output.shape[i] = Mat1.shape[i-1];
+            
+        }
+        
+        output.calcStrides();
+        output.total_size = output.accumul(0, dims+1);
+        output.buffer = new Type[output.total_size];
+        output.buildMetalBuffer();
+
+        size_t noOfOpp = output.accumul(0, axis);
+        size_t stride = output.accumul(axis, dims+1);
+        
+        size_t strideMat1 = Mat1.accumul(axis, dims);
+        size_t strideMat2 = Mat2.accumul(axis, dims);
+        size_t strideMat3 = Mat3.accumul(axis, dims);
+        size_t strideMat4 = Mat4.accumul(axis, dims);
+        
+        for (int i = 0; i < noOfOpp; i++) {
+
+            memcpy(output.buffer + i * stride, Mat1.buffer + i * strideMat1, strideMat1 * sizeof(Type));
+            memcpy(output.buffer + strideMat1 + i * stride, Mat2.buffer + i * strideMat2, strideMat2 * sizeof(Type));
+            memcpy(output.buffer + strideMat1 + strideMat2 + i * stride, Mat3.buffer + i * strideMat3, strideMat3 * sizeof(Type));
+            memcpy(output.buffer + strideMat1 + strideMat2 + strideMat3 + i * stride, Mat4.buffer + i * strideMat4, strideMat4 * sizeof(Type));
+            
+        }
+        
+        return output;
+    }
+    
+    static MatrixH<dims+1, Type> concatID(const MatrixH<dims, Type>& Mat1, const MatrixH<dims, Type>& Mat2, const MatrixH<dims, Type>& Mat3, int axis) {
+#ifdef SAFE_MODE
+        if (Mat1.flags & NON_CONTIGUOUS_FLAG || Mat2.flags & NON_CONTIGUOUS_FLAG || Mat3.flags & NON_CONTIGUOUS_FLAG  ){
+            std::cerr << "MatrixH: Concat operation requires contigious buffer mats: " << "\n";
+            throw;
+        }
+#endif
+        MatrixH<dims+1, Type> output;
+//        int axis = dims+1;
+        for (int i = 0; i < axis; i++) {
+
+#ifdef SAFE_MODE
+                if (Mat1.shape[i] != Mat2.shape[i] || Mat1.shape[i] != Mat3.shape[i]) {
+                    std::cerr << "MatrixH: Concat operation requires shapes be equal for all dims except the axis and at dim: " << i << Mat1.shape[i]<<" != " << Mat2.shape[i]<<" != " <<  Mat3.shape[i] << "\n";
+                    throw;
+                }
+#endif
+            output.shape[i] = Mat1.shape[i];
+        }
+        
+        output.shape[axis] = 3;
+        for (int i = axis+1; i < dims+1; i++) {
+
+#ifdef SAFE_MODE
+                if (Mat1.shape[i] != Mat2.shape[i] || Mat1.shape[i] != Mat3.shape[i] ) {
+                    std::cerr << "MatrixH: Concat operation requires shapes be equal for all dims except the axis and at dim: " << i << Mat1.shape[i]<<" != " << Mat2.shape[i]<<" != " <<  Mat3.shape[i] << "\n";
+                    throw;
+                }
+#endif
+                output.shape[i] = Mat1.shape[i-1];
+            
+        }
+        
+        output.calcStrides();
+        output.total_size = output.accumul(0, dims+1);
+        output.buffer = new Type[output.total_size];
+        output.buildMetalBuffer();
+
+        size_t noOfOpp = output.accumul(0, axis);
+        size_t stride = output.accumul(axis, dims+1);
+        
+        size_t strideMat1 = Mat1.accumul(axis, dims);
+        size_t strideMat2 = Mat2.accumul(axis, dims);
+        size_t strideMat3 = Mat3.accumul(axis, dims);
+        
+        for (int i = 0; i < noOfOpp; i++) {
+
+            memcpy(output.buffer + i * stride, Mat1.buffer + i * strideMat1, strideMat1 * sizeof(Type));
+            memcpy(output.buffer + strideMat1 + i * stride, Mat2.buffer + i * strideMat2, strideMat2 * sizeof(Type));
+            memcpy(output.buffer + strideMat1 + strideMat2 + i * stride, Mat3.buffer + i * strideMat3, strideMat3 * sizeof(Type));
+            
         }
         
         return output;
