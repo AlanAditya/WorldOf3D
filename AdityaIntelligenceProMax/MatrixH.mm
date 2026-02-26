@@ -1518,7 +1518,40 @@ public:
     simd_float4 toSimdFloat4() {
         return simd_make_float4(buffer[0], buffer[1], buffer[2], buffer[3]);
     }
+    simd_float3 toSimdFloat3() {
+        return simd_make_float3(buffer[0], buffer[1], buffer[2]);
+    }
+    simd_float3 toSimdFloat3(int i) {
+#ifdef SAFE_MODE
+        if (i >= shape[0]) {
+            std::cerr << "MatrixH: Index " << i << " Out of Bounds for shape of dim 1: " << shape[0];
+            throw;
+        }
+        if (3 != shape[1] || dims != 2) {
+            std::cerr << "MatrixH: Cant Call to SimdFloat3 with one index on dims greater than 2 or inner shape of " << shape[1];
+            throw;
+        }
+#endif
+        return simd_make_float3(buffer[i * strides[0] + 0 * strides[1]], buffer[i * strides[0] + 1 * strides[1]], buffer[i * strides[0] + 2 * strides[1]]);
+    }
     
+    simd_float3 toSimdFloat3(int i, int j) {
+#ifdef SAFE_MODE
+        if (i >= shape[0]) {
+            std::cerr << "MatrixH: Index " << i << " Out of Bounds for shape of dim 1: " << shape[0];
+            throw;
+        }
+        if (j >= shape[1]) {
+            std::cerr << "MatrixH: Index " << j << " Out of Bounds for shape of dim 1: " << shape[1];
+            throw;
+        }
+        if (3 != shape[2] || dims != 3) {
+            std::cerr << "MatrixH: Cant Call to SimdFloat3 with one index on dims greater than 3 or inner shape of " << shape[2];
+            throw;
+        }
+#endif
+        return simd_make_float3(buffer[i * strides[0] + j * strides[1] + 0 * strides[2]], buffer[i * strides[0] + j * strides[1] + 1 * strides[2]], buffer[i * strides[0] + j * strides[1] + 2 * strides[2]]);
+    }
     simd_float4 toSimdFloat4(size_t i, size_t j) {
         size_t offset = i * (shape[1] * 4) + j * (4);
         return simd_make_float4(buffer[offset + 0], buffer[offset + 1], buffer[offset + 2], buffer[offset + 3]);
@@ -4266,21 +4299,34 @@ public:
         size_t max = shape[axis] - 1;
         int lastResolve = loopBack;
         
-        if (!result.buffer) {
-            result.buffer = new Type[total_size];
-            result.total_size = total_size;
-            result.buildMetalBuffer();
+        if (loopBack == 3) {
+            memcpy(result.shape, shape, axis * sizeof(size_m));
+            result.shape[axis] = shape[axis] - 1;
+            memcpy(result.shape + axis + 1, shape + axis + 1, (dims-axis-1) * sizeof(size_m));
+            result.total_size = result.accumul(0, dims);
+        } else {
+            memcpy(result.shape, shape, sizeof(size_m) * dims);
         }
-        else if (result.total_size != total_size) {
+        result.calcStrides();
+        
+        if (!result.buffer) {
+            if (loopBack == 3) {
+                result.buffer = new Type[result.total_size];
+                result.buildMetalBuffer();
+            } else {
+                result.buffer = new Type[total_size];
+                result.total_size = total_size;
+                result.buildMetalBuffer();
+            }
+        }
+        
+        else if (result.total_size != total_size && loopBack != 3) {
             delete [] result.buffer;
             result.buffer = new Type[total_size];
             result.total_size = total_size;
             result.buildMetalBuffer();
         }
                 
-        if (!compareShapes(result.shape)) {
-            memcpy(result.shape, shape, sizeof(size_t) * dims);
-        }
 
         
         if (!GlobalGPUManager.DerivativeAllInit) {
@@ -4561,6 +4607,11 @@ MatrixH<dims, Type> tan(const MatrixH<dims, Type>& mat) {
 template <int dims, typename Type>
 MatrixH<dims, Type> exp(const MatrixH<dims, Type>& mat) {
     return mat.exp();
+}
+
+template <int dims, typename Type>
+MatrixH<dims, Type> sqrt(const MatrixH<dims, Type>& mat) {
+    return mat.sqrt();
 }
 
 MatrixH<1, float> simd_matH(simd_float3 inp) {
