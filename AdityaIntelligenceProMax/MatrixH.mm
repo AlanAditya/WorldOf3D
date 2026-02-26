@@ -1750,13 +1750,67 @@ public:
         resultTexture = [GlobalGPUManager.metalDevice newTextureWithDescriptor:drawableDesc];
         
         CopyToTexture(resultTexture);
-        
         return resultTexture;
+    }
+    
+    void printNonCont() const {
+        if (!buffer) {return; }
+        else if (dims == 2) {
+            std::cout << "{ \n";
+            for (size_t i = 0; i < shape[0]; i++) {
+                std::cout << "{ ";
+                for (size_t j = 0; j < shape[1]; j++) {
+                    std::cout << buffer[strides[0] * i + strides[1] * j] << " ";
+                }
+                std::cout << "} \n";
+            }
+            std::cout << "} \n";
+        } else if (dims == 3) {
+            std::cout << "{ \n";
+            for (size_t i = 0; i < shape[0]; i++) {
+                std::cout << "{ ";
+                for (size_t j = 0; j < shape[1]; j++) {
+                    std::cout << " { ";
+                    for (size_t k = 0; k < shape[2]; k++) {
+                        std::cout << buffer[strides[0] * i + strides[1] * j + strides[2] * k] << ", ";
+                    }
+                    std::cout << "}, ";
+                }
+                std::cout << "}, \n";
+            }
+            std::cout << "}, \n";
+        } else if (dims == 4) {
+            for (size_t l = 0; l < shape[0]; l++) {
+                for (size_t i = 0; i < shape[1]; i++) {
+                    for (size_t j = 0; j < shape[2]; j++) {
+                        std::cout << "{ ";
+                        for (size_t k = 0; k < shape[3]; k++) {
+                            std::cout << buffer[strides[0] * l + strides[1] * i + strides[2] * j + strides[3] *k] << " ";
+                        }
+                        std::cout << "} ";
+                    }
+                    std::cout << std::endl;
+                }
+                std::cout <<"\n";
+            }
+        }
+        
+        else {
+            std::cerr << "Printing only supported for 2D matrices." << std::endl;
+            return;
+        }
     }
     
     void print() const {
         if (!buffer) {return; }
-        if (dims == 1) {
+//        if (flags & (1u << 1)) { printNonCont(); return;}
+        if (flags & NON_CONTIGUOUS_FLAG) { printNonCont(); return;}
+        if (dims == 0) {
+            std::cout << "{ ";
+                std::cout << buffer[0] << " ,";
+            std::cout << "} \n";
+        }
+        else if (dims == 1) {
             std::cout << "{ ";
             for (size_t i = 0; i < shape[0]; i++) {
                 std::cout << buffer[i] << " ,";
@@ -1764,7 +1818,7 @@ public:
             std::cout << "} \n";
         }
         else if (dims == 2) {
-            std::cout << "{ ";
+            std::cout << "{ \n";
             for (size_t i = 0; i < shape[0]; i++) {
                 std::cout << "{ ";
                 for (size_t j = 0; j < shape[1]; j++) {
@@ -1774,16 +1828,19 @@ public:
             }
             std::cout << "} \n";
         } else if (dims == 3) {
+            std::cout << "{ \n";
             for (size_t i = 0; i < shape[0]; i++) {
+                std::cout << "{ ";
                 for (size_t j = 0; j < shape[1]; j++) {
-                    std::cout << "{ ";
+                    std::cout << " { ";
                     for (size_t k = 0; k < shape[2]; k++) {
-                        std::cout << buffer[shape[2]*(shape[1] * i + j) + k] << " ";
+                        std::cout << buffer[shape[2]*(shape[1] * i + j) + k] << ", ";
                     }
-                    std::cout << "} ";
+                    std::cout << "}, ";
                 }
-                std::cout << std::endl;
+                std::cout << "}, \n";
             }
+            std::cout << "}, \n";
         } else if (dims == 4) {
             for (size_t l = 0; l < shape[0]; l++) {
                 for (size_t i = 0; i < shape[1]; i++) {
@@ -1801,7 +1858,7 @@ public:
         }
         
         else {
-            std::cerr << "Printing only supported for 2D matrices." << std::endl;
+            std::cerr << "Printing only supported till 4D matrices." << std::endl;
             return;
         }
 
@@ -1967,6 +2024,7 @@ public:
         result.buffer = new OutType[total_size];
         result.buildMetalBuffer();
         std::memcpy(result.shape, shape, sizeof(size_m) * dims);
+        std::memcpy(result.strides, strides, sizeof(size_m) * dims);
         this->To<OutType>(result, 0);
         return result;
     }
