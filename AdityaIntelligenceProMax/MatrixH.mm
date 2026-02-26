@@ -2505,12 +2505,17 @@ public:
         return result;
     }
     
-    static MatrixH<3, uint8_t> fromImage(bool includeDepth) {
+    static MatrixH<3, uint8_t> fromImage(std::string path_str = std::string("/Users/adityadude/Documents/TUSHU.HEIC")) {
         #if !TARGET_OS_IPHONE
-        CFStringRef path = CFStringCreateWithCString(NULL, "/Users/adityadude/Documents/IMG_1278.JPG", kCFStringEncodingUTF8);
+        CFStringRef path = CFStringCreateWithCString(NULL, path_str.c_str(), kCFStringEncodingUTF8);
         CFURLRef url = CFURLCreateWithFileSystemPath(NULL, path, kCFURLPOSIXPathStyle, false);
-        CGImageSourceRef source = CGImageSourceCreateWithURL(url, NULL);
-        CGImageRef cgImage = CGImageSourceCreateImageAtIndex(source, 0, NULL);
+        CGImageSourceRef source;
+        CGImageRef cgImage;
+        for (int i = 0; i < 3; i++) {
+            source = CGImageSourceCreateWithURL(url, NULL);
+            cgImage = CGImageSourceCreateImageAtIndex(source, 0, NULL);
+            if (cgImage) {break;}
+        }
         CFRelease(url);
         CFRelease(path);
         #endif
@@ -2543,12 +2548,139 @@ public:
         result.shape[0] = Imgheight;
         result.shape[1] = Imgwidth;
         result.shape[2] = 4;
+        result.calcStrides();
         result.total_size = Imgwidth * Imgheight * 4;
-        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:result.total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-        }];
+        result.buildMetalBuffer();
         return result;
     }
     
+    static std::pair<MatrixH<3, uint8_t>, MatrixH<2, float16_t>> fromImageWithDepth(std::string path_str = std::string("/Users/adityadude/Documents/TUSHU.HEIC") , bool nonReduced = true) {
+        #if !TARGET_OS_IPHONE
+        CFStringRef path = CFStringCreateWithCString(NULL, path_str.c_str(), kCFStringEncodingUTF8);
+        CFURLRef url = CFURLCreateWithFileSystemPath(NULL, path, kCFURLPOSIXPathStyle, false);
+        CGImageSourceRef source = CGImageSourceCreateWithURL(url, NULL);
+        CGImageRef cgImage = CGImageSourceCreateImageAtIndex(source, 0, NULL);
+        CFRelease(url);
+        CFRelease(path);
+        
+        #endif
+
+        #if TARGET_OS_IPHONE
+        CGImageSourceRef source;
+        CGImageRef cgImage;
+        // 1. Ask the Bundle where the file is on the iPhone's disk
+        NSURL *fileURL = [[NSBundle mainBundle] URLForResource:@"TUSHU" withExtension:@"HEIC"];
+        
+        if (fileURL) {
+            // 2. Convert the URL to a CFString path (if your engine needs a path string)
+            // Note: It's better to use the URL directly if possible.
+            CFStringRef path = (__bridge CFStringRef)[fileURL path];
+            
+            // OR just pass the URL to CGImageSource directly (Better way):
+            source = CGImageSourceCreateWithURL((__bridge CFURLRef)fileURL, NULL);
+            cgImage = CGImageSourceCreateImageAtIndex(source, 0, NULL);
+            // ... do your processing
+        } else {
+            NSLog(@"Error: Could not find TUSHU.HEIC in the app bundle!");
+        }
+        
+        #endif
+
+        if (!cgImage) {
+            std::cerr << "Failed to create CGImage" << std::endl;
+        }
+        
+        size_t Imgwidth = CGImageGetWidth(cgImage);
+        size_t Imgheight = CGImageGetHeight(cgImage);
+        std::cout << "Img of Width: " <<Imgwidth<<"and Height: " << Imgheight << "Loaded \n";
+        
+        CGImageRef depthImage = NULL;
+
+        NSDictionary *auxDataInfo =
+            (__bridge_transfer NSDictionary *)
+            CGImageSourceCopyAuxiliaryDataInfoAtIndex(source,
+                                                      0,
+                                                      kCGImageAuxiliaryDataTypeDisparity);
+        auto cfProperties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil);
+        NSError* err = nil;
+        auto depthData = [AVDepthData depthDataFromDictionaryRepresentation:auxDataInfo error:&err];
+        CVPixelBufferRef pb = depthData.depthDataMap;
+        size_t DepthWidth = CVPixelBufferGetWidth(pb);
+        size_t DepthHeight = CVPixelBufferGetHeight(pb);
+        
+        CGSize rgbSize = CGSizeMake(CGImageGetWidth(cgImage), CGImageGetHeight(cgImage));
+        CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+        
+        MatrixH<2, float16_t> depthBuffer;
+
+        if (nonReduced) {
+            depthBuffer.buffer = new float16_t[Imgwidth * Imgheight];
+            depthBuffer.shape[0] = Imgheight;
+            depthBuffer.shape[1] = Imgwidth;
+            depthBuffer.calcStrides();
+            depthBuffer.total_size = Imgwidth * Imgheight;
+            depthBuffer.buildMetalBuffer();
+            
+            vImage_Buffer srcBuf = {
+                .data     = CVPixelBufferGetBaseAddress(pb),
+                .height   = CVPixelBufferGetHeight(pb),
+                .width    = CVPixelBufferGetWidth(pb),
+                .rowBytes = CVPixelBufferGetBytesPerRow(pb)
+            };
+            
+            vImage_Buffer dstBuf = {
+                .data     = depthBuffer.buffer,
+                .height   = Imgheight,
+                .width    = Imgwidth,
+                .rowBytes = Imgwidth * sizeof(float16_t)
+            };
+            
+            vImageScale_Planar16F(&srcBuf, &dstBuf, NULL, kvImageHighQualityResampling);
+        } else {
+            depthBuffer.buffer = new float16_t[DepthWidth * DepthHeight];
+            depthBuffer.shape[0] = DepthHeight;
+            depthBuffer.shape[1] = DepthWidth;
+            depthBuffer.calcStrides();
+            depthBuffer.total_size = DepthWidth * DepthHeight;
+            depthBuffer.buildMetalBuffer();
+            void *rawPtr = CVPixelBufferGetBaseAddress(pb);
+            if (CVPixelBufferGetBytesPerRow(pb) == depthBuffer.shape[1] * sizeof(float16_t)) {
+                memcpy(depthBuffer.buffer, rawPtr, depthBuffer.total_size * sizeof(float16_t));
+            } else {
+                for (int i = 0; i < DepthHeight; i++) {
+                    memcpy(depthBuffer.buffer + i * DepthWidth, (float16_t*)rawPtr + i * CVPixelBufferGetBytesPerRow(pb), DepthWidth * sizeof(float16_t));
+                }
+            }
+        }
+
+
+        CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+        
+        
+
+        size_t bytesPerRow = 4 * Imgwidth;
+        void *data = malloc(bytesPerRow * Imgheight);
+        CGContextRef context = CGBitmapContextCreate(data, Imgwidth, Imgheight, 8, bytesPerRow,
+                                                     CGImageGetColorSpace(cgImage),
+                                                     kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+        CGContextDrawImage(context, CGRectMake(0, 0, Imgwidth, Imgheight), cgImage);
+        CGContextRelease(context);
+        CGImageRelease(cgImage);
+        
+        uint8_t* pixelData = static_cast<uint8_t*>(data);
+        
+        MatrixH<3, uint8_t> result;
+        result.buffer = pixelData;
+        result.shape[0] = Imgheight;
+        result.shape[1] = Imgwidth;
+        result.shape[2] = 4;
+        result.calcStrides();
+        result.total_size = Imgwidth * Imgheight * 4;
+        result.buildMetalBuffer();
+        
+        
+        return {result, depthBuffer};
+    }
     static MatrixH<4, uint8_t> fromVideo(const char* vidPath) {
     //    const char* vidPath = "/Users/adityadude/Downloads/WhatsApp Video 2025-01-01 at 14.49.11.mp4";
         NSString *filePath = [NSString stringWithUTF8String:vidPath];
@@ -2561,25 +2693,31 @@ public:
             std::cerr << "Asset Invalid \n";
         }
         __block AVAssetTrack* videoTrack;
-        
+        dispatch_semaphore_t trackSem = dispatch_semaphore_create(0);
         [asset loadTracksWithMediaType:AVMediaTypeVideo completionHandler:^(NSArray<AVAssetTrack *> * videoArray, NSError * _Nullable) {
             videoTrack = videoArray.firstObject;
+            dispatch_semaphore_signal(trackSem);
         }];
+        dispatch_semaphore_wait(trackSem, DISPATCH_TIME_FOREVER);
+        
         AVAssetReader* reader = [[AVAssetReader alloc] initWithAsset:asset error:nil];
         NSDictionary* outputSettings = @{
-                (NSString*)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)  // 4-channel (BGRA)
+            (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA),
+            (id)kCVPixelBufferMetalCompatibilityKey : @YES,
+            (id)kCVPixelBufferIOSurfacePropertiesKey : @{}
         };
+
         for (AVAssetTrack *track in asset.tracks) {
             NSLog(@"Track media type: %@", track.mediaType);
         }
-        @try {
-            AVAssetReaderTrackOutput* trackOutput = [[AVAssetReaderTrackOutput alloc] initWithTrack:videoTrack outputSettings:outputSettings];
-            // Proceed with using trackOutput
-        }
-        @catch (NSException *exception) {
-            NSLog(@"Exception occurred: %@, %@", exception.name, exception.reason);
-            // Handle the exception appropriately
-        }
+//        @try {
+//            AVAssetReaderTrackOutput* trackOutput = [[AVAssetReaderTrackOutput alloc] initWithTrack:videoTrack outputSettings:outputSettings];
+//            // Proceed with using trackOutput
+//        }
+//        @catch (NSException *exception) {
+//            NSLog(@"Exception occurred: %@, %@", exception.name, exception.reason);
+//            // Handle the exception appropriately
+//        }
         AVAssetReaderTrackOutput* trackOutput = [[AVAssetReaderTrackOutput alloc] initWithTrack:videoTrack outputSettings:outputSettings];
         [reader addOutput:trackOutput];
         
@@ -2609,7 +2747,7 @@ public:
         
         [reader startReading];
         
-        size_t frameCount = (size_t)(CMTimeGetSeconds(duration) * videoTrack.nominalFrameRate);
+        size_t frameCount = (size_t)(CMTimeGetSeconds(duration) * videoTrack.nominalFrameRate) + 10;
         size_t width = (size_t)videoTrack.naturalSize.width;
         size_t height = (size_t)videoTrack.naturalSize.height;
         size_t channels = 4; // BGRA format has 4 channels
@@ -2632,31 +2770,127 @@ public:
             }
             frameIndex++;
             CVPixelBufferUnlockBaseAddress(imageBuffer, kCVPixelBufferLock_ReadOnly);
+            CVPixelBufferRelease(imageBuffer);
         }
         
         MatrixH<4, uint8_t> result = MatrixH();
-        result.shape[0] = frameCount;
+        result.shape[0] = frameIndex;
         result.shape[1] = height;
         result.shape[2] = width;
         result.shape[3] = channels;
         result.total_size = width*height*frameCount*channels;
         result.buffer = values;
-        result.metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:result.buffer length:result.total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-        }];
+        result.calcStrides();
+        result.buildMetalBuffer();
         result.flags |= (1u << 2);
         return result;
+    }
+    
+    dispatch_group_t saveVideo(const char* outputPath, bool wait=false) {
+        size_t frames = shape[0];
+        size_t height = shape[1];
+        size_t width = shape[2];
+        size_t channels = shape[3];
+        
+        dispatch_group_t group = dispatch_group_create();
+        @autoreleasepool {
+            NSLog(@"Saving Video...");
+
+            NSString *filePath = [NSString stringWithUTF8String:outputPath];
+            NSURL *outputURL = [NSURL fileURLWithPath:filePath];
+            
+            NSFileManager *fileManager = [NSFileManager defaultManager];
+            if ([fileManager fileExistsAtPath:filePath]) {
+                NSError *removeError = nil;
+                [fileManager removeItemAtPath:filePath error:&removeError];
+                if (removeError) {
+                    NSLog(@"Failed to remove existing file: %@", removeError);
+                    return group;
+                }
+            }
+            
+            // Setup AVAssetWriter
+            NSError *error = nil;
+            AVAssetWriter *writer = [[AVAssetWriter alloc] initWithURL:outputURL fileType:AVFileTypeQuickTimeMovie error:&error];
+
+            if (error) {
+                NSLog(@"Error creating writer: %@", error);
+                return group;
+            }
+
+            NSDictionary *videoSettings = @{
+                AVVideoCodecKey: AVVideoCodecTypeH264,
+                AVVideoWidthKey: @(width),
+                AVVideoHeightKey: @(height),
+                AVVideoScalingModeKey: AVVideoScalingModeResize
+            };
+
+            AVAssetWriterInput *writerInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:videoSettings];
+            writerInput.expectsMediaDataInRealTime = YES;
+            writerInput.performsMultiPassEncodingIfSupported = NO;
+
+            NSDictionary *bufferAttributes = @{
+                (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+                (id)kCVPixelBufferWidthKey: @(width),
+                (id)kCVPixelBufferHeightKey: @(height),
+            };
+
+            AVAssetWriterInputPixelBufferAdaptor *adaptor = [[AVAssetWriterInputPixelBufferAdaptor alloc] initWithAssetWriterInput:writerInput sourcePixelBufferAttributes:bufferAttributes];
+
+            if ([writer canAddInput:writerInput]) {
+                [writer addInput:writerInput];
+            } else {
+                NSLog(@"Failed to add input");
+                return group;
+            }
+
+            [writer startWriting];
+            [writer startSessionAtSourceTime:kCMTimeZero];
+
+            dispatch_queue_t queue = dispatch_queue_create("video_encoding_queue", NULL);
+            
+            
+            dispatch_group_enter(group);
+            
+            [writerInput requestMediaDataWhenReadyOnQueue:queue usingBlock:^{
+                int frameIndex = 0;
+                while (frameIndex < frames) {
+                    if ([writerInput isReadyForMoreMediaData]) {
+//                        uint8_t *frameData = values + (frameIndex * height * width * channels);
+                        auto frame = this->operator[](frameIndex);
+                        CVPixelBufferRef pixelBuffer = frame.createPixelBufferFromMat();
+
+                        if (pixelBuffer) {
+                            CMTime pts = CMTimeMake(frameIndex, 30); // 30 FPS
+                            [adaptor appendPixelBuffer:pixelBuffer withPresentationTime:pts];
+                            CVPixelBufferRelease(pixelBuffer);
+                        }
+
+                        frameIndex++;
+                    }
+                }
+
+                [writerInput markAsFinished];
+                [writer finishWritingWithCompletionHandler:^{
+                    dispatch_group_leave(group);
+                    NSLog(@"Video saved to %@", filePath);
+                }];
+            }];
+            if (wait) {
+                dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+            }
+        }
+        return group;
     }
     
     void CopyToTexture(id<MTLTexture> texture) {
         MTLRegion region = MTLRegionMake2D(0, 0, (NSUInteger)shape[1], (NSUInteger)shape[0]);
         NSUInteger bytesPerRow = shape[1] * 4;  // 4 bytes per pixel for BGRA8
         
-//        id<MTLBuffer> Metalbuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size*sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-//        }];
-        
         id<MTLCommandBuffer> commandBuffer = [GlobalGPUManager.gCommandQueue commandBuffer];
-        id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
 
+        id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+        
         [blitEncoder copyFromBuffer:metalBuffer
                        sourceOffset:0
                   sourceBytesPerRow:bytesPerRow
