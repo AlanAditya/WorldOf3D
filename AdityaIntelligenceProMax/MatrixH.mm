@@ -56,7 +56,7 @@ typedef uint16_t uint16;
 #include <chrono>
 #include <mlx/mlx.h>
 #include <span>
-#import "Matrix.mm"
+#import "matrix.h"
 #include <random>
 #include <map>
 #include <utility>
@@ -5263,8 +5263,8 @@ public:
             result.tape = addPrimitive1;
             
             
-            id<MTLCommandBuffer> commandBuffer = GlobalGPUManager.gCommandBuffer;
-            id<MTLComputeCommandEncoder> commandEncoder = GlobalGPUManager.gCommandEncoder;
+            id<MTLCommandBuffer> commandBuffer = GlobalGPUManager.getCommandBuffer();
+            id<MTLComputeCommandEncoder> commandEncoder = GlobalGPUManager.getCommandEncoder();
             
             auto _threadsPerThreadgroup = MTLSizeMake(1, 1, 1);
             auto _dispatchExecutionSize =  MTLSizeMake(result.total_size, 1, 1);
@@ -11723,6 +11723,7 @@ public:
 @end
 
 #import "SidePannel.h"
+#include "Algos/graph_visualiser.cpp"
 
 //Xcode will find and link old .dylib files sitting anywhere in your project directory, even if they're not in "Link Binary With Libraries" or any build settings. This causes runtime symbol errors because it uses the old version instead of the one you explicitly linked.
 //Fix: Delete old dylib copies from your project directory. Xcode searches the project tree and picks up matching filenames automatically.
@@ -11777,6 +11778,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     -(void) computational_graph;
     -(void) vec_field;
 - (void) EXR_CVE_EXPLOIT;
+-(void) computational_graphV2;
 @end
 
 @implementation Intelligence
@@ -11994,6 +11996,48 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     
 //    [captureManager stopCapture];
 //    r1.print();
+}
+
+-(void) computational_graphV2 {
+    matrix a= matrix::repeating({3, 3}, {10, 12, 13});
+    matrix b= {1, 2, 3};
+    a.begin_refcount();
+    b.begin_refcount();
+    a.print();
+//    MTLCaptureManager *captureManager = [MTLCaptureManager sharedCaptureManager];
+//    MTLCaptureDescriptor *captureDescriptor = [[MTLCaptureDescriptor alloc] init];
+//    captureDescriptor.captureObject = GlobalGPUManager.metalDevice;
+//    
+//    NSError *error = nil;
+//    if (![captureManager startCaptureWithDescriptor:captureDescriptor error:&error]) {
+//        NSLog(@"Capture start failed: %@", error);
+//    }
+//    
+//    [GlobalGPUManager.gCommandEncoder endEncoding];
+//   
+//    GlobalGPUManager.gCommandQueue = [GlobalGPUManager.metalDevice newCommandQueue];
+//    GlobalGPUManager.gCommandBuffer = [GlobalGPUManager.gCommandQueue commandBuffer];
+//    GlobalGPUManager.gCommandEncoder = [GlobalGPUManager.gCommandBuffer computeCommandEncoder];
+    matrix c = (a+b) + b;
+    matrix d = c+c;
+//    d.tape->build_trace_metal(d);
+////    c.tape->execute_trace_metal(c);
+//    [GlobalGPUManager.gCommandEncoder endEncoding];
+//    [GlobalGPUManager.gCommandBuffer commit];
+//    [GlobalGPUManager.gCommandBuffer waitUntilCompleted];
+    d.compile_cpu();
+    d.execute_cpu();
+    
+//    matrix e = d+d;
+//    e.eval_cpu();
+//    e.print();
+//    GlobalGPUManager.gCommandBuffer = nil;
+//    GlobalGPUManager.gCommandEncoder = nil;
+//    [captureManager stopCapture];
+    c.print();
+    d.print();
+    visualise_graph(d);
+    
 }
 
 - (void) EXR_CVE_EXPLOIT {
