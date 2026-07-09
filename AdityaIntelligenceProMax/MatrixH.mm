@@ -7383,6 +7383,7 @@ public:
     AVCaptureDeviceInput* mCaptureDeviceInput;
     AVCaptureVideoDataOutput* mCaptureVideoDataOutput;
     NSCondition* mHasNewFrame;
+    CVMetalTextureCacheRef mTextureCache;
 
 #if TARGET_OS_IPHONE
     //CVImageBufferRef == CVPixelBufferRef the samething 😱😱
@@ -7402,6 +7403,8 @@ public:
 #endif
 
 -(void) read:(MatrixH<3, uint8_t>&) frame;
+-(void) read_cpu:(matrix&) out_frame;
+-(void) read_metal:(matrix&) out_frame;
 -(void) stopCap;
 @end
 
@@ -7410,6 +7413,11 @@ public:
 - (id)initWithCam:(int)CamNo {
     self = [super init];
     NSError* error = nil;
+    
+    if (CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, GlobalGPUManager.metalDevice, nil, &mTextureCache) != kCVReturnSuccess) {
+        NSLog(@"CapReader: Failed to create CVMetalTextureCache");
+    }
+    
 #if !TARGET_OS_IPHONE
     if (CamNo == 0) {
         mCaptureDevice = [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInWideAngleCamera mediaType:AVMediaTypeVideo position:AVCaptureDevicePositionUnspecified];
@@ -7731,6 +7739,124 @@ public:
     CVPixelBufferUnlockBaseAddress(mGrabbedPixels, 0);
     CVBufferRelease(mGrabbedPixels);
     
+    mGrabbedPixels = NULL;
+}
+
+-(void) read_cpu:(matrix&) frame {
+    [mHasNewFrame lock];
+    if (mGrabbedPixels) {
+        CVBufferRelease(mGrabbedPixels);
+    }
+//    if ([mHasNewFrame waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:1]]) {
+//        mGrabbedPixels = CVBufferRetain(mCurrentimageBuffer);
+//    }
+    if (mCurrentimageBuffer) {
+        mGrabbedPixels = CVBufferRetain(mCurrentimageBuffer);
+    }
+    [mHasNewFrame unlock];
+
+    if (! mGrabbedPixels ) {return;}
+    CVPixelBufferLockBaseAddress(mGrabbedPixels, kCVPixelBufferLock_ReadOnly);
+    uint8_t *baseaddress = reinterpret_cast<uint8_t*>(CVPixelBufferGetBaseAddress(mGrabbedPixels));
+    size_t rowBytes = CVPixelBufferGetBytesPerRow(mGrabbedPixels);
+    OSType pixelFormat = CVPixelBufferGetPixelFormatType(mGrabbedPixels);
+    size_t height =  CVPixelBufferGetHeight(mGrabbedPixels);
+    size_t width = CVPixelBufferGetWidth(mGrabbedPixels);
+    
+    if (rowBytes != 0 && (pixelFormat == kCVPixelFormatType_32BGRA || pixelFormat == kCVPixelFormatType_422YpCbCr8)) {
+        if (frame.buffer == nullptr || frame.dims != 3 || frame.shape()[0] != height || frame.shape()[1] != width || frame.shape()[2] != 4) {
+            matrix new_frame(3, height * width * 4, dtype::UInt8);
+            new_frame.shape()[0] = height;
+            new_frame.shape()[1] = width;
+            new_frame.shape()[2] = 4;
+            new_frame.calcStrides();
+            new_frame.buildMetalBuffer();
+            frame = new_frame;
+        }
+        
+        if (rowBytes == width * 4) {
+            memcpy(frame.buffer, baseaddress, frame.total_size);
+        } else {
+            uint8_t *dst = (uint8_t*)frame.buffer;
+            for (size_t y = 0; y < height; ++y) {
+                memcpy(dst + y * width * 4, baseaddress + y * rowBytes, width * 4);
+            }
+        }
+    } else {
+        fprintf(stderr, "CapReader: rowBytes == 0 or unknown pixel format 0x%08X\n", pixelFormat);
+    }
+
+    CVPixelBufferUnlockBaseAddress(mGrabbedPixels, kCVPixelBufferLock_ReadOnly);
+    CVBufferRelease(mGrabbedPixels);
+    mGrabbedPixels = NULL;
+}
+
+-(void) read_metal:(matrix&) frame {
+    [mHasNewFrame lock];
+    if (mGrabbedPixels) {
+        CVBufferRelease(mGrabbedPixels);
+    }
+//    if ([mHasNewFrame waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:1]]) {
+//        mGrabbedPixels = CVBufferRetain(mCurrentimageBuffer);
+//    }
+//    [mHasNewFrame unlock];
+    // Loadframes from camera without waiting for new one just retake the old one
+    if (mCurrentimageBuffer) {
+        mGrabbedPixels = CVBufferRetain(mCurrentimageBuffer);
+    }
+    if (! mGrabbedPixels ) {return;}
+    
+    size_t height =  CVPixelBufferGetHeight(mGrabbedPixels);
+    size_t width = CVPixelBufferGetWidth(mGrabbedPixels);
+    
+    if (frame.buffer == nullptr || frame.dims != 3 || frame.shape()[0] != height || frame.shape()[1] != width || frame.shape()[2] != 4) {
+        matrix new_frame(3, height * width * 4, dtype::UInt8);
+        new_frame.shape()[0] = height;
+        new_frame.shape()[1] = width;
+        new_frame.shape()[2] = 4;
+        new_frame.calcStrides();
+        new_frame.buildMetalBuffer();
+        frame = new_frame;
+    }
+    
+    CVMetalTextureRef textureRef = NULL;
+    CVReturn status = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, 
+                                                              mTextureCache, 
+                                                              mGrabbedPixels, 
+                                                              nil, 
+                                                              MTLPixelFormatBGRA8Unorm_sRGB, 
+                                                              width, 
+                                                              height, 
+                                                              0, 
+                                                              &textureRef);
+    if (status == kCVReturnSuccess) {
+        id<MTLTexture> mtlTexture = CVMetalTextureGetTexture(textureRef);
+        id<MTLCommandBuffer> commandBuffer = GlobalGPUManager.getCommandBuffer();
+        id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+        
+        NSUInteger bytesPerRow = width * 4;
+        MTLRegion region = MTLRegionMake2D(0, 0, width, height);
+        
+        [blitEncoder copyFromTexture:mtlTexture
+                         sourceSlice:0
+                         sourceLevel:0
+                        sourceOrigin:region.origin
+                          sourceSize:region.size
+                            toBuffer:frame.metalBuffer
+                   destinationOffset:0
+              destinationBytesPerRow:bytesPerRow
+            destinationBytesPerImage:bytesPerRow * height];
+            
+        [blitEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        
+        CFRelease(textureRef);
+    } else {
+        NSLog(@"read_metal: CVMetalTextureCacheCreateTextureFromImage failed %d", status);
+    }
+    
+    CVBufferRelease(mGrabbedPixels);
     mGrabbedPixels = NULL;
 }
 
@@ -10795,6 +10921,66 @@ struct Assets {
 
 
 
+- (void)updateBaseImageV2:(matrix&) layer {
+    
+    if (layer.shape()[2] != 4) {
+        throw std::runtime_error("Renderer: updateBaseImageV2: expected 4 channels (RGBA), got " + std::to_string(layer.shape()[2]));
+    }
+    
+    if (layer.type != dtype::UInt8) {
+        layer = layer.astype(dtype::UInt8);
+    }
+    if (layer.tape) layer.eval_metal();
+    if (layer.total_size == 0 || !layer.buffer) {
+        matrix new_layer(3, width * height * 4, dtype::UInt8);
+        new_layer.shape()[0] = height;
+        new_layer.shape()[1] = width;
+        new_layer.shape()[2] = 4;
+        new_layer.calcStrides();
+        new_layer.buildMetalBuffer();
+        layer = new_layer;
+    }
+    
+    if (!offscreenTexture || layer.shape()[0] != height || layer.shape()[1] != width) {
+        NSLog(@"Texture was Wrong; Setting the correct one");
+        width = layer.shape()[1];
+        height = layer.shape()[0];
+        MTLTextureDescriptor* drawableDesc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB
+                                                                                                width:(NSUInteger)width
+                                                                                               height:(NSUInteger)height
+                                                                                            mipmapped:NO];
+        drawableDesc.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+        drawableDesc.storageMode = MTLStorageModeShared;
+        offscreenTexture = [metalDevice newTextureWithDescriptor:drawableDesc];
+    }
+
+    MTLRegion region = MTLRegionMake2D(0, 0, (NSUInteger)width, (NSUInteger)height);
+    NSUInteger bytesPerRow = width * 4;  // 4 bytes per pixel for BGRA8
+    
+    if (layer.metalBuffer) {
+        id<MTLCommandBuffer> commandBuffer = [CommandQueue commandBuffer];
+        id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+        [blitEncoder copyFromBuffer:layer.metalBuffer
+                       sourceOffset:0
+                  sourceBytesPerRow:bytesPerRow
+                sourceBytesPerImage:bytesPerRow * height
+                         sourceSize:region.size
+                          toTexture:offscreenTexture
+                   destinationSlice:0
+                   destinationLevel:0
+                  destinationOrigin:region.origin];
+        
+        [blitEncoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+    } else {
+        [offscreenTexture replaceRegion:region
+                            mipmapLevel:0
+                              withBytes:layer.buffer
+                            bytesPerRow:bytesPerRow];
+    }
+}
+
 - (void)updateBaseImage:(MatrixH<3, uint8_t>&) layer {
     if (layer.shape[2] != 4) {
         throw std::runtime_error("MatrixH: updateBaseImage: expected 4 channels (RGBA), got " + std::to_string(layer.shape[2]));
@@ -12047,6 +12233,63 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 //    [captureManager stopCapture];
 //    r1.print();
 }
+
+-(void) MicTesting1234 {
+    __block MicrophoneAudioCapture* MatrixAudioSession = [[MicrophoneAudioCapture alloc] init];
+    cap = [[CapReader alloc] initWithCam:0];
+    
+    [self attachToGCDQueue: ^{
+        matrix audio_sample(2, dtype::Float);
+        [MatrixAudioSession getAudioTensor:audio_sample samplesNeeded:512 * 2];
+        audio_sample.buildMetalBuffer();
+        matrix::abs(audio_sample.sum(0).sum(0)).print();
+        audio_sample = matrix::abs(audio_sample.sum(0).sum(0) * 0.05 ).clamp(0, 1);
+        matrix video_sample(3, dtype::UInt8);
+        [cap read_cpu:video_sample];
+        if (!video_sample.buffer) {NSLog(@"Droppin VideoFrame"); return;}
+        video_sample =  audio_sample * video_sample;
+        
+        [pRender updateBaseImageV2:video_sample];
+    } withFPS:60];
+}
+
+-(void) new_concurrancy_model {
+    cap = [[CapReader alloc] initWithCam:0];
+    matrix filter = matrix::gaussian({25, 25}, 5.0f, true);
+    filter = { {-1.0f, -1.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f} };
+    
+    auto f = [filter](matrix cam_frame) {
+        cam_frame = cam_frame.astype(dtype::Float);
+        matrix output = matrix::conv2d(cam_frame.slice(R(0, 3), 2).unsqueeze(0), filter.unsqueeze(2).broadcast_toV2({3, 3, 3, 1}), 0, 0, 1, 1, 1, 1, 3).squeeze(0);
+        output = matrix::concat({output, matrix::repeating({output.shape()[0], output.shape()[1], 1}, matrix::scalar(255.0f))}, 2);
+        return output;
+    };
+    
+    matrix s = matrix::zeros({1080, 1920, 4}, dtype::UInt8);
+    matrix ss = matrix::zeros({1080, 1920, 4}, dtype::UInt8);
+    ss.buildMetalBuffer();
+    
+    matrix img = matrix::fromImage();
+    img.begin_refcount();
+    img.buildMetalBuffer();
+    auto func = matrix::jit_graph_gpu(f, s);
+    
+//    matrix outp = func(img);
+//    [self->pRender updateBaseImageV2:outp];
+    
+//    visualise_graph_v2(outp);
+    [self attachContinuousLoop:^{
+        matrix cam_frame(3, dtype::UInt8);
+        [self->cap read_cpu:cam_frame];
+        cam_frame.buildMetalBuffer();
+        cam_frame.begin_refcount();
+        
+        matrix output = f(cam_frame);
+
+        [self->pRender updateBaseImageV2:output];
+    }];
+}
+
 
 -(void) computational_graphV2 {
     printf("\n--- SLICE ASSIGN TEST (METAL) ---\n");
