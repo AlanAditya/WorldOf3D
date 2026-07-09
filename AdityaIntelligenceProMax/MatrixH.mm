@@ -10666,7 +10666,7 @@ struct Assets {
         id<MTLRenderPipelineState> MeshPointCloudRenderPipelineState;
         id<MTLLibrary> library;
         NSMutableArray<id<MTLRenderPipelineState>>* customRenderPipelineStates;
-        id<MTLRenderPipelineState> predefinedRenderPipelineState[3];
+        id<MTLRenderPipelineState> predefinedRenderPipelineState[4];
         size_t width;
         size_t height;
         uint8_t sampleCount;
@@ -10684,6 +10684,8 @@ struct Assets {
         Assets* ass;
         Camera3D cam;
         std::vector<std::function<bool(drag_info&)>> drag_event_subscribers;
+        std::vector<std::shared_ptr<Viewer>> viewers;
+        matrix metal_frame;
     }
 
 //@property std::vector<Shape<uint16>> objectQueue;
@@ -10691,6 +10693,7 @@ struct Assets {
 - (MTLVertexDescriptor*) createPlaneMetalVertexDescriptor;
 
 - (void)updateBaseImage:(MatrixH<3, uint8_t>&) layer;
+- (void)updateBaseImageV2:(matrix&) layer;
 - (void)createRenderPiplineState:(NSString*)vertexFunc :(NSString*)fragmentFunc;
 
 @end
@@ -10875,9 +10878,21 @@ struct Assets {
     [node_billboard_Desc setRasterSampleCount:sampleCount];
     id<MTLRenderPipelineState> BillboardNodeRenderPipelineState = [metalDevice newRenderPipelineStateWithDescriptor:node_billboard_Desc error:&error];
 
+    id<MTLFunction> DAGVertexFunc = [library newFunctionWithName:@"DAGNodeVertexShader"];
+    id<MTLFunction> DAGFragmentFunc = [library newFunctionWithName:@"DAGNodeFragmentShader"];
+    MTLRenderPipelineDescriptor *dag_Desc = [[MTLRenderPipelineDescriptor alloc] init];
+    [[dag_Desc colorAttachments][0] setPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
+    [dag_Desc setVertexDescriptor:nil]; // pure array buffer access
+    [dag_Desc setVertexFunction:DAGVertexFunc];
+    [dag_Desc setFragmentFunction:DAGFragmentFunc];
+    [dag_Desc setDepthAttachmentPixelFormat:MTLPixelFormatDepth16Unorm];
+    [dag_Desc setRasterSampleCount:sampleCount];
+    id<MTLRenderPipelineState> DAGRenderPipelineState = [metalDevice newRenderPipelineStateWithDescriptor:dag_Desc error:&error];
+
     predefinedRenderPipelineState[0] = nodeRenderPipelineState;
     predefinedRenderPipelineState[1] = PointCloudNodeRenderPipelineState;
     predefinedRenderPipelineState[2] = BillboardNodeRenderPipelineState;
+    predefinedRenderPipelineState[3] = DAGRenderPipelineState;
     
     
     cam = Camera3D();
@@ -10887,6 +10902,8 @@ struct Assets {
 //    c.Slice({ {{0, 10}}, {{0, 10}} }).printNonCont();
     
     offscreenTexture = clearImg.ToMTLTexture();
+    metal_frame = matrix::scalar(0.0f);
+    metal_frame.begin_refcount();
 //    printArray((uint8_t*)offscreenTexture.buffer.contents, 100);
     
     return self;
@@ -11061,6 +11078,8 @@ struct Assets {
 
 
 - (void)drawInMTKView:(nonnull MTKView *)view {
+    ((float*)metal_frame.buffer)[0] += 1.0f;
+    
     id<CAMetalDrawable> drawable = [view currentDrawable];
     id<MTLCommandBuffer> cmdBuffer = [CommandQueue commandBuffer];
     
@@ -11254,6 +11273,10 @@ struct Assets {
     for (int i=0; i < _NodesQueuePtr.size(); i++) {
         
         _NodesQueuePtr[i]->draw(cmdEncoder, metalDevice, predefinedRenderPipelineState, customRenderPipelineStates, &cam, active_state);
+    }
+    
+    for (int i=0; i < viewers.size(); i++) {
+        viewers[i]->draw(cmdEncoder, metalDevice, predefinedRenderPipelineState, &cam, active_state);
     }
     
     [cmdEncoder endEncoding];
@@ -11973,6 +11996,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 -(void) VideoMerger;
 -(void) NewEfficientApproachTester;
     -(void) iOS_Depth;
+    -(void) render_graph;
     -(void) computational_graph;
     -(void) computational_graphV2;
     -(void) vec_field;
@@ -12290,6 +12314,96 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     }];
 }
 
+
+-(void) render_graph {
+    std::shared_ptr<Viewer> viewer = std::make_shared<Viewer>();
+    
+    // 1. Create a Null Root Node
+    GeoNodeImpl root = GeoNode::create("Root");
+    
+    // Create 2 instances for the root node, translated left and right
+    matrix root_transforms = matrix::zeros({2, 4, 4}, dtype::Float);
+    
+    // Instance 0 (Left)
+    root_transforms.at<float>(0, 0, 0) = 1.0f;
+    root_transforms.at<float>(0, 1, 1) = 1.0f;
+    root_transforms.at<float>(0, 2, 2) = 1.0f;
+    root_transforms.at<float>(0, 3, 3) = 1.0f;
+    root_transforms.at<float>(0, 3, 0) = -1.5f; // Translate X
+    
+    // Instance 1 (Right)
+    root_transforms.at<float>(1, 0, 0) = 1.0f;
+    root_transforms.at<float>(1, 1, 1) = 1.0f;
+    root_transforms.at<float>(1, 2, 2) = 1.0f;
+    root_transforms.at<float>(1, 3, 3) = 1.0f;
+    root_transforms.at<float>(1, 3, 0) = 1.5f;
+    root->local_transform = root_transforms;
+    root->world_transform = root_transforms;
+    
+    // 2. Create the Cube
+    CubeController cubeCtrl("MyCube");
+    cubeCtrl.node->material.colors = {
+        {0.0f, 0.0f, 0.0f, 1.0f},  // black   - (0,0,0)
+        {1.0f, 0.0f, 0.0f, 1.0f},  // red     - (1,0,0)
+        {0.0f, 1.0f, 0.0f, 1.0f},  // green   - (0,1,0)
+        {1.0f, 1.0f, 0.0f, 1.0f},  // yellow  - (1,1,0)
+        {0.0f, 0.0f, 1.0f, 1.0f},  // blue    - (0,0,1)
+        {1.0f, 0.0f, 1.0f, 1.0f},  // magenta - (1,0,1)
+        {0.0f, 1.0f, 1.0f, 1.0f},  // cyan    - (0,1,1)
+        {1.0f, 1.0f, 1.0f, 1.0f},  // white   - (1,1,1)
+    };
+    
+//    cubeCtrl.node->local_transform = cubeCtrl.node->local_transform.slice_assign({R(0,1), R(1, 2), R(1,2)}, pRender->metal_frame * 0.01);
+
+    // 3. Parent Cube to Root
+    root->add_child(cubeCtrl.node);
+    
+    // The DAG engine automatically computes the broadcasted world_transform
+    // for the cube [2 instances * 1 local instance = 2 world instances] inside add_child!
+    
+    viewer->nodes.push_back(root);
+    
+    GeoNodeImpl null_node = GeoNode::create("null1");
+    
+    QuadController quadCtr("Tushar");
+    quadCtr.node->material.texture = matrix::fromImage().ToMTLTexture();
+    quadCtr.node->material.has_texture = true;
+    matrix instance_position = matrix::zeros({5, 3}, dtype::Float);
+    instance_position[R(1, 5)] = {
+        {1.0f, 1.0f, 0.0f},
+        {-1.0f, 1.0f, 0.0f},
+        {-1.0f, -1.0f, 0.0f},
+        {1.0f, -1.0f, 0.0f}
+    };
+    instance_position.print();
+    matrix instance_transforms = matrix::repeating({5}, matrix::eye(4)); // actual memory initialised
+    instance_transforms.begin_refcount();
+    instance_transforms[R(0, LLONG_MAX), R(3,4), R(0,3)].squeeze() = instance_position;
+    
+
+    quadCtr.node->local_transform = instance_transforms;
+    
+    quadCtr.node->local_transform.print();
+    
+    null_node->add_child(quadCtr.node);
+    
+    viewer->nodes.push_back(null_node);
+    
+    self->pRender->viewers.push_back(viewer);
+    
+    [self attachToGCDQueue:^{
+        float frame = *((float*)pRender->metal_frame.buffer);
+        
+        cubeCtrl.node->local_transform.SIMD_MAT(0) = RotationX(frame * 0.1) * RotationY(frame * 0.1);
+        
+        
+        null_node->local_transform.SIMD_MAT(0) = RotationZ(frame * 0.1);
+        
+        cubeCtrl.node->local_transform.tape->evaluated = false;
+        null_node->local_transform.tape->evaluated = false;
+        
+    } withFPS:30];
+}
 
 -(void) computational_graphV2 {
     printf("\n--- SLICE ASSIGN TEST (METAL) ---\n");
