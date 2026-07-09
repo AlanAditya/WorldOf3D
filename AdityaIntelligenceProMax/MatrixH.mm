@@ -835,9 +835,7 @@ public:
 //            }
             if (leafNode) {
                 GlobalGPUManager.endCommandEncoding();
-                [GlobalGPUManager.gCommandBuffer commit];
-                [GlobalGPUManager.gCommandBuffer waitUntilCompleted];
-                GlobalGPUManager.gCommandBuffer = nil;
+                GlobalGPUManager.commitCommandBuffer();
             }
         }
 //        is_computed = true; // Mark as done so we don't calculate it twice
@@ -2272,8 +2270,8 @@ public:
             [commandEncoder endEncoding];
             [commandBuffer commit];
             [commandBuffer waitUntilCompleted];
-            GlobalGPUManager.gCommandBuffer = nil;
-            GlobalGPUManager.gCommandEncoder = nil;
+            GlobalGPUManager.setCommandBuffer(nil);
+            GlobalGPUManager.setCommandEncoder(nil);
         }
     }
     
@@ -12402,7 +12400,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
         cubeCtrl.node->local_transform.tape->evaluated = false;
         null_node->local_transform.tape->evaluated = false;
         
-    } withFPS:30];
+    } withFPS:120];
 }
 
 -(void) computational_graphV2 {

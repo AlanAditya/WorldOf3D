@@ -175,6 +175,9 @@ struct _3D_Editor: View {
                 .layoutPriority(1)
                 .onAppear {
 //                    let matrix = MatrixH<_CInt_1, CFloat>([1.0, 2.0, 3.0] as [CFloat])
+//                    let list: std.initializer_list<CUnsignedInt>
+//                    let mat = matrix.zeros(list)
+//                    mat.print()
                     
                     inteligence?.render_graph()
                     //                scrollEvent = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel ) { scroll in
