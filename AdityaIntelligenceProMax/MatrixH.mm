@@ -57,6 +57,7 @@ typedef uint16_t uint16;
 #include <mlx/mlx.h>
 #include <span>
 #import "matrix.h"
+#import "inputs/microphone.h"
 #include <random>
 #include <map>
 #include <utility>
@@ -75,6 +76,8 @@ typedef uint16_t uint16;
 #import <SwiftUI/SwiftUI.h>
 #include <atomic>
 #include "cpu_rasteriser.hpp"
+#include "SOPs/Viewer.cpp"
+#include "SOPs/Controllers.h"
 //#include "FaceLandmarkWrapper.h"
 //#include <mediapipe/mediapipe/framework/calculator_graph.h>
 
@@ -429,17 +432,17 @@ void fill_nd_iterative(
     }
 }
 
-enum class ConvMode : uint8_t {
-    Full = 0,
-    Valid = 1,
-    Same  = 2  // optional common mode
-};
-
-enum class ConvModeFull : uint8_t {
-    Normal = 0,
-    Extend = 1,
-    Mirror  = 2  // optional common mode
-};
+//enum class ConvMode : uint8_t {
+//    Full = 0,
+//    Valid = 1,
+//    Same  = 2  // optional common mode
+//};
+//
+//enum class ConvModeFull : uint8_t {
+//    Normal = 0,
+//    Extend = 1,
+//    Mirror  = 2  // optional common mode
+//};
 
 template <typename T, int dims>
 struct nested_initializer_list;
@@ -574,7 +577,8 @@ inline void setBufferOrBytes(id<MTLComputeCommandEncoder> commandEncoder,
                               const MatrixH<dimsB, Type>& tensor,
                               NSUInteger index)  {
     if (tensor.metalBuffer) {
-        [commandEncoder setBuffer:tensor.metalBuffer offset:0 atIndex:index];
+        NSUInteger offset = (uint8_t*)tensor.buffer - (uint8_t*)[tensor.metalBuffer contents];
+        [commandEncoder setBuffer:tensor.metalBuffer offset:offset atIndex:index];
     } else {
         size_t byteLength;
         if (tensor.flags & NON_CONTIGUOUS_FLAG) {
@@ -830,9 +834,10 @@ public:
 //                casted_tape->Mat1->BroadcastedAdd(*this, *casted_tape->Mat2);
 //            }
             if (leafNode) {
-                [GlobalGPUManager.gCommandEncoder endEncoding];
+                GlobalGPUManager.endCommandEncoding();
                 [GlobalGPUManager.gCommandBuffer commit];
                 [GlobalGPUManager.gCommandBuffer waitUntilCompleted];
+                GlobalGPUManager.gCommandBuffer = nil;
             }
         }
 //        is_computed = true; // Mark as done so we don't calculate it twice
@@ -2198,8 +2203,10 @@ public:
         }
 #endif
         id<MTLCommandBuffer> commandBuffer = GlobalGPUManager.getCommandBuffer();
+
 //        Blit fast path for the GPU. A compute shader (even a 1D one) requires the GPU's ALU execution units to run the copy loop. A Blit command skips the ALUs entirely and uses the GPU's direct memory access (DMA) engines to blast the bytes across VRAM. It is drastically faster.
         if (!(inMat.flags & NON_CONTIGUOUS_FLAG) && !(outMat.flags & NON_CONTIGUOUS_FLAG)) {
+            GlobalGPUManager.endCommandEncoding();
             id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
             [blitEncoder copyFromBuffer:inMat.metalBuffer
                            sourceOffset:offset * sizeof(Type)
@@ -2266,7 +2273,7 @@ public:
             [commandBuffer commit];
             [commandBuffer waitUntilCompleted];
             GlobalGPUManager.gCommandBuffer = nil;
-            GlobalGPUManager.gCommandEncoder=nil;
+            GlobalGPUManager.gCommandEncoder = nil;
         }
     }
     
@@ -2345,7 +2352,7 @@ public:
         }
     }
     
-    static std::pair<MatrixH<2 * dims, Type>, MatrixH<2 * dims, Type>> meshGrid(const MatrixH<dims, Type> X, const MatrixH<dims, Type> Y) {
+    static std::pair<MatrixH<2 * dims, Type>, MatrixH<2 * dims, Type>> meshGrid(const MatrixH<dims, Type>& X, const MatrixH<dims, Type>& Y) {
         
         MatrixH<2 * dims, Type> gridX;
         memcpy(gridX.shape, X.shape, dims * sizeof(size_m));
@@ -2390,7 +2397,7 @@ public:
         return std::make_pair(std::move(gridX), std::move(gridY));
     }
     
-    static std::tuple<MatrixH<3 * dims, Type>, MatrixH<3 * dims, Type>, MatrixH<3 * dims, Type>> meshGrid(const MatrixH<dims, Type> X, const MatrixH<dims, Type> Y,  const MatrixH<dims, Type> Z) {
+    static std::tuple<MatrixH<3 * dims, Type>, MatrixH<3 * dims, Type>, MatrixH<3 * dims, Type>> meshGrid(const MatrixH<dims, Type>& X, const MatrixH<dims, Type>& Y,  const MatrixH<dims, Type>& Z) {
         
         MatrixH<3 * dims, Type> gridX;
         memcpy(gridX.shape, X.shape, dims * sizeof(size_m));
@@ -3255,6 +3262,10 @@ public:
         }
         CFRelease(url);
         CFRelease(path);
+        
+        if (meta_out && source)
+            *meta_out = CGImageSourceCopyPropertiesAtIndex(source, 0, nullptr);
+        
         #endif
 
         #if TARGET_OS_IPHONE
@@ -3262,9 +3273,7 @@ public:
         CGImageRef cgImage = image.CGImage;
         #endif
 
-        if (meta_out && source)
-            *meta_out = CGImageSourceCopyPropertiesAtIndex(source, 0, nullptr);
-        
+
         if (!cgImage) {
             std::cerr << "Failed to create CGImage" << std::endl;
         }
@@ -4483,7 +4492,8 @@ public:
         MatrixH<dims, Type> output;
         memcpy(output.shape, shape, dims * sizeof(size_m));
         output.shape[axis] = 1;
-        output.total_size = output.accumul(0, dims-1);
+//        output.total_size = output.accumul(0, dims-1);
+        output.total_size = output.accumul(0, dims); // bug fix
         output.buffer = new Type[output.total_size];
         memset(output.buffer, 0, output.total_size * sizeof(Type));
         output.buildMetalBuffer();
@@ -5243,7 +5253,7 @@ public:
         // run 2: this is when the eval function
         if ((flags & COMPUTE_GRAPH) && execType != Execution::Encode) {
             result.flags |= COMPUTE_GRAPH;
-            result.refCount = new std::atomic<uint32>;
+            result.refCount = new std::atomic<uint32_t>;
             result.refCount->fetch_add(1);
             MatrixH<resultDims, Type> x = result.cloneDescription();
             x.flags = flags;
@@ -11724,6 +11734,8 @@ public:
 
 #import "SidePannel.h"
 #include "Algos/graph_visualiser.cpp"
+#include "Algos/graph_visualiserV2.cpp"
+
 
 //Xcode will find and link old .dylib files sitting anywhere in your project directory, even if they're not in "Link Binary With Libraries" or any build settings. This causes runtime symbol errors because it uses the old version instead of the one you explicitly linked.
 //Fix: Delete old dylib copies from your project directory. Xcode searches the project tree and picks up matching filenames automatically.
@@ -11776,18 +11788,53 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 -(void) NewEfficientApproachTester;
     -(void) iOS_Depth;
     -(void) computational_graph;
+    -(void) computational_graphV2;
     -(void) vec_field;
+    - (void)attachToGCDQueue:(void (^)(void))block withFPS:(float)fps;
+    - (void)attachContinuousLoop:(void (^)(void))block;
 - (void) EXR_CVE_EXPLOIT;
--(void) computational_graphV2;
+-(void) new_concurrancy_model;
+-(void) MicTesting1234;
+-(void) rendering_graph;
+
+@property (nonatomic, strong) NSMutableArray *activeTimers;
 @end
 
 @implementation Intelligence
 
 @synthesize pRender = pRender;
+
+- (void)attachToGCDQueue:(void (^)(void))block withFPS:(float)fps {
+    dispatch_queue_t queue = dispatch_queue_create("com.engine.compute", DISPATCH_QUEUE_SERIAL);
+    dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
+    
+    uint64_t interval = (uint64_t)((1.0 / fps) * NSEC_PER_SEC);
+    dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, 0), interval, 0);
+    dispatch_source_set_event_handler(timer, block);
+    dispatch_resume(timer);
+    
+    [_activeTimers addObject:timer];
+}
+
+- (void)attachContinuousLoop:(void (^)(void))block {
+    dispatch_queue_t queue = dispatch_queue_create("com.engine.heavycompute", DISPATCH_QUEUE_SERIAL);
+    
+    __block void (^recursiveTask)(void);
+    
+    recursiveTask = ^{
+        @autoreleasepool {
+            block(); 
+            dispatch_async(queue, recursiveTask);
+        }
+    };
+    
+    dispatch_async(queue, recursiveTask);
+}
 - (id)init:(CGRect)frameView1 {
     self = [super init];
     
     _components = [[NSMutableArray alloc] init];
+    _activeTimers = [[NSMutableArray alloc] init];
     
     UIComponent *slider = [[UIComponent alloc] init];
     slider.title = @"Brightness";
@@ -11853,7 +11900,10 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 
 
 }
+
+-(void) rendering_graph {
     
+}
 -(void) computational_graph {
 //    auto x = std::make_shared<MatrixH<1, float>>(
 //        MatrixH<1, float>::Range(0, {10})
@@ -11970,10 +12020,10 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     x.flags |= COMPUTE_GRAPH;
     y.flags |= COMPUTE_GRAPH;
     
-    x.refCount = new std::atomic<uint32>;
+    x.refCount = new std::atomic<uint32_t>;
     x.refCount->fetch_add(1);
     
-    y.refCount = new std::atomic<uint32>;
+    y.refCount = new std::atomic<uint32_t>;
     y.refCount->fetch_add(1);
 //    
 //    MTLCaptureManager *captureManager = [MTLCaptureManager sharedCaptureManager];
@@ -11999,44 +12049,421 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 }
 
 -(void) computational_graphV2 {
-    matrix a= matrix::repeating({3, 3}, {10, 12, 13});
-    matrix b= {1, 2, 3};
-    a.begin_refcount();
-    b.begin_refcount();
-    a.print();
-//    MTLCaptureManager *captureManager = [MTLCaptureManager sharedCaptureManager];
-//    MTLCaptureDescriptor *captureDescriptor = [[MTLCaptureDescriptor alloc] init];
-//    captureDescriptor.captureObject = GlobalGPUManager.metalDevice;
-//    
-//    NSError *error = nil;
-//    if (![captureManager startCaptureWithDescriptor:captureDescriptor error:&error]) {
-//        NSLog(@"Capture start failed: %@", error);
-//    }
-//    
-//    [GlobalGPUManager.gCommandEncoder endEncoding];
-//   
-//    GlobalGPUManager.gCommandQueue = [GlobalGPUManager.metalDevice newCommandQueue];
-//    GlobalGPUManager.gCommandBuffer = [GlobalGPUManager.gCommandQueue commandBuffer];
-//    GlobalGPUManager.gCommandEncoder = [GlobalGPUManager.gCommandBuffer computeCommandEncoder];
-    matrix c = (a+b) + b;
-    matrix d = c+c;
-//    d.tape->build_trace_metal(d);
-////    c.tape->execute_trace_metal(c);
-//    [GlobalGPUManager.gCommandEncoder endEncoding];
-//    [GlobalGPUManager.gCommandBuffer commit];
-//    [GlobalGPUManager.gCommandBuffer waitUntilCompleted];
-    d.compile_cpu();
-    d.execute_cpu();
+    printf("\n--- SLICE ASSIGN TEST (METAL) ---\n");
+    matrix lhs = matrix::zeros({4, 4}, dtype::Float);
+    matrix rhs = matrix::ones({2, 2}, dtype::Float) * 9.0f;
+    matrix out = lhs.slice_assign({R(1, 3), R(1, 3)}, rhs);
+    out.eval_metal();
+    printf("Slice Assign LHS [4x4], assigned RHS [2x2] of 9s at {1:3, 1:3}:\n");
+    out.print();
+
+    printf("\n--- SLICE ASSIGN TEST (CPU) ---\n");
+    matrix lhs_cpu = matrix::zeros({4, 4}, dtype::Float);
+    matrix rhs_cpu = matrix::ones({2, 2}, dtype::Float) * 5.0f;
+    matrix out_cpu = lhs_cpu.slice_assign({R(1, 3), R(1, 3)}, rhs_cpu);
+    out_cpu.eval_cpu();
+    printf("Slice Assign LHS [4x4], assigned RHS [2x2] of 5s at {1:3, 1:3}:\n");
+    out_cpu.print();
+
     
-//    matrix e = d+d;
-//    e.eval_cpu();
-//    e.print();
-//    GlobalGPUManager.gCommandBuffer = nil;
-//    GlobalGPUManager.gCommandEncoder = nil;
-//    [captureManager stopCapture];
-    c.print();
-    d.print();
-    visualise_graph(d);
+    printf("\n--- SUM GPU TEST ---\n");
+    matrix sum_in = matrix::of<float>({
+        1, 2, 3, 4,
+        5, 6, 7, 8,
+        9, 10, 11, 12,
+        13, 14, 15, 16,
+        17, 18, 19, 20
+    }).reshape(1, 5, 4);
+    sum_in.eval_cpu();
+    
+    matrix sum_out_0 = sum_in.sum(0, false);
+    sum_out_0.eval_metal();
+    printf("Sum Axis 0 (keepdims=false):\n");
+    sum_out_0.print();
+    
+    matrix sum_out_1 = sum_in.sum(1, true);
+    sum_out_1.eval_metal();
+    printf("Sum Axis 1 (keepdims=true):\n");
+    sum_out_1.print();
+    
+    matrix sum_out_2 = sum_in.sum(2, false);
+    sum_out_2.eval_metal();
+    printf("Sum Axis 2 (keepdims=false):\n");
+    sum_out_2.print();
+    printf("\n--- MEAN GPU TEST ---\n");
+    matrix mean_out_1 = sum_in.mean(1, false);
+    mean_out_1.eval_metal();
+    printf("Mean Axis 1 (keepdims=false):\n");
+    mean_out_1.print();
+    
+    matrix mean_out_2 = sum_in.mean(2, false);
+    mean_out_2.eval_metal();
+    printf("Mean Axis 2 (keepdims=false):\n");
+    mean_out_2.print();
+    
+    matrix mean_out_global = sum_in.mean();
+    mean_out_global.eval_metal();
+    printf("Global Mean:\n");
+    mean_out_global.print();
+
+    printf("\n--- RMS GPU TEST ---\n");
+    matrix rms_out_1 = sum_in.rms(1, false);
+    rms_out_1.eval_metal();
+    printf("RMS Axis 1 (keepdims=false):\n");
+    rms_out_1.print();
+    
+    matrix rms_out_2 = sum_in.rms(2, false);
+    rms_out_2.eval_metal();
+    printf("RMS Axis 2 (keepdims=false):\n");
+    rms_out_2.print();
+    
+    matrix rms_out_global = sum_in.rms();
+    rms_out_global.eval_metal();
+    printf("Global RMS:\n");
+    rms_out_global.print();
+
+
+    matrix a = matrix::repeating({3, 3}, {10, 12, 13});
+    matrix b = matrix::of<float>({0.5f, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11});
+    matrix c = matrix::of<float>({1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
+    matrix l1 = matrix::linespace(0.0f, 10.0f, 100);
+    l1.begin_refcount();
+    
+    matrix l1_sample = matrix::linespace(0.0f, 10.0f, 100);
+    
+    matrix l2 = 1.3 * l1;
+    l2.eval_cpu();
+    
+    auto loss = [&l1, &l2](matrix m) {
+        return (l1 * m - l2) * (l1 * m - l2) * 0.0005f;
+    };
+    
+    auto f = [&l1](matrix m) {
+        return l1 + m;
+    };
+    
+    auto jit_f = matrix::jit_graph_gpu(f, l1_sample);
+    matrix output = jit_f(l2);
+    output.eval_metal();
+    output.print();
+    
+    matrix output2 = jit_f(l1);
+    output2.eval_metal();
+    
+    output.print();
+    output2.print();
+    
+    matrix slope_sample = matrix::scalar(0.5f);
+    auto grad = matrix::grad_graph_gpu(loss, slope_sample);
+    
+    matrix slope = matrix::scalar(0.5f);
+    for (int i = 0; i < 5; i++) {
+        slope = slope - 0.05f * grad(slope);
+    }
+    slope.compile_metal();
+    
+    {
+        Timer time;
+        slope.execute_metal();
+    }
+//    slope.eval_metal();
+    visualise_graph_v2(slope);
+    
+//    l1.eval_cpu();
+    slope.print();
+//    slope.eval_cpu();
+//    slope.print();
+    
+    matrix axis = matrix::linespace(-10.0f, 10.0f, 100).unsqueeze(0);
+    axis.flatten().print();
+    matrix grid = axis * axis.T();
+    grid.print();
+    auto [X, Y] = matrix::meshgrid(axis.flatten(), axis.flatten());
+    X.print();
+    Y.print();
+    matrix img_channel2 = ((matrix::sin(X) + matrix::sin(Y)) * (matrix::sin(X) + matrix::sin(Y)) * (255.0f/2)).astype(dtype::UInt8);
+    
+    matrix img_channel = ((matrix::sin(grid) + 1) * (255.0f/2)).astype(dtype::UInt8);
+    matrix alpha_channel = matrix::repeating({100, 100}, matrix::scalar(255, dtype::UInt8));
+    alpha_channel.begin_refcount();
+    alpha_channel.buildMetalBuffer();
+    matrix img = matrix::stackGPU({img_channel2, img_channel2, img_channel2, alpha_channel}).T().astype(dtype::UInt8, true);
+    img.eval_metal();
+    img.clear_trace_checks();
+    
+    {
+        Timer time;
+        img.execute_metal();
+    }
+    pRender->offscreenTexture = img.ToMTLTexture();
+    
+    matrix s1 = {1.0f, 2.0f};
+    matrix o1 = matrix::concat({s1, s1});
+    o1.eval_cpu();
+    o1.print();
+    
+    matrix I1 = matrix::eye(3, dtype::Float);
+    matrix outp = I1.dot(I1);
+    outp.eval_metal();
+    outp.print();
+    
+    matrix A = {
+        {1.0f, 2.0f, 3.0f},
+        {4.0f, 5.0f, 6.0f}
+    };
+    
+    // B is a 3x2 matrix.
+    // We will let the dot product transpose it under the hood (transposeB=false)
+    matrix B = {
+        {7.0f,  8.0f},
+        {9.0f,  10.0f},
+        {11.0f, 12.0f}
+    };
+    
+    // Perform dot product
+    // Because transposeB is false by default, B will be transposed internally
+    // and your new .astype() check will guarantee it's contiguous!
+    matrix C = A.dot(B.T(), true);
+    C.eval_cpu();
+    C.print();
+    
+    // --- BATCHED MATMUL GPU TEST ---
+    matrix batchA = matrix::of<float>({
+        1, 2, 3, 4,   5, 6, 7, 8,   9, 10, 11, 12,
+        13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24
+    }).reshape(2, 3, 4);
+    
+    matrix batchB = matrix::of<float>({
+        1, 2,  3, 4,  5, 6,  7, 8,
+        9, 10, 11, 12, 13, 14, 15, 16
+    }).reshape(2, 4, 2);
+    
+    matrix batchC = batchA.dot(batchB);
+    batchC.eval_cpu();
+    batchC.print();
+
+    // --- SINGLE NEURON TEST ---
+    matrix X_nn = matrix::of<float>({
+        1.0f, -1.0f, 0.5f, 2.0f,
+        2.0f, 1.0f, -0.5f, 1.0f,
+        -1.0f, 2.0f, 1.5f, -2.0f
+    }).reshape(3, 4);
+    X_nn.eval_cpu();
+    matrix W_true = matrix::of<float>({2.0f, 1.0f, -0.5f, -1.0f}).reshape(4, 1);
+    W_true.eval_cpu();
+    matrix Y_true = X_nn.dot(W_true);
+    Y_true.eval_cpu(); 
+    
+    auto neuron_loss = [&X_nn, &Y_true](matrix W) {
+        matrix Y_pred = X_nn.dot(W);
+        matrix diff = Y_pred - Y_true;
+        return (diff * diff) * 0.05f;
+    };
+    
+    matrix W_learned_sample = matrix::of<float>({0.0f, 0.0f, 0.0f, 0.0f}).reshape(4, 1);
+    matrix W_learned = matrix::of<float>({0.0f, 0.0f, 0.0f, 0.0f}).reshape(4, 1);
+    
+    auto W_grad_fn = matrix::grad_graph_gpu(neuron_loss, W_learned_sample);
+    
+    
+    
+    for (int i = 0; i < 120; i++) {
+        matrix g = W_grad_fn(W_learned);
+        g.eval_metal();
+        g.print();
+        W_learned = W_learned - 0.05f * g;
+        
+        
+    }
+    W_learned.eval_metal();
+    
+    printf("\n--- SINGLE NEURON TRAINING RESULTS ---\n");
+    printf("True Weights:\n");
+    W_true.print();
+    printf("Learned Weights:\n");
+    W_learned.print();
+    
+
+
+    printf("\n--- MULTI HEAD COMPILE TEST ---\n");
+    auto multi_head_func = [](std::vector<matrix> inputs) -> std::vector<matrix> {
+        matrix& A = inputs[0];
+        matrix& B = inputs[1];
+        
+        matrix out1 = A.dot(B);        // output 0: Dot product
+        matrix out2 = A + B;           // output 1: Element-wise addition
+        matrix out3 = A * 2.0f;        // output 2: Scalar multiplication
+        
+        return {out1, out2, out3};
+    };
+
+    std::vector<matrix> samples = {
+        matrix::zeros({2, 2}, dtype::Float),
+        matrix::zeros({2, 2}, dtype::Float)
+    };
+
+    auto compiled_graph_mh = matrix::multi_jit_graph_gpu(multi_head_func, samples);
+
+    std::vector<matrix> actual_inputs = {
+        matrix::of<float>({1, 2, 3, 4}).reshape(2, 2),
+        matrix::of<float>({5, 6, 7, 8}).reshape(2, 2)
+    };
+
+    std::vector<matrix> outputs = compiled_graph_mh(actual_inputs);
+
+    printf("--- Evaluating First Output (Triggers execution of ALL outputs) ---\n");
+    outputs[0].eval_metal();
+    outputs[0].print();
+    
+    printf("--- Evaluating Second Output (Instantly fetches pre-computed buffer) ---\n");
+    outputs[1].eval_metal();
+    outputs[1].print();
+
+    printf("--- Evaluating Third Output (Instantly fetches pre-computed buffer) ---\n");
+    outputs[2].eval_metal();
+    outputs[2].print();
+
+
+    printf("\n--- MULTI-VARIABLE LINEAR REGRESSION TEST ---\n");
+    matrix X_lr = matrix::linespace(0.0f, 10.0f, 100);
+    
+    // True parameters
+    float m_true = 2.5f;
+    float c_true = -1.0f;
+    
+    // Y_true = m_true * X + c_true
+    matrix Y_true_lr = X_lr * m_true + c_true;
+    Y_true_lr.eval_cpu();
+    
+    auto multi_loss = [&X_lr, &Y_true_lr](std::vector<matrix> params) -> std::vector<matrix> {
+        matrix& m = params[0];
+        matrix& c = params[1];
+        
+        matrix Y_pred = (X_lr * m) + c;
+        matrix diff = Y_pred - Y_true_lr;
+        matrix mse = (diff * diff) * 0.005f; // scaling down for stable gradients
+        return {mse};
+    };
+    
+    std::vector<matrix> sample_params = {matrix::scalar(0.0f), matrix::scalar(0.0f)};
+    auto multi_grad_fn = matrix::grad_graph_gpu(multi_loss, sample_params);
+    
+    std::vector<matrix> learned_params = {matrix::scalar(0.0f), matrix::scalar(0.0f)};
+    
+    for (int i = 0; i < 10000; i++) {
+        std::vector<matrix> grads = multi_grad_fn(learned_params);
+        grads[0].eval_metal();
+        grads[1].eval_metal();
+        
+        learned_params[0] = learned_params[0] - 0.001f * grads[0];
+        learned_params[1] = learned_params[1] - 0.001f * grads[1];
+    }
+    {
+        Timer time;
+        learned_params[0].eval_metal();
+    }
+    {
+        Timer time;
+        learned_params[1].eval_metal();
+    }
+    
+    printf("True m: 2.5, True c: -1.0\n");
+    printf("Learned m:\n");
+    learned_params[0].print();
+    printf("Learned c:\n");
+    learned_params[1].print();
+    
+    printf("\n--- 1D CONVOLUTION GPU TEST ---\n");
+    // Input: [Batch, L, In_C] -> [1, 5, 4]
+    matrix conv_in = matrix::of<float>({
+        1, 2, 3, 4,
+        5, 6, 7, 8,
+        9, 10, 11, 12,
+        13, 14, 15, 16,
+        17, 18, 19, 20
+    }).reshape(1, 5, 4);
+    conv_in.eval_cpu();
+    
+    // Kernel: [Out_C, K_L, In_C/groups] -> [4, 3, 2] (groups=2)
+    matrix conv_ker = matrix::of<float>({
+        1, 1,   1, 1,   1, 1,   // Out_C 0 (Group 0)
+        2, 2,   2, 2,   2, 2,   // Out_C 1 (Group 0)
+        0, 1,   0, 1,   0, 1,   // Out_C 2 (Group 1)
+        1, 0,   1, 0,   1, 0    // Out_C 3 (Group 1)
+    }).reshape(4, 3, 2);
+    conv_ker.eval_cpu();
+    
+    matrix conv_out = matrix::conv1d(conv_in, conv_ker, 1, 1, 1, 2); // pad=1, str=1, dil=1, grp=2
+    conv_out.eval_metal();
+    
+    printf("Conv1D Output:\n");
+    conv_out.print();
+    
+    printf("\n--- 2D CONVOLUTION GPU TEST ---\n");
+    // Input: [Batch, H, W, In_C] -> [1, 3, 3, 2]
+    matrix conv2d_in = matrix::of<float>({
+        1,2,  3,4,  5,6,
+        7,8,  9,10, 11,12,
+        13,14, 15,16, 17,18
+    }).reshape(1, 3, 3, 2);
+    conv2d_in.eval_cpu();
+    
+    // Kernel: [Out_C, K_H, K_W, In_C/groups] -> [2, 2, 2, 2] (groups=1)
+    matrix conv2d_ker = matrix::of<float>({
+        // Out_C = 0
+        1,1, 1,1,
+        1,1, 1,1,
+        
+        // Out_C = 1
+        2,2, 2,2,
+        2,2, 2,2
+    }).reshape(2, 2, 2, 2);
+    conv2d_ker.eval_cpu();
+    
+    // pad_h, pad_w, stride_h, stride_w, dil_h, dil_w, groups
+    matrix conv2d_out = matrix::conv2d(conv2d_in, conv2d_ker, 0, 0, 1, 1, 1, 1, 1);
+    conv2d_out.eval_metal();
+    
+    printf("Conv2D Output:\n");
+    conv2d_out.print();
+
+    // --------------------------
+    printf("\n--- GENERIC ND CONVOLUTION GPU TEST ---\n");
+    // Input: [Batch, H, W, Channels] -> [1, 3, 3, 1]
+    matrix conv_nd_in = matrix::of<float>({
+        1, 2, 3,
+        4, 5, 6,
+        7, 8, 9
+    }).reshape(1, 3, 3, 1);
+    conv_nd_in.eval_cpu();
+
+    // Kernel: [Out_C, H, W, In_C] -> [1, 2, 2, 1]
+    matrix conv_nd_ker = matrix::of<float>({
+        1, 0,
+        0, 1
+    }).reshape(1, 2, 2, 1);
+    conv_nd_ker.eval_cpu();
+    
+    // Generic ND Conv: pad=[0,0], stride=[1,1], dilation=[1,1]
+    matrix conv_nd_out = matrix::conv(conv_nd_in, conv_nd_ker, {0, 0}, {1, 1}, {1, 1});
+    conv_nd_out.eval_metal();
+    
+    printf("Input shape: %d dims\n", conv_nd_in.dims);
+    printf("Kernel shape: %d dims\n", conv_nd_ker.dims);
+    printf("Output shape: %d dims\n", conv_nd_out.dims);
+    printf("Expected Output (2x2):\n6 8\n12 14\nActual:\n");
+    conv_nd_out.print();
+
+    printf("\n--- CLAMP GPU TEST ---\n");
+    matrix clamp_in = matrix::of<float>({1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f}).reshape(2, 3);
+    matrix clamp_out = clamp_in.clamp(2.5, 4.5);
+    clamp_out.eval_metal();
+    clamp_out.print();
+    
+    printf("\n--- GENERIC MAX GPU TEST ---\n");
+    matrix sample = matrix::linespace(0.0f, 100.0f, 1000);
+    matrix max_output = sample.max(0);
+    max_output.print();
     
 }
 
@@ -12238,7 +12665,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 //            [cap getDepth:halfZ];
 //            MatrixH<2, float> Z = (MatrixH<2, float>)(10.0f / halfZ);
             
-//            auto floatCol = (((MatrixH<3, float>)frame) / 255.0f).flatten<1>();
+//            auto floatCol = (((MatrixH<3, float>)frame) / 255.0f).flatten<1>();   
 //            auto points = MatrixH<2, float>::concatGPU_ID(X, Y, Z, 2).flatten<1>();
 //            pointCloud->updatePoints(points, floatCol);
         }

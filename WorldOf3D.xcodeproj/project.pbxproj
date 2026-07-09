@@ -1324,7 +1324,17 @@
 		ABD283252E4A51860065F44F /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Algos/graph_visualiser.cpp,
+				Algos/graph_visualiserV2.cpp,
+				Algos/linked_list_sum.cpp,
 				back.txt,
+				primitives.cpp,
+				SOPs/GeoNode.cpp,
+				SOPs/Viewer.cpp,
+				test_conv.cpp,
+				test_conv.mm,
+				test_grad.cpp,
+				TestTracer.cpp,
 			);
 			target = AB1BE7242D7DE4DB00D29037 /* AdityaIntelligenceProMax */;
 		};

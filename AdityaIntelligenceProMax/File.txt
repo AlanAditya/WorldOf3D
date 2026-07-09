@@ -1,0 +1,4 @@
+// matrix.h
+template <typename... Args>
+requires (std::convertible_to<Args, size_m> && ...)
+matrix reshape(Args... newShape);
