@@ -97,5 +97,13 @@ void visualise_graph(const matrix& output, const std::string& path = "") {
     std::cout << "Graph written to: " << outpath << std::endl;
 
     std::string cmd = "/opt/homebrew/bin/dot -Tpng " + outpath + " -o " + outpath + ".png && open " + outpath + ".png";
+#if TARGET_OS_IPHONE
+    // You cannot use std::system here.
+    // If you need to make a directory, download a file, or unzip something,
+    // you must use Apple's native APIs (like NSFileManager).
+    NSLog(@"Shell commands are blocked on iOS!");
+#else
+    // On macOS, you have a terminal, so this works perfectly!
     std::system(cmd.c_str());
+#endif
 }

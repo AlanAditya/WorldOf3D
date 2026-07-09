@@ -176,7 +176,7 @@ struct _3D_Editor: View {
                 .onAppear {
 //                    let matrix = MatrixH<_CInt_1, CFloat>([1.0, 2.0, 3.0] as [CFloat])
                     
-                    inteligence?.vec_field()
+                    inteligence?.computational_graphV2()
                     //                scrollEvent = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel ) { scroll in
                     //                    inteligence!.updateCam(CGSize(width: scroll.scrollingDeltaX, height: scroll.scrollingDeltaY), TransformationMode.Translate, 1)
                     //                    return scroll
