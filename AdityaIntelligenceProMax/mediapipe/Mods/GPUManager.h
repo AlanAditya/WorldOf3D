@@ -283,7 +283,7 @@ public:
     }
     void commitCommandBuffer() {
         [getCommandBuffer() commit];
-        [getCommandBuffer() waitUntilCompleted];
+//        [getCommandBuffer() waitUntilCompleted];
         setCommandBuffer(nil);
     }
     
