@@ -17,8 +17,8 @@
 //            Slider(value: $R, in: 0...1)
 //            Slider(value: $G, in: 0...1)
 //            Slider(value: $B, in: 0...1)
-//            MTKViewWrapper(intel: inteligence!, viewNo: 1)
-//            MTKViewWrapper(intel: inteligence!, viewNo: 2)
+//            MTKViewWrapper(intel: inteligence, viewNo: 1)
+//            MTKViewWrapper(intel: inteligence, viewNo: 2)
 //        }
 //        .onAppear {
 //            

@@ -8,47 +8,47 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State var inteligence = Intelligence(CGRect(x: 0, y: 0, width: 300, height: 300))
+    @StateObject var inteligence = Intelligence(CGRect(x: 0, y: 0, width: 300, height: 300))
     @State var oldDrag: CGSize = .zero
     @State var panDrag: CGSize = .zero
     var body: some View {
         VStack {
             
-            MTKViewWrapper(intel: inteligence!, viewNo: 1)
+            MTKViewWrapper(intel: inteligence, viewNo: 1)
 //                .gesture(DragGesture().onChanged { value in
 //                    print(value.translation)
-//                    inteligence!.updateCam(value.translation, TransformationMode.Orbit);
+//                    inteligence.updateCam(value.translation, TransformationMode.Orbit);
 //                })
                 .gesture(DragGesture()
                     .onChanged { value in
                         
-                        inteligence!.updateCam(CGSize(width: ((value.translation.width - oldDrag.width) / 1.0), height: ((value.translation.height - oldDrag.height) / 1.0)), TransformationMode.Orbit, 1)
+                        inteligence.updateCam(CGSize(width: ((value.translation.width - oldDrag.width) / 1.0), height: ((value.translation.height - oldDrag.height) / 1.0)), TransformationMode.Orbit, 1)
                         oldDrag = value.translation
                     }
                     .onEnded { _ in
                         oldDrag = .zero
-                        inteligence!.updateCamOLD(1)
+                        inteligence.updateCamOLD(1)
                     })
                 .gesture(MagnificationGesture().onChanged { value in
                     print("Zoom scale: \(value)")
-                    inteligence!.updateCam(CGSize(width: value, height: value), TransformationMode.Zoom, 1)
+                    inteligence.updateCam(CGSize(width: value, height: value), TransformationMode.Zoom, 1)
                 }
                 .onEnded({_ in
                     print("Zoom endereço:")
-                    inteligence!.updateCamOLD(1);
+                    inteligence.updateCamOLD(1);
                 }))
 //                .overlay(
 //                    TwoFingerPanGesture { translation in
 //                        print("Two-finger pan translation: \(translation)")
 //                        // Call your updateCam with the pan transformation
-//                        inteligence!.updateCam(CGSize(width: translation.x, height: translation.y), TransformationMode.Translate)
+//                        inteligence.updateCam(CGSize(width: translation.x, height: translation.y), TransformationMode.Translate)
 //                    }
 //                )
-            MTKViewWrapper(intel: inteligence!, viewNo: 2)
+            MTKViewWrapper(intel: inteligence, viewNo: 2)
 
         }
         .onAppear {
-            inteligence!.memoryTestLogic()
+            inteligence.memoryTestLogic()
         }
         .padding()
     }

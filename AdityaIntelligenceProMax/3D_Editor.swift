@@ -158,8 +158,10 @@ struct NStoSwift: UIViewRepresentable {
     }
 }
 #endif
+extension Intelligence: ObservableObject {}
+
 struct _3D_Editor: View {
-    @State var inteligence = Intelligence(CGRect(x: 0, y: 0, width: 300, height: 300))
+    @StateObject var inteligence = Intelligence(CGRect(x: 0, y: 0, width: 300, height: 300))
     @State var oldDrag: CGSize = .zero
     @State var panDrag: CGSize = .zero
     @State var scrollEvent: Any?
@@ -167,21 +169,24 @@ struct _3D_Editor: View {
     @State var pressedKeys = Set<UInt16>()
     @State var cameraTimer: NSObject? = nil
     @State var pos: CGFloat = 0
+    static var hasAppeared = false
     var body: some View {
         #if os(macOS)
         HSplitView {
-//            MTKViewWrapper(intel: inteligence!, viewNo: 2)
-            MTKViewWrapper(intel: inteligence!, viewNo: 1)
+//            MTKViewWrapper(intel: inteligence, viewNo: 2)
+            MTKViewWrapper(intel: inteligence, viewNo: 1)
                 .layoutPriority(1)
                 .onAppear {
+                    guard !Self.hasAppeared else { return }
+                    Self.hasAppeared = true
 //                    let matrix = MatrixH<_CInt_1, CFloat>([1.0, 2.0, 3.0] as [CFloat])
 //                    let list: std.initializer_list<CUnsignedInt>
 //                    let mat = matrix.zeros(list)
 //                    mat.print()
-                    
-                    inteligence?.render_graph()
+                    print("BBBB")
+                    inteligence.inverse_finder()
                     //                scrollEvent = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel ) { scroll in
-                    //                    inteligence!.updateCam(CGSize(width: scroll.scrollingDeltaX, height: scroll.scrollingDeltaY), TransformationMode.Translate, 1)
+                    //                    inteligence.updateCam(CGSize(width: scroll.scrollingDeltaX, height: scroll.scrollingDeltaY), TransformationMode.Translate, 1)
                     //                    return scroll
                     //                }
                     //                NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
@@ -209,16 +214,16 @@ struct _3D_Editor: View {
                     ////                keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
                     ////                    switch event.keyCode {
                     ////                    case 123:
-                    ////                        inteligence!.updateCam(CGSize(width: -10, height: 0), TransformationMode.Translate)
+                    ////                        inteligence.updateCam(CGSize(width: -10, height: 0), TransformationMode.Translate)
                     ////                        return nil
                     ////                    case 124:
-                    ////                        inteligence!.updateCam(CGSize(width: 10, height: 0), TransformationMode.Translate)
+                    ////                        inteligence.updateCam(CGSize(width: 10, height: 0), TransformationMode.Translate)
                     ////                        return nil
                     ////                    case 125:
-                    ////                        inteligence!.updateCam(CGSize(width: 0, height: 10), TransformationMode.Translate)
+                    ////                        inteligence.updateCam(CGSize(width: 0, height: 10), TransformationMode.Translate)
                     ////                        return nil
                     ////                    case 126:
-                    ////                        inteligence!.updateCam(CGSize(width: 0, height: -10), TransformationMode.Translate)
+                    ////                        inteligence.updateCam(CGSize(width: 0, height: -10), TransformationMode.Translate)
                     ////                        return nil
                     ////                    default:
                     ////                        break
@@ -228,8 +233,8 @@ struct _3D_Editor: View {
                 }
             VSplitView {
                 
-                NStoSwift(nsView: inteligence!.sidePanel.view)
-                ControlPanel(intel: inteligence!)
+                NStoSwift(nsView: inteligence.sidePanel.view)
+                ControlPanel(intel: inteligence)
                     .frame(minWidth: 220, maxWidth: .infinity)
                     .compositingGroup()
                 
@@ -240,12 +245,14 @@ struct _3D_Editor: View {
         }
 #endif
 #if os(iOS)
-MTKViewWrapper(intel: inteligence!, viewNo: 1)
+MTKViewWrapper(intel: inteligence, viewNo: 1)
     .layoutPriority(1)
     .onAppear {
+        guard !Self.hasAppeared else { return }
+        Self.hasAppeared = true
         //                    let matrix = MatrixH<_CInt_1, CFloat>([1.0, 2.0, 3.0] as [CFloat])
         
-        inteligence?.iOS_Depth()
+        inteligence?.micTesting1234()
     }
 #endif
     }
