@@ -77,7 +77,7 @@ typedef uint16_t uint16;
 #include <atomic>
 #include "cpu_rasteriser.hpp"
 #include "SOPs/Viewer.cpp"
-#include "SOPs/Controllers.h"
+#include "SOPs/Controllers.cpp"
 #include "SOPs/PlotterViewer.h"
 #include "SOPs/GraphViewer.cpp"
 //#include "FaceLandmarkWrapper.h"
@@ -10647,7 +10647,7 @@ struct Assets {
         id<MTLRenderPipelineState> MeshPointCloudRenderPipelineState;
         id<MTLLibrary> library;
         NSMutableArray<id<MTLRenderPipelineState>>* customRenderPipelineStates;
-        id<MTLRenderPipelineState> predefinedRenderPipelineState[4];
+        id<MTLRenderPipelineState> predefinedRenderPipelineState[7];
         size_t width;
         size_t height;
         uint8_t sampleCount;
@@ -10667,6 +10667,7 @@ struct Assets {
         std::vector<std::function<bool(drag_info&)>> drag_event_subscribers;
         std::vector<std::shared_ptr<Viewer>> viewers;
         matrix metal_frame;
+        uint32_t view_num;
     }
 
 //@property std::vector<Shape<uint16>> objectQueue;
@@ -10875,6 +10876,95 @@ struct Assets {
     predefinedRenderPipelineState[2] = BillboardNodeRenderPipelineState;
     predefinedRenderPipelineState[3] = DAGRenderPipelineState;
     
+    id<MTLFunction> DAGLineVertexFunc = [library newFunctionWithName:@"vertex_line3d"];
+    id<MTLFunction> DAGLineFragmentFunc = [library newFunctionWithName:@"fragment_line3d"];
+    if (!DAGLineVertexFunc) {
+        // Fallback for runtime compilation if file is not in Xcode target yet
+        NSString* path = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"DAGShaders.metal"];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            path = @"DAGShaders.metal";
+        }
+        NSString* src = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:&error];
+        if (src) {
+            id<MTLLibrary> dynLib = [metalDevice newLibraryWithSource:src options:nil error:&error];
+            DAGLineVertexFunc = [dynLib newFunctionWithName:@"vertex_line3d"];
+            DAGLineFragmentFunc = [dynLib newFunctionWithName:@"fragment_line3d"];
+        }
+    }
+    
+    MTLRenderPipelineDescriptor *dagLine_Desc = [[MTLRenderPipelineDescriptor alloc] init];
+    [[dagLine_Desc colorAttachments][0] setPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
+    // Enable blending for DAGLine
+    [[dagLine_Desc colorAttachments][0] setBlendingEnabled:YES];
+    [[dagLine_Desc colorAttachments][0] setSourceRGBBlendFactor:MTLBlendFactorSourceAlpha];
+    [[dagLine_Desc colorAttachments][0] setDestinationRGBBlendFactor:MTLBlendFactorOneMinusSourceAlpha];
+    [dagLine_Desc setVertexDescriptor:nil]; // pure array buffer access
+    [dagLine_Desc setVertexFunction:DAGLineVertexFunc];
+    [dagLine_Desc setFragmentFunction:DAGLineFragmentFunc];
+    [dagLine_Desc setDepthAttachmentPixelFormat:MTLPixelFormatDepth16Unorm];
+    [dagLine_Desc setRasterSampleCount:sampleCount];
+    id<MTLRenderPipelineState> DAGLineRenderPipelineState = [metalDevice newRenderPipelineStateWithDescriptor:dagLine_Desc error:&error];
+
+    predefinedRenderPipelineState[4] = DAGLineRenderPipelineState;
+    
+    id<MTLFunction> DAGPointCloudVertexFunc = [library newFunctionWithName:@"vertex_dag_pointcloud"];
+    id<MTLFunction> DAGPointCloudFragmentFunc = [library newFunctionWithName:@"fragment_dag_pointcloud"];
+    if (!DAGPointCloudVertexFunc) {
+        // Fallback for runtime compilation if file is not in Xcode target yet
+        NSString* path = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"DAGShaders.metal"];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            path = @"DAGShaders.metal";
+        }
+        NSString* src = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:&error];
+        if (src) {
+            id<MTLLibrary> dynLib = [metalDevice newLibraryWithSource:src options:nil error:&error];
+            DAGPointCloudVertexFunc = [dynLib newFunctionWithName:@"vertex_dag_pointcloud"];
+            DAGPointCloudFragmentFunc = [dynLib newFunctionWithName:@"fragment_dag_pointcloud"];
+        }
+    }
+    
+    MTLRenderPipelineDescriptor *dagPointCloud_Desc = [[MTLRenderPipelineDescriptor alloc] init];
+    [[dagPointCloud_Desc colorAttachments][0] setPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
+    [[dagPointCloud_Desc colorAttachments][0] setBlendingEnabled:YES];
+    [[dagPointCloud_Desc colorAttachments][0] setSourceRGBBlendFactor:MTLBlendFactorSourceAlpha];
+    [[dagPointCloud_Desc colorAttachments][0] setDestinationRGBBlendFactor:MTLBlendFactorOneMinusSourceAlpha];
+    [dagPointCloud_Desc setVertexDescriptor:nil]; // pure array buffer access
+    [dagPointCloud_Desc setVertexFunction:DAGPointCloudVertexFunc];
+    [dagPointCloud_Desc setFragmentFunction:DAGPointCloudFragmentFunc];
+    [dagPointCloud_Desc setDepthAttachmentPixelFormat:MTLPixelFormatDepth16Unorm];
+    [dagPointCloud_Desc setRasterSampleCount:sampleCount];
+    id<MTLRenderPipelineState> DAGPointCloudRenderPipelineState = [metalDevice newRenderPipelineStateWithDescriptor:dagPointCloud_Desc error:&error];
+    
+    predefinedRenderPipelineState[5] = DAGPointCloudRenderPipelineState;
+    
+    id<MTLFunction> DAGEdgeVertexFunc = [library newFunctionWithName:@"vertex_edge3d"];
+    id<MTLFunction> DAGEdgeFragmentFunc = [library newFunctionWithName:@"fragment_edge3d"];
+    if (!DAGEdgeVertexFunc) {
+        NSString* path = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"DAGShaders.metal"];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            path = @"DAGShaders.metal";
+        }
+        NSString* src = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:&error];
+        if (src) {
+            id<MTLLibrary> dynLib = [metalDevice newLibraryWithSource:src options:nil error:&error];
+            DAGEdgeVertexFunc = [dynLib newFunctionWithName:@"vertex_edge3d"];
+            DAGEdgeFragmentFunc = [dynLib newFunctionWithName:@"fragment_edge3d"];
+        }
+    }
+    
+    MTLRenderPipelineDescriptor *dagEdge_Desc = [[MTLRenderPipelineDescriptor alloc] init];
+    [[dagEdge_Desc colorAttachments][0] setPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
+    [[dagEdge_Desc colorAttachments][0] setBlendingEnabled:YES];
+    [[dagEdge_Desc colorAttachments][0] setSourceRGBBlendFactor:MTLBlendFactorSourceAlpha];
+    [[dagEdge_Desc colorAttachments][0] setDestinationRGBBlendFactor:MTLBlendFactorOneMinusSourceAlpha];
+    [dagEdge_Desc setVertexDescriptor:nil]; // pure array buffer access
+    [dagEdge_Desc setVertexFunction:DAGEdgeVertexFunc];
+    [dagEdge_Desc setFragmentFunction:DAGEdgeFragmentFunc];
+    [dagEdge_Desc setDepthAttachmentPixelFormat:MTLPixelFormatDepth16Unorm];
+    [dagEdge_Desc setRasterSampleCount:sampleCount];
+    id<MTLRenderPipelineState> DAGEdgeRenderPipelineState = [metalDevice newRenderPipelineStateWithDescriptor:dagEdge_Desc error:&error];
+    
+    predefinedRenderPipelineState[6] = DAGEdgeRenderPipelineState;
     
     cam = Camera3D();
     auto A = MatrixH<1, uint8_t>({1, 0, 0, 0});
@@ -11351,19 +11441,137 @@ struct Assets {
         bool isActiveView;
         simd_float4 intPointInWorldSpaceOld;
         bool updatedOldRay;
+        std::shared_ptr<Viewer> debug_view;
+        QuadController debug_quad_controller;
 }
 
 
 
 @property (nonatomic, strong) NSMutableSet<NSNumber *> *pressedKeys;
 @property (nonatomic, strong) NSTimer *cameraTimer;
-
+@property (nonatomic, strong) NSTrackingArea* trackingArea;
 
 
 @end
 
+std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_float2 view_coords, simd_float2 view_bounds, Camera3D& cam) {
+    // Returns Ray origin , Ray direction, event location in view [-1.0f, 1.0f] (metal style coord)
+    simd_float2 metal_coords = (2 * view_coords / view_bounds) - 1;
+    simd_float4 metal_screen_space_coords_p1 = simd_make_float4(metal_coords.x, metal_coords.y, 0, 1);
+    simd_float4 metal_screen_space_coords_p2 = simd_make_float4(metal_coords.x, metal_coords.y, 1, 1);
+    simd_float4x4 invViewProj = simd_mul(cam.inverseViewMatrix, cam.inverseProjectionMatrix);
+    
+    //: Alternate Approach (causes float instability in p2 due to pre pultiplication of farP)
+//    simd_float4 metal_view_space_coords_p1 = simd_mul(renderer->cam.inverseProjectionMatrix, metal_screen_space_coords_p1* cam.nearP);
+//    simd_float4 metal_view_space_coords_p2 = simd_mul(renderer->cam.inverseProjectionMatrix, metal_screen_space_coords_p2* cam.farP);
+//    
+//    simd_float4 metal_world_space_coords_p1 = simd_mul(renderer->cam.inverseViewMatrix, metal_view_space_coords_p1);
+//    simd_float4 metal_world_space_coords_p2 = simd_mul(renderer->cam.inverseViewMatrix, metal_view_space_coords_p2);
+//    
+//    simd_float4 metal_world_space_coords_direct_p1 = simd_mul(invViewProj, metal_screen_space_coords_p1* cam.nearP);
+//    simd_float4 metal_world_space_coords_direct_p2 = simd_mul(invViewProj, metal_screen_space_coords_p2* cam.farP);
+    
+    
+    simd_float4 world_p1_homo = simd_mul(invViewProj, metal_screen_space_coords_p1);
+    simd_float4 world_p2_homo = simd_mul(invViewProj, metal_screen_space_coords_p2);
+    
+    // 4. THE CRITICAL STEP: Perspective Divide (Divide by W)
+    simd_float3 world_p1 = simd_make_float3(world_p1_homo.x / world_p1_homo.w,
+                                            world_p1_homo.y / world_p1_homo.w,
+                                            world_p1_homo.z / world_p1_homo.w);
+                                            
+    simd_float3 world_p2 = simd_make_float3(world_p2_homo.x / world_p2_homo.w,
+                                                world_p2_homo.y / world_p2_homo.w,
+                                                world_p2_homo.z / world_p2_homo.w);
+    
+    
+    
+    simd_float3 ray_origin = world_p1;
+    simd_float3 ray_direction = (world_p2 - world_p1);
+    return {ray_origin, ray_direction, metal_coords};
+}
+
+//simd_float3 ray_plane_dir(simd_float3 ray_origin, simd_float3 ray_dir, simd_float3 plane_norm, simd_float3 plane_point) {
+//    // r.n = d
+//    // r = bt + c
+//    
+//    // (bt+c).n = d
+//    // t = (d - c.n) / (b.n)
+//    float d = simd_dot(plane_point, plane_norm);
+//    float t = ( d - simd_dot(ray_origin, plane_norm) )/ simd_dot(ray_dir, plane_norm);
+//    return t * ray_dir + ray_origin;
+//}
+//
+//simd_float3 plane_norm(simd_float3 p1, simd_float3 p2, simd_float3 p3) {
+//    return simd_cross(p2-p1, p3-p1);
+//}
+//
+//bool point_inside_triangle(simd_float3 p, simd_float3 p1, simd_float3 p2, simd_float3 p3) {
+//    simd_float3 e1 = p2-p1;
+//    simd_float3 e2 = p3-p2;
+//    simd_float3 e3 = p1-p3;
+//    
+//    simd_float3 m1 = p-p1;
+//    simd_float3 m2 = p-p2;
+//    simd_float3 m3 = p-p3;
+//    
+//    simd_float3 c1 = simd_cross(e1, m1);
+//    simd_float3 c2 = simd_cross(e2, m2);
+//    simd_float3 c3 = simd_cross(e3, m3);
+//    
+//    simd_float3 n = simd_cross(e1, e2); // triangle's normal, for reference orientation
+//
+//    float d1 = simd_dot(c1, n);
+//    float d2 = simd_dot(c2, n);
+//    float d3 = simd_dot(c3, n);
+//
+//    return (d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0);
+//}
+
 @implementation MyMetalView
 
+-(void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (self.trackingArea) {
+        [self removeTrackingArea:self.trackingArea];
+    }
+    NSLog(@"updateTrackingAreas called, bounds = %@", NSStringFromRect(self.bounds));
+    NSTrackingAreaOptions options = (NSTrackingMouseMoved | NSTrackingActiveInKeyWindow | NSTrackingInVisibleRect);
+    self.trackingArea = [[NSTrackingArea alloc] initWithRect:self.bounds options:options owner:self userInfo:nil];
+    [self addTrackingArea:self.trackingArea];
+}
+-(void) mouseMoved:(NSEvent *)event {
+    NSPoint locationInWindow = event.locationInWindow;
+    NSPoint locationInView = [self convertPoint:locationInWindow fromView:nil];
+    
+    if (locationInView.x < 0 || locationInView.y < 0 || locationInView.x > self.bounds.size.width || locationInView.y > self.bounds.size.height) {
+        return;
+    }
+    
+    Renderer *renderer = (Renderer *)self.delegate;
+    Camera3D& cam = renderer->cam;
+    if (renderer->view_num != 0)
+        return;
+    // location in view (0, width) (0, height)
+    simd_float2 view_coords = simd_make_float2(locationInView.x, locationInView.y);
+    simd_float2 view_bounds = simd_make_float2(self.bounds.size.width, self.bounds.size.height);
+    
+    auto [ray_origin, ray_direction, pos] = ray_from_screen_space(view_coords, view_bounds, cam);
+    debug_quad_controller.update(ray_direction, ray_origin, 0.1);
+    
+    ViewerEvent viewer_event;
+    viewer_event.type = MouseEvent::Hover;
+    viewer_event.zoom_magnitude = 0.0f;
+    viewer_event.ray_origin = ray_origin;
+    viewer_event.ray_dir = ray_direction;
+    
+    for (int i = 0; i < renderer->viewers.size(); i++) {
+        if (renderer->viewers[i]->handle_event(viewer_event)) {
+            return; // Event consumed
+        }
+    }
+    
+}
 
 - (BOOL)acceptsFirstResponder {
     return YES;
@@ -11383,6 +11591,10 @@ struct Assets {
         #endif
         shiftPressed = false;
         isActiveView = true;
+        debug_view = std::make_shared<Viewer>();
+        debug_quad_controller = QuadController("Rayy");
+        debug_quad_controller.node->material.colors = {0.0f, 0.0f, 1.0f, 1.0f};
+        debug_view->nodes.push_back(debug_quad_controller.node);
     }
     return self;
 }
@@ -11515,6 +11727,30 @@ struct Assets {
     Renderer *renderer = (Renderer *)self.delegate;
     
     NSPoint mouseLocation = [self convertPoint:[event locationInWindow] fromView:nil];
+    simd_float2 view_coords = simd_make_float2(mouseLocation.x, mouseLocation.y);
+    simd_float2 view_bounds = simd_make_float2(self.bounds.size.width, self.bounds.size.height);
+    
+    auto [ray_origin, ray_direction, pos] = ray_from_screen_space(view_coords, view_bounds, renderer->cam);
+    
+    simd_float2 prev_view_coords = simd_make_float2(mouseLocation.x - deltaX, mouseLocation.y + deltaY);
+    auto [prev_ray_origin, prev_ray_direction, prev_pos] = ray_from_screen_space(prev_view_coords, view_bounds, renderer->cam);
+    
+    ViewerEvent viewer_event;
+    viewer_event.type = MouseEvent::Drag;
+    viewer_event.normalized_pos = pos;
+    viewer_event.delta = simd_make_float2(deltaX, deltaY);
+    viewer_event.zoom_magnitude = 0.0f;
+    viewer_event.ray_origin = ray_origin;
+    viewer_event.ray_dir = ray_direction;
+    viewer_event.prev_ray_origin = prev_ray_origin;
+    viewer_event.prev_ray_dir = prev_ray_direction;
+    
+    for (int i = 0; i < renderer->viewers.size(); i++) {
+        if (renderer->viewers[i]->handle_event(viewer_event)) {
+            return; // Event consumed
+        }
+    }
+    
     simd_float2 currentMousePos = simd_make_float2((mouseLocation.x / self.frame.size.width), (mouseLocation.y / self.frame.size.height));
     simd_float4 currentMouseDrag = simd_make_float4((deltaX / (float)self.frame.size.width), (-deltaY / (float)self.frame.size.height), 0, 1);
 //    
@@ -11560,9 +11796,35 @@ struct Assets {
 }
 
 - (void)scrollWheel:(NSEvent *)event {
-    float deltaY = event.scrollingDeltaY;
+    float deltaY = -event.scrollingDeltaY;
     float deltaX = event.scrollingDeltaX;
     Renderer *renderer = (Renderer *)self.delegate;
+    
+    NSPoint mouseLocation = [self convertPoint:[event locationInWindow] fromView:nil];
+    simd_float2 view_coords = simd_make_float2(mouseLocation.x, mouseLocation.y);
+    simd_float2 view_bounds = simd_make_float2(self.bounds.size.width, self.bounds.size.height);
+    
+    auto [ray_origin, ray_direction, pos] = ray_from_screen_space(view_coords, view_bounds, renderer->cam);
+    
+    simd_float2 prev_view_coords = simd_make_float2(mouseLocation.x - deltaX, mouseLocation.y - deltaY);
+    auto [prev_ray_origin, prev_ray_direction, prev_pos] = ray_from_screen_space(prev_view_coords, view_bounds, renderer->cam);
+    
+    ViewerEvent viewer_event;
+    viewer_event.type = MouseEvent::Scroll;
+    viewer_event.normalized_pos = pos;
+    viewer_event.delta = simd_make_float2(deltaX, deltaY);
+    viewer_event.zoom_magnitude = 0.0f;
+    viewer_event.ray_origin = ray_origin;
+    viewer_event.ray_dir = ray_direction;
+    viewer_event.prev_ray_origin = prev_ray_origin;
+    viewer_event.prev_ray_dir = prev_ray_direction;
+    
+    for (int i = 0; i < renderer->viewers.size(); i++) {
+        if (renderer->viewers[i]->handle_event(viewer_event)) {
+            return;
+        }
+    }
+    
     renderer->cam.handleMouseEvents(deltaX, deltaY, NO, NO, TransformationMode::Translate);
 }
 
@@ -11658,6 +11920,7 @@ struct Assets {
 
 - (void)viewDidMoveToWindow {
     [super viewDidMoveToWindow];
+    [self.window setAcceptsMouseMovedEvents:YES];
     [self.window makeFirstResponder:self];
 
     NSMagnificationGestureRecognizer *mag = [[NSMagnificationGestureRecognizer alloc]
@@ -11669,6 +11932,30 @@ struct Assets {
     float magnification = gesture.magnification;  // e.g., +0.05 for slight zoom-in
 
     Renderer *renderer = (Renderer *)self.delegate;
+    
+    NSPoint mouseLocation = [gesture locationInView:self];
+    simd_float2 view_coords = simd_make_float2(mouseLocation.x, mouseLocation.y);
+    simd_float2 view_bounds = simd_make_float2(self.bounds.size.width, self.bounds.size.height);
+    
+    auto [ray_origin, ray_direction, pos] = ray_from_screen_space(view_coords, view_bounds, renderer->cam);
+    
+    ViewerEvent viewer_event;
+    viewer_event.type = MouseEvent::Zoom;
+    viewer_event.normalized_pos = pos;
+    viewer_event.delta = simd_make_float2(0.0f, 0.0f);
+    viewer_event.zoom_magnitude = magnification;
+    viewer_event.ray_origin = ray_origin;
+    viewer_event.ray_dir = ray_direction;
+    viewer_event.prev_ray_origin = ray_origin;
+    viewer_event.prev_ray_dir = ray_direction;
+    
+    for (int i = 0; i < renderer->viewers.size(); i++) {
+        if (renderer->viewers[i]->handle_event(viewer_event)) {
+            gesture.magnification = 0.0;
+            return;
+        }
+    }
+    
     if (renderer) {
         renderer->cam.handleMouseEvents(1+magnification, 1+magnification, NO, NO, TransformationMode::Zoom);
     }
@@ -11716,7 +12003,30 @@ struct Assets {
 //        renderer->cam.handleMouseEvents(deltaX, -deltaY, NO, isShift, TransformationMode::Orbit);
 //    }
 //}
+-(void) mouseDown:(NSEvent *)event {
+    Renderer *renderer = (Renderer *)self.delegate;
+    
+    NSPoint mouseLocation = [self convertPoint:[event locationInWindow] fromView:nil];
+    simd_float2 view_coords = simd_make_float2(mouseLocation.x, mouseLocation.y);
+    simd_float2 view_bounds = simd_make_float2(self.bounds.size.width, self.bounds.size.height);
+    
+    auto [ray_origin, ray_direction, pos] = ray_from_screen_space(view_coords, view_bounds, renderer->cam);
+    
+    
+    ViewerEvent viewer_event;
+    viewer_event.type = MouseEvent::Tap;
+    viewer_event.normalized_pos = pos;
+    viewer_event.zoom_magnitude = 0.0f;
+    viewer_event.ray_origin = ray_origin;
+    viewer_event.ray_dir = ray_direction;
 
+    
+    for (int i = 0; i < renderer->viewers.size(); i++) {
+        if (renderer->viewers[i]->handle_event(viewer_event)) {
+            return; // Event consumed
+        }
+    }
+}
 
 
 
@@ -11946,8 +12256,8 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 @property (nonatomic) float Blue;
 @property (nonatomic) float Green;
 
-@property (nonatomic, strong) MTKView *view1;
-@property (nonatomic, strong) MTKView *view2;
+@property (nonatomic, strong) MyMetalView *view1;
+@property (nonatomic, strong) MyMetalView *view2;
 @property (nonatomic, strong) SidePannel* sidePanel;
 @property (strong, nonatomic) AVPlayer *player;
 @property (nonatomic, strong) NSMutableArray<UIComponent *> *components;
@@ -12051,17 +12361,21 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     [_view1 setDepthStencilPixelFormat:MTLPixelFormatDepth16Unorm];
     [_view1 setSampleCount:4];
     
-//    _view2 = [[MyMetalView alloc] initWithFrame:frameView1 device:metalDevice];
-//    [_view2 setColorPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
-//    [_view2 setClearColor:MTLClearColorMake(1.0, 0.0, 0.0, 1.0)];
-//    [_view2 setClearDepth:1.0];
-//    [_view2 setPreferredFramesPerSecond:30];
-//    [_view2 setFramebufferOnly: false];
-//    [_view2 setDepthStencilPixelFormat:MTLPixelFormatDepth16Unorm];
-//    [_view2 setSampleCount:4];
+    _view2 = [[MyMetalView alloc] initWithFrame:frameView1 device:metalDevice];
+    [_view2 setColorPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
+    [_view2 setClearColor:MTLClearColorMake(1.0, 0.0, 0.0, 1.0)];
+    [_view2 setClearDepth:1.0];
+    [_view2 setPreferredFramesPerSecond:30];
+    [_view2 setFramebufferOnly: false];
+    [_view2 setDepthStencilPixelFormat:MTLPixelFormatDepth16Unorm];
+    [_view2 setSampleCount:4];
     
     pRender = [[Renderer alloc] initWithDevice:metalDevice :frameView1.size.width :frameView1.size.height :4];
-//    pRender2 = [[Renderer alloc] initWithDevice:metalDevice :frameView1.size.width :frameView1.size.height :4];se
+    pRender2 = [[Renderer alloc] initWithDevice:metalDevice :frameView1.size.width :frameView1.size.height :4];
+    pRender->view_num = 0;
+    pRender2->view_num = 1;
+    
+    pRender2->viewers.push_back(_view1->debug_view);
     
     _sidePanel = [[SidePannel alloc] initWithVector:&pRender->_NodesQueuePtr];
     
@@ -12313,9 +12627,12 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 
     {
         Timer time;
-        for (int i =0; i< (10000); i++){
+        for (int i =0; i< (1000000); i++){
             w = w - 0.001 * grad(w);
-            if (i % 1000==0) w.eval_cpu();
+            if (i % 1000==0) {
+                w.eval_cpu();
+                w.releaseTape();
+            }
         }
         
         
@@ -12427,27 +12744,135 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 //        plotter->update_plot(animation, 0.0f, 0.8f);
 //    } withFPS:60];
     
-    std::shared_ptr<GraphViewer> plotter = std::make_shared<GraphViewer>();
-    matrix x = matrix::linespace(-1.f, 1.0f, 1024);
-    matrix points = { {0.0f, 1.0f}, {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f} };
-    
-//    plotter->render_graph(points[R(), 0], points[R(), 1]);
-    
-    __block MicrophoneAudioCapture* MatrixAudioSession = [[MicrophoneAudioCapture alloc] init];
-//
-    pRender->viewers.push_back(plotter);
+//    std::shared_ptr<GraphViewer> plotter = std::make_shared<GraphViewer>();
+//    matrix x = matrix::linespace(-1.f, 1.0f, 1024);
+//    matrix points = { {0.0f, 1.0f}, {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f} };
 //    
-        [self attachToGCDQueue:^{
-            float frame = *((float*)pRender->metal_frame.buffer) * 0.01;
-            matrix audio_sample(2, dtype::Float);
-            [MatrixAudioSession getAudioTensor:audio_sample samplesNeeded:512 * 2];
-            audio_sample.buildMetalBuffer();
-            
-            plotter->render_graph(x, audio_sample, 0.005);
-        } withFPS:60];
+////    plotter->render_graph(points[R(), 0], points[R(), 1]);
+//    
+//    __block MicrophoneAudioCapture* MatrixAudioSession = [[MicrophoneAudioCapture alloc] init];
+////
+//    pRender->viewers.push_back(plotter);
+////    
+//        [self attachToGCDQueue:^{
+//            float frame = *((float*)pRender->metal_frame.buffer) * 0.01;
+//            matrix audio_sample(2, dtype::Float);
+//            [MatrixAudioSession getAudioTensor:audio_sample samplesNeeded:512 * 2];
+//            audio_sample.buildMetalBuffer();
+//            
+//            plotter->render_graph(x, audio_sample, 0.005);
+//        } withFPS:60];
+
+//    auto t = std::make_shared<CubeController>("Tri");
+    auto v = std::make_shared<Viewer>();
+//    auto vu = std::make_shared<Viewer>();
+//    v->nodes.push_back(t->node);
+//    vu->nodes.push_back(t->node);
+//    
+//    matrix line = matrix::linespace(0.0f, 10.0f, 1000);
+//    matrix points = matrix::stack({line, matrix::sin(line), matrix::cos(line)}, -1);
+//    auto l3d = std::make_shared<LineController>("L3D");
+//    l3d->update_pointsVertShader(points);
+//    l3d->node->material.colors = {1.0f, 0.0f, 0.0f, 1.0f};
+//    v->nodes.push_back(l3d->node);
+//    pRender->viewers.push_back(v);
+//    pRender2->viewers.push_back(vu);
+//    [self attachToGCDQueue:^{
+//        float time = pRender->metal_frame.at<float>();
+//        matrix line = matrix::linespace(0.0f, 10.0f, 100);
+//        matrix pointsp = matrix::stack({line, matrix::sin(0.1 * (1.2 + (time)) + line), matrix::cos(0.1 * (1.2 + (time)) + line)}, -1);
+//        l3d->update_pointsVertShader(pointsp);
+//    } withFPS:60];
+    // 1. Create the solid Mesh
+//    GeoNodeImpl solid = GeoNode::create("Solid");
+//    solid->mesh = MeshPrimitives::cube();
+//    solid->material.colors = matrix::of<float>({0.3, 0.3, 0.3, 1.0}).reshape(1, 4);
+//    solid->material.pipeline_state = 3;
+
+    // 2. Create the Edges (Wireframe)
+//    GeoNodeImpl wireframe = GeoNode::create("Wireframe");
+//    wireframe->topology.edges = MeshPrimitives::cube_edges();
+//    wireframe->mesh = solid->mesh; // Don't forget to pass the vertices!
+//    wireframe->material.colors = matrix::of<float>({0.0, 1.0, 0.0, 1.0}).reshape(1, 4);
+//    wireframe->material.line_width = 0.01f; // Thinner lines
+//    wireframe->material.pipeline_state = 6; // State 6!
+//
+//    // 3. Create the Joints (Capsules)
+//    GeoNodeImpl joints = GeoNode::create("Joints");
+//    joints->mesh     = solid->mesh;
+//    joints->material.colors = matrix::of<float>({1.0, 1.0, 1.0, 1.0}).reshape(1, 4);
+//    joints->material.pipeline_state = 5; // Point Cloud State
+//
+//    solid->children.push_back(wireframe);
+//    solid->children.push_back(joints);
+//    v->nodes.push_back(solid);
+//    
+//    pRender->viewers.push_back(v);
+    auto graph_viewer = std::make_shared<GraphViewer>();
+    auto x = matrix::linespace(0.0f, 300.0f, 10000);
+    auto y= x.zeros();
+    auto wrap_centered = [](float x, float y) {
+        return x - std::round(x / y) * y;
+    };
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 1);
+    y.at<float>(0) = 0;
+    for (int i = 1; i < x.shape()[0]; i++) {
+        if (dis(gen) == 0) {
+            y.at<float>(i) = y.at<float>(i-1) - 1;
+        } else {
+            y.at<float>(i) = y.at<float>(i-1) + 1;
+        }
+        
+    }
+    
+
+    
+    graph_viewer->render_graph(x, y, {1.0f, 0.0f, 0.0f, 1.0f}, 0.001);
+    
+//
+    auto g1 = LineController();
+    g1.update(x, matrix::sin(x+M_PI));
+    
+    pRender->viewers.push_back(graph_viewer);
+    std::cout << sizeof(simd_float3) << "\n";
+//
+//    graph_viewer->add_child(g1.node, 0);
+//    graph_viewer->graph_node->local_transform.SIMD_MAT(0) = Scale(0.1);
+//    ModelController standford_rabbit("standford rabbit", "/Users/adityadude/Downloads/stanford-bunny.obj");
+//    CubeController c("Cube");
+//    
+////    v->nodes.push_back(standford_rabbit.node);
+//    v->nodes.push_back(c.node);
 }
 
 -(void) computational_graphV2 {
+    printf("\n--- CROSS TEST (METAL & CPU) ---\n");
+    auto test_cross_fn = [](std::vector<matrix> inputs) -> std::vector<matrix>  {
+        return { matrix::cross(inputs[0], inputs[1], -1) };
+    };
+    
+    matrix cross_a = matrix::of<float>({1.0, 2.0, 3.0, 4.0, 5.0, 6.0}).reshape(2, 3);
+    matrix cross_b = matrix::of<float>({4.0, 5.0, 6.0, 7.0, 8.0, 9.0}).reshape(2, 3);
+    
+    matrix cross_res_cpu = matrix::cross(cross_a, cross_b, -1);
+    cross_res_cpu.eval_cpu();
+    printf("cross(a, b) CPU:\n");
+    cross_res_cpu.print();
+    
+    matrix cross_res_gpu = matrix::cross(cross_a, cross_b, -1);
+    cross_res_gpu.eval_metal();
+    printf("cross(a, b) Metal:\n");
+    cross_res_gpu.print();
+    
+    auto grad_fn = matrix::grad_graph_gpu(test_cross_fn, {cross_a.zeros(), cross_b.zeros()});
+    std::vector<matrix> grad_res = grad_fn({cross_a, cross_b});
+    printf("cross VJP d(a) Metal:\n");
+    grad_res[0].print();
+    printf("cross VJP d(b) Metal:\n");
+    grad_res[1].print();
+    
     printf("\n--- MAX / MIN ELEMENT-WISE TEST (METAL & CPU) ---\n");
     matrix max_a = matrix::of<float>({1.0, 5.0, 3.0, 8.0, 2.0, 4.0}).reshape(2, 3);
     matrix max_b = matrix::of<float>({2.0, 4.0, 6.0, 7.0, 3.0, 1.0}).reshape(2, 3);
@@ -12473,22 +12898,22 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     out_min_ac.eval_cpu();
     printf("min(a, c) CPU Broadcast:\n");
     out_min_ac.print();
-
-    printf("\n--- SLICE ASSIGN TEST (METAL) ---\n");
-    matrix lhs = matrix::zeros({4, 4}, dtype::Float);
-    matrix rhs = matrix::ones({2, 2}, dtype::Float) * 9.0f;
-    matrix out = lhs.slice_assign({R(1, 3), R(1, 3)}, rhs);
-    out.eval_metal();
-    printf("Slice Assign LHS [4x4], assigned RHS [2x2] of 9s at {1:3, 1:3}:\n");
-    out.print();
-
-    printf("\n--- SLICE ASSIGN TEST (CPU) ---\n");
-    matrix lhs_cpu = matrix::zeros({4, 4}, dtype::Float);
-    matrix rhs_cpu = matrix::ones({2, 2}, dtype::Float) * 5.0f;
-    matrix out_cpu = lhs_cpu.slice_assign({R(1, 3), R(1, 3)}, rhs_cpu);
-    out_cpu.eval_cpu();
-    printf("Slice Assign LHS [4x4], assigned RHS [2x2] of 5s at {1:3, 1:3}:\n");
-    out_cpu.print();
+//
+//    printf("\n--- SLICE ASSIGN TEST (METAL) ---\n");
+//    matrix lhs = matrix::zeros({4, 4}, dtype::Float);
+//    matrix rhs = matrix::ones({2, 2}, dtype::Float) * 9.0f;
+//    matrix out = lhs.slice_assign({R(1, 3), R(1, 3)}, rhs);
+//    out.eval_metal();
+//    printf("Slice Assign LHS [4x4], assigned RHS [2x2] of 9s at {1:3, 1:3}:\n");
+//    out.print();
+//
+//    printf("\n--- SLICE ASSIGN TEST (CPU) ---\n");
+//    matrix lhs_cpu = matrix::zeros({4, 4}, dtype::Float);
+//    matrix rhs_cpu = matrix::ones({2, 2}, dtype::Float) * 5.0f;
+//    matrix out_cpu = lhs_cpu.slice_assign({R(1, 3), R(1, 3)}, rhs_cpu);
+//    out_cpu.eval_cpu();
+//    printf("Slice Assign LHS [4x4], assigned RHS [2x2] of 5s at {1:3, 1:3}:\n");
+//    out_cpu.print();
 
     
     printf("\n--- SUM GPU TEST ---\n");
@@ -12909,7 +13334,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     take_out_1.eval_metal();
     printf("Take Axis 1:\n");
     take_out_1.print();
-//
+
 }
 
 - (void) EXR_CVE_EXPLOIT {
@@ -13878,7 +14303,6 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 
 //        }
     }];
-    
 }
 
 -(void) RGBCam {
