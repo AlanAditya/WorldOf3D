@@ -1329,12 +1329,11 @@
 				Algos/linked_list_sum.cpp,
 				back.txt,
 				primitives.cpp,
+				SOPs/Controllers.cpp,
 				SOPs/GeoNode.cpp,
+				SOPs/GraphViewer.cpp,
+				SOPs/MeshPrimitives.cpp,
 				SOPs/Viewer.cpp,
-				test_conv.cpp,
-				test_conv.mm,
-				test_grad.cpp,
-				TestTracer.cpp,
 			);
 			target = AB1BE7242D7DE4DB00D29037 /* AdityaIntelligenceProMax */;
 		};
@@ -6110,6 +6109,7 @@
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++23";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC_EXCEPTIONS = YES;
+				CLANG_USE_OPTIMIZATION_PROFILE = NO;
 				CODE_SIGN_ENTITLEMENTS = AdityaIntelligenceProMax/AdityaIntelligenceProMax.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -6118,6 +6118,7 @@
 				DEVELOPMENT_TEAM = 3MHBFL6A6H;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
 					/usr/local/include,
@@ -6148,6 +6149,7 @@
 					/opt/homebrew/Cellar/opencv/4.12.0_17/lib,
 					"/private/var/tmp/_bazel_adityadude/eb3560479e75155bc8d80d1ef4345636/execroot/mediapipe/bazel-out/darwin_arm64-fastbuild/bin/mediapipe/examples/desktop",
 				);
+				LLVM_LTO = NO;
 				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				MARKETING_VERSION = 1.0;
 				MTL_COMPILER_FLAGS = "-fmetal-enable-logging";
@@ -6189,6 +6191,7 @@
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++23";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC_EXCEPTIONS = YES;
+				CLANG_USE_OPTIMIZATION_PROFILE = NO;
 				CODE_SIGN_ENTITLEMENTS = AdityaIntelligenceProMax/AdityaIntelligenceProMax.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -6227,6 +6230,7 @@
 					/opt/homebrew/Cellar/opencv/4.12.0_17/lib,
 					"/private/var/tmp/_bazel_adityadude/eb3560479e75155bc8d80d1ef4345636/execroot/mediapipe/bazel-out/darwin_arm64-fastbuild/bin/mediapipe/examples/desktop",
 				);
+				LLVM_LTO = NO;
 				MACOSX_DEPLOYMENT_TARGET = 15.1;
 				MARKETING_VERSION = 1.0;
 				MTL_COMPILER_FLAGS = "-fmetal-enable-logging";

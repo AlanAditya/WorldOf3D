@@ -594,7 +594,7 @@ public:
     }
     
     
-    void draw(id<MTLRenderCommandEncoder> cmdEncoder, id<MTLDevice> metalDevice, id<MTLRenderPipelineState> __strong (&predefinedStates)[4], NSMutableArray<id<MTLRenderPipelineState>>* customStates, Camera3D* cam, int& active_state) {
+    void draw(id<MTLRenderCommandEncoder> cmdEncoder, id<MTLDevice> metalDevice, id<MTLRenderPipelineState> __strong (&predefinedStates)[7], NSMutableArray<id<MTLRenderPipelineState>>* customStates, Camera3D* cam, int& active_state) {
         if (vertexCount == 0 || indexCount == 0 || !visible)  {
             for (int i=0; i<childNodes.size(); i++) {
                 childNodes[i].draw(cmdEncoder, metalDevice, predefinedStates, customStates, cam, active_state);

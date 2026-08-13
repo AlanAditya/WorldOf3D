@@ -23,6 +23,10 @@ namespace MeshPrimitives {
         m.indices = matrix::of<uint32_t>({
             0, 1, 2
         });
+        m.vert_position.begin_refcount();
+        m.indices.begin_refcount();
+        m.uv_coords.begin_refcount();
+
         return m;
     }
 
@@ -47,7 +51,35 @@ namespace MeshPrimitives {
             0, 1, 2,
             0, 2, 3
         });
+        m.vert_position.begin_refcount();
+        m.indices.begin_refcount();
+        m.uv_coords.begin_refcount();
+
         return m;
+    }
+
+    inline matrix quad_edges() {
+        auto edges = matrix::of<uint32_t>({
+            0, 1,
+            1, 2,
+            2, 3,
+            3, 0
+        }).reshape(4, 2);
+        edges.begin_refcount();
+        return edges;
+    }
+
+    inline matrix cube_edges() {
+        auto edges = matrix::of<uint32_t>({
+            // Bottom face
+            0, 1,  1, 2,  2, 3,  3, 0,
+            // Top face
+            4, 5,  5, 6,  6, 7,  7, 4,
+            // Pillars
+            0, 4,  1, 5,  2, 6,  3, 7
+        }).reshape(12, 2);
+        edges.begin_refcount();
+        return edges;
     }
 
     inline Mesh cube(float width = 1.0f, float height = 1.0f, float depth = 1.0f) {
@@ -84,6 +116,10 @@ namespace MeshPrimitives {
             3, 2, 6,  3, 6, 7, // Top
             4, 5, 1,  4, 1, 0  // Bottom
         });
+        m.vert_position.begin_refcount();
+        m.indices.begin_refcount();
+        m.uv_coords.begin_refcount();
+
         return m;
     }
 
@@ -158,7 +194,10 @@ namespace MeshPrimitives {
         indicesView.at<uint32_t>(subdivisions - 1, 0) = 0;
         indicesView.at<uint32_t>(subdivisions - 1, 1) = 1 + subdivisions - 1;
         indicesView.at<uint32_t>(subdivisions - 1, 2) = 1 + 0;
-        
+        m.vert_position.begin_refcount();
+        m.indices.begin_refcount();
+        m.uv_coords.begin_refcount();
+
         return m;
     }
 
@@ -293,7 +332,186 @@ namespace MeshPrimitives {
             bottomCapView.at<uint32_t>(i, 1) = 1 + (linearSubdivisions - 1) * radialSubdivisions + i;
             bottomCapView.at<uint32_t>(i, 2) = 1 + (linearSubdivisions - 1) * radialSubdivisions + (i + 1) % radialSubdivisions;
         }
-        
+        m.vert_position.begin_refcount();
+        m.indices.begin_refcount();
+        m.uv_coords.begin_refcount();
+
         return m;
     }
+
+    inline Mesh cylinder(float radius = 1.0f, float length = 1.0f, int subdivisions = 32) {
+        Mesh m;
+        int vertexCount = subdivisions * 2 + 2;
+        int indexCount = subdivisions * 12; // 3 (bottom) + 6 (side) + 3 (top) per subdivision
+        
+        m.vert_position = matrix(2, dtype::Float);
+        m.vert_position.shape()[0] = vertexCount;
+        m.vert_position.shape()[1] = 3;
+        m.vert_position.total_size = vertexCount * 3;
+        m.vert_position.calcStrides();
+        m.vert_position.buffer = new uint8_t[m.vert_position.total_size * sizeof(float)];
+        
+        m.indices = matrix(1, dtype::UInt32);
+        m.indices.shape()[0] = indexCount;
+        m.indices.total_size = indexCount;
+        m.indices.calcStrides();
+        m.indices.buffer = new uint8_t[m.indices.total_size * sizeof(uint32_t)];
+        
+        m.uv_coords = matrix(2, dtype::Float);
+        m.uv_coords.shape()[0] = vertexCount;
+        m.uv_coords.shape()[1] = 2;
+        m.uv_coords.total_size = vertexCount * 2;
+        m.uv_coords.calcStrides();
+        m.uv_coords.buffer = new uint8_t[m.uv_coords.total_size * sizeof(float)];
+
+        // bottom center
+        m.vert_position.at<float>(0, 0) = 0.0f;
+        m.vert_position.at<float>(0, 1) = 0.0f;
+        m.vert_position.at<float>(0, 2) = 0.0f;
+        
+        m.uv_coords.at<float>(0, 0) = 0.5f;
+        m.uv_coords.at<float>(0, 1) = 0.5f;
+        
+        // top center
+        m.vert_position.at<float>(vertexCount - 1, 0) = 0.0f;
+        m.vert_position.at<float>(vertexCount - 1, 1) = length;
+        m.vert_position.at<float>(vertexCount - 1, 2) = 0.0f;
+
+        m.uv_coords.at<float>(vertexCount - 1, 0) = 0.5f;
+        m.uv_coords.at<float>(vertexCount - 1, 1) = 0.5f;
+
+        float stride = 2.0f * M_PI / subdivisions;
+        
+        for (int i = 0; i < subdivisions; i++) {
+            float theta = i * stride;
+            float c = cos(theta);
+            float s = sin(theta);
+            
+            // Bottom ring
+            m.vert_position.at<float>(1 + i, 0) = radius * c;
+            m.vert_position.at<float>(1 + i, 1) = 0.0f;
+            m.vert_position.at<float>(1 + i, 2) = radius * s;
+            
+            m.uv_coords.at<float>(1 + i, 0) = 0.5f + 0.5f * c;
+            m.uv_coords.at<float>(1 + i, 1) = 0.5f + 0.5f * s;
+            
+            // Top ring
+            m.vert_position.at<float>(1 + subdivisions + i, 0) = radius * c;
+            m.vert_position.at<float>(1 + subdivisions + i, 1) = length;
+            m.vert_position.at<float>(1 + subdivisions + i, 2) = radius * s;
+
+            m.uv_coords.at<float>(1 + subdivisions + i, 0) = 0.5f + 0.5f * c;
+            m.uv_coords.at<float>(1 + subdivisions + i, 1) = 0.5f + 0.5f * s;
+        }
+        
+        uint32_t* idx_buf = (uint32_t*)m.indices.buffer;
+        int idxOffset = 0;
+        for (int i = 0; i < subdivisions; i++) {
+            int next_i = (i + 1) % subdivisions;
+            
+            // Bottom cap triangle
+            idx_buf[idxOffset++] = 0;
+            idx_buf[idxOffset++] = 1 + i;
+            idx_buf[idxOffset++] = 1 + next_i;
+            
+            // Side quad (2 triangles)
+            idx_buf[idxOffset++] = 1 + i;
+            idx_buf[idxOffset++] = 1 + subdivisions + i;
+            idx_buf[idxOffset++] = 1 + subdivisions + next_i;
+            
+            idx_buf[idxOffset++] = 1 + i;
+            idx_buf[idxOffset++] = 1 + subdivisions + next_i;
+            idx_buf[idxOffset++] = 1 + next_i;
+            
+            // Top cap triangle
+            idx_buf[idxOffset++] = vertexCount - 1;
+            idx_buf[idxOffset++] = 1 + subdivisions + i;
+            idx_buf[idxOffset++] = 1 + subdivisions + next_i;
+        }
+        m.vert_position.begin_refcount();
+        m.indices.begin_refcount();
+        m.uv_coords.begin_refcount();
+
+        return m;
+    }
+
+    inline Mesh cone(float radius = 1.0f, float length = 1.0f, int subdivisions = 32) {
+        Mesh m;
+        int vertexCount = subdivisions + 2;
+        int indexCount = subdivisions * 6; // 3 (bottom) + 3 (side) per subdivision
+        
+        m.vert_position = matrix(2, dtype::Float);
+        m.vert_position.shape()[0] = vertexCount;
+        m.vert_position.shape()[1] = 3;
+        m.vert_position.total_size = vertexCount * 3;
+        m.vert_position.calcStrides();
+        m.vert_position.buffer = new uint8_t[m.vert_position.total_size * sizeof(float)];
+
+        m.indices = matrix(1, dtype::UInt32);
+        m.indices.shape()[0] = indexCount;
+        m.indices.total_size = indexCount;
+        m.indices.calcStrides();
+        m.indices.buffer = new uint8_t[m.indices.total_size * sizeof(uint32_t)];
+        
+        m.uv_coords = matrix(2, dtype::Float);
+        m.uv_coords.shape()[0] = vertexCount;
+        m.uv_coords.shape()[1] = 2;
+        m.uv_coords.total_size = vertexCount * 2;
+        m.uv_coords.calcStrides();
+        m.uv_coords.buffer = new uint8_t[m.uv_coords.total_size * sizeof(float)];
+
+        // bottom center
+        m.vert_position.at<float>(0, 0) = 0.0f;
+        m.vert_position.at<float>(0, 1) = 0.0f;
+        m.vert_position.at<float>(0, 2) = 0.0f;
+        
+        m.uv_coords.at<float>(0, 0) = 0.5f;
+        m.uv_coords.at<float>(0, 1) = 0.5f;
+        
+        // top tip
+        m.vert_position.at<float>(vertexCount - 1, 0) = 0.0f;
+        m.vert_position.at<float>(vertexCount - 1, 1) = length;
+        m.vert_position.at<float>(vertexCount - 1, 2) = 0.0f;
+
+        m.uv_coords.at<float>(vertexCount - 1, 0) = 0.5f;
+        m.uv_coords.at<float>(vertexCount - 1, 1) = 0.5f;
+
+        float stride = 2.0f * M_PI / subdivisions;
+        
+        for (int i = 0; i < subdivisions; i++) {
+            float theta = i * stride;
+            float c = cos(theta);
+            float s = sin(theta);
+            
+            // Bottom ring
+            m.vert_position.at<float>(1 + i, 0) = radius * c;
+            m.vert_position.at<float>(1 + i, 1) = 0.0f;
+            m.vert_position.at<float>(1 + i, 2) = radius * s;
+            
+            m.uv_coords.at<float>(1 + i, 0) = 0.5f + 0.5f * c;
+            m.uv_coords.at<float>(1 + i, 1) = 0.5f + 0.5f * s;
+        }
+        
+        uint32_t* idx_buf = (uint32_t*)m.indices.buffer;
+        int idxOffset = 0;
+        for (int i = 0; i < subdivisions; i++) {
+            int next_i = (i + 1) % subdivisions;
+            
+            // Bottom cap triangle
+            idx_buf[idxOffset++] = 0;
+            idx_buf[idxOffset++] = 1 + i;
+            idx_buf[idxOffset++] = 1 + next_i;
+            
+            // Side triangle
+            idx_buf[idxOffset++] = 1 + i;
+            idx_buf[idxOffset++] = vertexCount - 1;
+            idx_buf[idxOffset++] = 1 + next_i;
+        }
+        m.vert_position.begin_refcount();
+        m.indices.begin_refcount();
+        m.uv_coords.begin_refcount();
+
+        return m;
+    }
+
 }
