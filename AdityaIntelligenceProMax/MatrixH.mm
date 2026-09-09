@@ -17,6 +17,7 @@
 #include <dispatch/dispatch.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include "Problem.cpp"
 // Include MediaPipe headers here
 //#include "Bitch.h"
 
@@ -37,7 +38,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <Vision/Vision.h>
 #import <ModelIO/ModelIO.h>
-#import <MLCompute/MLCTensor.h>
+//#import <MLCompute/MLCTensor.h>
 #include <cstddef>
 #include <typeinfo>
 #if !TARGET_OS_IPHONE
@@ -58,6 +59,8 @@ typedef uint16_t uint16;
 #include <span>
 #import "matrix.h"
 #import "inputs/microphone.h"
+#import "inputs/ARSessionCapture.h"
+#import "inputs/GravitySensor.h"
 #include <random>
 #include <map>
 #include <utility>
@@ -7345,6 +7348,11 @@ public:
 
 // MARK: - Camera
 
+enum class CAM {
+    LIDAR = 1
+};
+
+
 #if !TARGET_OS_IPHONE
 @interface CapReader : NSObject<AVCaptureVideoDataOutputSampleBufferDelegate>
 #endif
@@ -7372,6 +7380,7 @@ public:
     CVPixelBufferRef depthBuffer;
     CVImageBufferRef mGrabbedDepthBuffer;
     NSCondition* mHasNewDepthFrame;
+    CameraIntrinsics mCameraIntrinsics;
 #endif
 }
 -(id) initWithCam:(int)CamNo;
@@ -7381,6 +7390,12 @@ public:
 #if TARGET_OS_IPHONE
 -(void) depthDataOutput:(AVCaptureDepthDataOutput *)output didOutputDepthData:(AVDepthData *)depthData timestamp:(CMTime)timestamp connection:(AVCaptureConnection *)connection;
 - (void) getDepth:(MatrixH<2, float16_t >&) depthFrame;
+- (void) getDepth:(MatrixH<2, float16_t >&) depthFrame intrinsics:(CameraIntrinsics*) intrinsics;
+- (void) getDepth_cpu:(matrix&) depthFrame;
+- (void) getDepth_cpu:(matrix&) depthFrame intrinsics:(CameraIntrinsics*) intrinsics;
+- (void) getDepth_metal:(matrix&) depthFrame;
+- (void) getDepth_metal:(matrix&) depthFrame intrinsics:(CameraIntrinsics*) intrinsics;
+- (CameraIntrinsics) getCameraIntrinsics;
 #endif
 
 -(void) read:(MatrixH<3, uint8_t>&) frame;
@@ -7545,6 +7560,15 @@ public:
         // Check connection status immediately
         AVCaptureConnection *depthConn = [mDepthDataOutput connectionWithMediaType:AVMediaTypeDepthData];
         depthConn.enabled = YES;
+        if (depthConn.isVideoOrientationSupported) {
+            depthConn.videoOrientation = AVCaptureVideoOrientationPortrait;
+        }
+        
+        AVCaptureConnection *videoConn = [mCaptureVideoDataOutput connectionWithMediaType:AVMediaTypeVideo];
+        if (videoConn.isVideoOrientationSupported) {
+            videoConn.videoOrientation = AVCaptureVideoOrientationPortrait;
+        }
+        
         NSLog(@"Depth Connection Active: %d", depthConn.active); // This should now be 1
     }
 
@@ -7597,25 +7621,49 @@ public:
     // For example, you can convert the depth data to a CVPixelBuffer:
     CVPixelBufferRef depthBufferLocal = [depthData depthDataMap];
 //    std::cout << "Sptth:" << ([depthData depthDataType] == kCVPixelFormatType_DepthFloat32) << "\n";
-    NSLog(@"%b", [depthData depthDataType] == kCVPixelFormatType_DepthFloat16);
+//    NSLog(@"%b", [depthData depthDataType] == kCVPixelFormatType_DepthFloat16);
     CVBufferRetain(depthBufferLocal);
     
     // Synchronize with your own processing (e.g., copying data)
     [mHasNewDepthFrame lock];
     CVBufferRelease(depthBuffer);
     depthBuffer = depthBufferLocal;
+    
+    if (depthData.cameraCalibrationData) {
+        mCameraIntrinsics.intrinsicMatrix = depthData.cameraCalibrationData.intrinsicMatrix;
+        mCameraIntrinsics.referenceWidth = depthData.cameraCalibrationData.intrinsicMatrixReferenceDimensions.width;
+        mCameraIntrinsics.referenceHeight = depthData.cameraCalibrationData.intrinsicMatrixReferenceDimensions.height;
+    }
+    
     // Process depthBuffer as needed...
     [mHasNewDepthFrame broadcast];
     [mHasNewDepthFrame unlock];
 }
 
-- (void)                getDepth:(MatrixH<2, float16_t>&) depthFrame {
+- (CameraIntrinsics) getCameraIntrinsics {
+    [mHasNewDepthFrame lock];
+    CameraIntrinsics intrinsics = mCameraIntrinsics;
+    [mHasNewDepthFrame unlock];
+    return intrinsics;
+}
+
+
+// LEGACY
+- (void) getDepth:(MatrixH<2, float16_t>&) depthFrame {
+    [self getDepth:depthFrame intrinsics:nullptr];
+}
+
+- (void) getDepth:(MatrixH<2, float16_t>&) depthFrame intrinsics:(CameraIntrinsics*) intrinsics {
     [mHasNewDepthFrame lock];
     if (mGrabbedDepthBuffer) {
         CVBufferRelease(mGrabbedDepthBuffer);
+        mGrabbedDepthBuffer = NULL;
     }
     if ([mHasNewDepthFrame waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:1]]) {
         mGrabbedDepthBuffer = CVPixelBufferRetain(depthBuffer);
+        if (intrinsics) {
+            *intrinsics = mCameraIntrinsics;
+        }
     }
     [mHasNewDepthFrame unlock];
     
@@ -7674,13 +7722,155 @@ public:
     
     mGrabbedDepthBuffer = NULL;
 }
+
+- (void) getDepth_cpu:(matrix&) depthFrame {
+    [self getDepth_cpu:depthFrame intrinsics:nullptr];
+}
+
+- (void) getDepth_cpu:(matrix&) depthFrame intrinsics:(CameraIntrinsics*) intrinsics {
+    [mHasNewDepthFrame lock];
+    if (mGrabbedDepthBuffer) {
+        CVBufferRelease(mGrabbedDepthBuffer);
+        mGrabbedDepthBuffer = NULL;
+    }
+//    if ([mHasNewDepthFrame waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:1]]) {
+//        mGrabbedDepthBuffer = CVPixelBufferRetain(depthBuffer);
+//    }
+    if (intrinsics) {
+        *intrinsics = mCameraIntrinsics;
+    }
+    [mHasNewDepthFrame unlock];
+    
+    if (! mGrabbedDepthBuffer ) {
+        return;
+    }
+    CVPixelBufferLockBaseAddress(mGrabbedDepthBuffer, kCVPixelBufferLock_ReadOnly);
+    
+    if (depthFrame.buffer == nullptr || depthFrame.dims != 2 || depthFrame.shape()[0] != height || depthFrame.shape()[1] != width) {
+        matrix new_frame(2, height * width, dtype::Float16);
+        new_frame.shape()[0] = height;
+        new_frame.shape()[1] = width;
+        new_frame.calcStrides();
+        new_frame.buildMetalBuffer();
+        new_frame.begin_refcount();
+        depthFrame = new_frame;
+    }
+    
+    if (CVPixelBufferGetWidth(mGrabbedDepthBuffer) != width) {
+        
+        vImage_Buffer srcBuf = {
+            .data     = CVPixelBufferGetBaseAddress(mGrabbedDepthBuffer),
+            .height   = CVPixelBufferGetHeight(mGrabbedDepthBuffer),
+            .width    = CVPixelBufferGetWidth(mGrabbedDepthBuffer),
+            .rowBytes = CVPixelBufferGetBytesPerRow(mGrabbedDepthBuffer)
+        };
+        
+        vImage_Buffer dstBuf = {
+            .data     = depthFrame.buffer,
+            .height   = (unsigned long)height,
+            .width    = (unsigned long)width,
+            .rowBytes = width * sizeof(float16_t)
+        };
+        
+        vImageScale_Planar16F(&srcBuf, &dstBuf, NULL, kvImageHighQualityResampling);
+    } else {
+        char* rawPtr = (char*)CVPixelBufferGetBaseAddress(mGrabbedDepthBuffer);
+        if (CVPixelBufferGetBytesPerRow(mGrabbedDepthBuffer) == depthFrame.shape()[1] * sizeof(float16_t)) {
+            memcpy(depthFrame.buffer, rawPtr, depthFrame.total_size * sizeof(float16_t));
+        } else {
+            for (int i = 0; i < height; i++) {
+                memcpy((char*)depthFrame.buffer + i * width * sizeof(float16_t), rawPtr + i * CVPixelBufferGetBytesPerRow(mGrabbedDepthBuffer), width * sizeof(float16_t));
+            }
+        }
+    }
+    CVPixelBufferUnlockBaseAddress(mGrabbedDepthBuffer, kCVPixelBufferLock_ReadOnly);
+    CVBufferRelease(mGrabbedDepthBuffer);
+    
+    mGrabbedDepthBuffer = NULL;
+}
+
+- (void) getDepth_metal:(matrix&) depthFrame {
+    [self getDepth_metal:depthFrame intrinsics:nullptr];
+}
+
+- (void) getDepth_metal:(matrix&) depthFrame intrinsics:(CameraIntrinsics*) intrinsics {
+    [mHasNewDepthFrame lock];
+    if (mGrabbedDepthBuffer) {
+        CVBufferRelease(mGrabbedDepthBuffer);
+        mGrabbedDepthBuffer = NULL;
+    }
+    if (depthBuffer) {
+        mGrabbedDepthBuffer = CVPixelBufferRetain(depthBuffer);
+        if (intrinsics) {
+            *intrinsics = mCameraIntrinsics;
+        }
+    }
+    [mHasNewDepthFrame unlock];
+    if (! mGrabbedDepthBuffer ) {return;}
+    
+    size_t height =  CVPixelBufferGetHeight(mGrabbedDepthBuffer);
+    size_t width = CVPixelBufferGetWidth(mGrabbedDepthBuffer);
+    
+    if (depthFrame.buffer == nullptr || depthFrame.dims != 2 || depthFrame.shape()[0] != height || depthFrame.shape()[1] != width) {
+        matrix new_frame(2, height * width, dtype::Float16);
+        new_frame.shape()[0] = height;
+        new_frame.shape()[1] = width;
+        new_frame.calcStrides();
+        new_frame.buildMetalBuffer();
+        new_frame.begin_refcount();
+        depthFrame = new_frame;
+    }
+    
+    CVMetalTextureRef textureRef = NULL;
+    CVReturn status = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, 
+                                                              mTextureCache, 
+                                                              mGrabbedDepthBuffer, 
+                                                              nil, 
+                                                              MTLPixelFormatR16Float, 
+                                                              width, 
+                                                              height, 
+                                                              0, 
+                                                              &textureRef);
+    if (status == kCVReturnSuccess) {
+        id<MTLTexture> mtlTexture = CVMetalTextureGetTexture(textureRef);
+        GlobalGPUManager.endCommandEncoding();
+        id<MTLCommandBuffer> commandBuffer = GlobalGPUManager.getCommandBuffer();
+        
+        id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+        
+        NSUInteger bytesPerRow = width * 2;
+        MTLRegion region = MTLRegionMake2D(0, 0, width, height);
+        
+        [blitEncoder copyFromTexture:mtlTexture
+                         sourceSlice:0
+                         sourceLevel:0
+                        sourceOrigin:region.origin
+                          sourceSize:region.size
+                            toBuffer:depthFrame.metalBuffer
+                   destinationOffset:0
+              destinationBytesPerRow:bytesPerRow
+            destinationBytesPerImage:bytesPerRow * height];
+            
+        [blitEncoder endEncoding];
+        GlobalGPUManager.commitCommandBuffer();
+        
+        CFRelease(textureRef);
+    } else {
+        NSLog(@"getDepth_metal: CVMetalTextureCacheCreateTextureFromImage failed %d", status);
+    }
+    
+    CVBufferRelease(mGrabbedDepthBuffer);
+    mGrabbedDepthBuffer = NULL;
+}
 #endif
 
+// LEGACY
 - (void) read:(MatrixH<3, uint8_t>&) frame {
     [mHasNewFrame lock];
     
     if (mGrabbedPixels) {
         CVBufferRelease(mGrabbedPixels);
+        mGrabbedPixels = NULL;
     }
     if ([mHasNewFrame waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:1]]) {
         mGrabbedPixels = CVBufferRetain(mCurrentimageBuffer);
@@ -7723,14 +7913,13 @@ public:
     mGrabbedPixels = NULL;
 }
 
+
 -(void) read_cpu:(matrix&) frame {
     [mHasNewFrame lock];
     if (mGrabbedPixels) {
         CVBufferRelease(mGrabbedPixels);
+        mGrabbedPixels = NULL;
     }
-//    if ([mHasNewFrame waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:1]]) {
-//        mGrabbedPixels = CVBufferRetain(mCurrentimageBuffer);
-//    }
     if (mCurrentimageBuffer) {
         mGrabbedPixels = CVBufferRetain(mCurrentimageBuffer);
     }
@@ -7752,6 +7941,7 @@ public:
             new_frame.shape()[2] = 4;
             new_frame.calcStrides();
             new_frame.buildMetalBuffer();
+            new_frame.begin_refcount();
             frame = new_frame;
         }
         
@@ -7776,15 +7966,13 @@ public:
     [mHasNewFrame lock];
     if (mGrabbedPixels) {
         CVBufferRelease(mGrabbedPixels);
+        mGrabbedPixels = NULL;
     }
-//    if ([mHasNewFrame waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:1]]) {
-//        mGrabbedPixels = CVBufferRetain(mCurrentimageBuffer);
-//    }
-//    [mHasNewFrame unlock];
     // Loadframes from camera without waiting for new one just retake the old one
     if (mCurrentimageBuffer) {
         mGrabbedPixels = CVBufferRetain(mCurrentimageBuffer);
     }
+    [mHasNewFrame unlock];
     if (! mGrabbedPixels ) {return;}
     
     size_t height =  CVPixelBufferGetHeight(mGrabbedPixels);
@@ -7797,6 +7985,7 @@ public:
         new_frame.shape()[2] = 4;
         new_frame.calcStrides();
         new_frame.buildMetalBuffer();
+        new_frame.begin_refcount();
         frame = new_frame;
     }
     
@@ -7812,7 +8001,9 @@ public:
                                                               &textureRef);
     if (status == kCVReturnSuccess) {
         id<MTLTexture> mtlTexture = CVMetalTextureGetTexture(textureRef);
+        GlobalGPUManager.endCommandEncoding();
         id<MTLCommandBuffer> commandBuffer = GlobalGPUManager.getCommandBuffer();
+        
         id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
         
         NSUInteger bytesPerRow = width * 4;
@@ -7829,8 +8020,7 @@ public:
             destinationBytesPerImage:bytesPerRow * height];
             
         [blitEncoder endEncoding];
-        [commandBuffer commit];
-        [commandBuffer waitUntilCompleted];
+        GlobalGPUManager.commitCommandBuffer();
         
         CFRelease(textureRef);
     } else {
@@ -11190,10 +11380,14 @@ struct Assets {
 #endif
 
 #if TARGET_OS_IPHONE
-    float vertexData[] = {-1, -1, 1, 0,
+//    float vertexData[] = {-1, -1, 1, 0,
+//        1, -1, 1, 1,
+//        -1,  1, 0, 0,
+//        1,  1, 0, 1};
+    float vertexData[] = {-1, -1, 0, 1,
         1, -1, 1, 1,
         -1,  1, 0, 0,
-        1,  1, 0, 1};
+        1,  1, 1, 0};
 #endif
 //
     [cmdEncoder setDepthStencilState:BasicDepthStencilState];
@@ -11449,7 +11643,9 @@ struct Assets {
 
 @property (nonatomic, strong) NSMutableSet<NSNumber *> *pressedKeys;
 @property (nonatomic, strong) NSTimer *cameraTimer;
+#if !TARGET_OS_IPHONE
 @property (nonatomic, strong) NSTrackingArea* trackingArea;
+#endif
 
 
 @end
@@ -11530,6 +11726,7 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
 
 @implementation MyMetalView
 
+#if !TARGET_OS_IPHONE
 -(void)updateTrackingAreas {
     [super updateTrackingAreas];
     if (self.trackingArea) {
@@ -11572,10 +11769,13 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
     }
     
 }
+#endif
 
+#if !TARGET_OS_IPHONE
 - (BOOL)acceptsFirstResponder {
     return YES;
 }
+#endif
 
 - (instancetype)initWithFrame:(CGRect)frameRect device:(id<MTLDevice>)device {
     self = [super initWithFrame:frameRect device:device];
@@ -12003,6 +12203,7 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
 //        renderer->cam.handleMouseEvents(deltaX, -deltaY, NO, isShift, TransformationMode::Orbit);
 //    }
 //}
+#if !TARGET_OS_IPHONE
 -(void) mouseDown:(NSEvent *)event {
     Renderer *renderer = (Renderer *)self.delegate;
     
@@ -12027,6 +12228,7 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
         }
     }
 }
+#endif
 
 
 
@@ -12242,6 +12444,15 @@ public:
 int main2(cv::Mat& camera_frame, cv::Mat& outMat);
 int facial_landmarks(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int& num_landmarks);
 int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int& num_landmarks);
+#include "FoveaMap/FoveaClassify.h"
+
+#include "QuantumStream.h"
+#include "QuantumStreamUDP.h"
+#include "FoveaMap/FoveaOverlay.h"
+#include "inputs/ARSessionCapture.h"
+#include "FoveaMap/FoveaRansacGPU.h"
+#include "FoveaMap/FoveaCluster.h"
+#include "FoveaMap/FoveaColorFromImage.h"
 
 @interface Intelligence : NSObject
 {
@@ -12298,7 +12509,14 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 -(void) MicTesting1234;
 -(void) rendering_graph;
 -(void) inverse_finder;
-
+-(void) particle_render_graph;
+-(void) plot_EDs;
+-(void) depth_streamer;
+- (void) depth_reciver;
+-(void) depth_inplace;
+-(void) arkit_inplace;
+-(void) random_test;
+-(void) differential_eqn;
 @property (nonatomic, strong) NSMutableArray *activeTimers;
 @end
 
@@ -12407,6 +12625,360 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 
 }
 
+- (void) differential_eqn {
+    // dy/dt = - sin(t), y(0) = 1  =>  y(t) = cos(t), range [-1, 1]
+    __block matrix dt = matrix::ones({100, 100}, dtype::Float) * 0.05;
+    __block matrix t = matrix::perlin({100, 100}) * (2 * M_PI);
+    __block matrix y = matrix::cos(t);
+
+    [self attachToGCDQueue:^{
+        matrix dy = - 1 * matrix::sin(t) * dt;
+        y = y + dy;
+        t = t + dt;
+
+        matrix channel = (y + 1) * 127.5;
+        matrix image = matrix::stack({channel, channel, channel, channel.ones() * 255}, -1);
+        [pRender updateBaseImageV2:image];
+    } withFPS:30];
+}
+
+-(void) random_test {
+    matrix a = matrix::randint(0, 255, {1080, 1920, 3});
+    matrix image = matrix::concat({a, 255 * matrix::ones({1080, 1920, 1})}, -1);
+    matrix alpha = 255 * matrix::ones({1080, 1920});
+//    int num = 2000;
+//    {
+//        Timer time;
+//        for (int i = 1; i < num; i++) {
+//            a = matrix::randint(0, 255, {1080, 1920, 3});
+//            image = image + matrix::concat({a, alpha}, -1);
+//            if (i % 10 == 0) {
+//                image.eval_metal();
+//                image.releaseTape();
+//            }
+//        }
+//        image = image / num;
+//    }
+    matrix r = matrix::perlin({1080, 1920}) * 255;
+    matrix g = matrix::perlin({1080, 1920}) * 255;
+    matrix b = matrix::perlin({1080, 1920}) * 255;
+    matrix rgb = matrix::stack({r, g, b, alpha}, -1);
+    [pRender updateBaseImageV2:rgb];
+}
+
+-(void) plot_EDs {
+    
+    matrix x = matrix::linespace(0.0f, 10.0f, 1000);
+//    matrix y = Ed3(x, 2.0f);
+//    
+//    matrix y1 = Ed3(x, 5.0f);
+//    auto graph_controller = LineController();
+//    graph_controller.update(x, y1);
+//    graph_controller.node->material.colors = matrix::of<float>({0.0f, 1.0f, 0.0, 1.0f});
+//    
+    auto graph_viewer = std::make_shared<GraphViewer>();
+//    graph_viewer->add_child(graph_controller.node, 0);
+    pRender->viewers.push_back(graph_viewer);
+    graph_viewer->render_graph(x, x + matrix::perlin({1000}), {1.0f, 0.0f, 0.0f, 1.0f}, 0.001);
+    
+}
+#if TARGET_OS_IPHONE
+-(void) depth_inplace {
+    cap = [[CapReader alloc] initWithCam:0];
+    __block matrix image(3, dtype::UInt8);
+    __block matrix depth(2, dtype::Float16);
+
+    auto viewer = std::make_shared<Viewer>();
+    auto ParicleController = std::make_shared<PointCloudController>("Depth");
+    auto gravitySensor = std::make_shared<GravitySensor>();
+
+    viewer->nodes.push_back(ParicleController->node);
+    pRender->viewers.push_back(viewer);
+
+    [self attachToGCDQueue:^{
+        CameraIntrinsics cam_intrensic;
+        [self->cap read_metal:image];
+        [self->cap getDepth_metal:depth intrinsics:&cam_intrensic];
+        if (image.total_size == 0) return;
+        if (!depth.buffer) return;
+        matrix depth_S = (depth.astype(dtype::Float) * -5);
+        matrix lineY = matrix::linespace(5.0f, -5.0f, depth.shape()[0]);
+        matrix lineX = matrix::linespace(-5.0f, 5.0f, depth.shape()[1]);
+        auto mesh = matrix::meshgrid(lineX, lineY);
+        matrix X = mesh.first;
+        matrix Y = mesh.second;
+
+        matrix Z_flat = depth_S.flatten();
+        matrix points = matrix::stack({X.flatten(), Y.flatten(), Z_flat}, -1);
+        
+        simd_float3 gravity = gravitySensor->pull();
+        
+//        matrix colors = fovea::classify_ground_colors_gpu(points);
+        matrix colors = fovea::classify_ground_colors_green_tint(points, image, depth.shape()[0], depth.shape()[1]);
+        ParicleController->update(points, colors);
+//        colors = colors.reshape(depth.shape()[0], depth.shape()[1], (size_m)4) * 255;
+//        depth = (depth * -5).clamp(0, 255);
+//        matrix image = matrix::stack({depth, depth, depth, depth.ones() * 255}, -1);
+//        [pRender updateBaseImageV2:image];
+
+//        auto i = simd::float3x3(simd::float3{1, 0, 0}, simd::float3{0, 1, 0}, simd::float3{0, 0, 1});
+//        matrix points = fovea::points_from_depth_intrinsics(depth, cam_intrensic);
+//        matrix colors = fovea::classify_ground_colors(points);
+//        matrix overlay = fovea::ground_overlay_image(depth, cam_intrensic);
+//        [pRender updateBaseImageV2:colors];
+//        ParicleController->update(points, colors);
+    } withFPS:30];
+}
+
+-(void) arkit_inplace {
+    // 1. Initialize ARKit Capture and Gravity Sensor
+    ARSessionCapture *arCap = [[ARSessionCapture alloc] init];
+    [arCap start];
+    
+    auto gravitySensor = std::make_shared<GravitySensor>();
+    
+    // 2. Initialize matrices for data extraction
+    __block matrix ar_depth;
+    __block matrix ar_points;
+
+    // 3. Setup the 3D Viewer for Point Cloud
+    auto viewer = std::make_shared<Viewer>();
+    auto ParticleController = std::make_shared<PointCloudController>("ARKit PointCloud");
+
+    viewer->nodes.push_back(ParticleController->node);
+    pRender->viewers.push_back(viewer);
+
+    // Colormap (Blue -> Green -> Red) with Alpha channel for Viewer
+    __block matrix my_colormap = {
+        {0.0f, 0.0f, 1.0f, 1.0f}, // Blue (Near)
+        {0.0f, 1.0f, 0.0f, 1.0f}, // Green (Mid)
+        {1.0f, 0.0f, 0.0f, 1.0f}  // Red (Far)
+    };
+    my_colormap.buildMetalBuffer();
+    my_colormap.begin_refcount();
+    
+    
+
+    // 4. Game loop block
+    [self attachToGCDQueue:^{
+        // Extract zero-copy depth map directly into metal buffer
+        [arCap getDepthMapTensor:ar_depth];
+        
+        // Extract zero-copy point cloud directly from ARKit
+//        [arCap getPointCloudTensor:ar_points];
+//        
+//        // Extract current Gravity Vector
+//        simd_float3 gravity = gravitySensor->pull();
+//        
+        if (!ar_depth.buffer || ar_depth.total_size == 0) return;
+        
+        matrix lineY = matrix::linespace(5.0f, -5.0f, ar_depth.shape()[0]);
+        matrix lineX = matrix::linespace(-5.0f, 5.0f, ar_depth.shape()[1]);
+        auto mesh = matrix::meshgrid(lineX, lineY);
+        matrix X = mesh.first;
+        matrix Y = mesh.second;
+        X[R(0, 10), R(0, 10)].print();
+        Y[R(0, 10), R(0, 10)].print();
+        matrix Z_flat = ar_depth.flatten();
+        matrix points = matrix::stack({X.flatten(), Y.flatten(), Z_flat}, -1);
+        matrix colors = fovea::classify_ground_colors(points);
+        ParticleController->update(points, colors);
+
+        // 1. Slice out the Z coordinates (Depth)
+//        matrix Z = ar_points.slice(R(2, 3), 1).flatten();
+
+        // 2. Normalize Z between 0.0 and 1.0
+//        float min_z = Z.min().at<float>();
+//        float max_z = Z.max().at<float>();
+//        matrix t = (Z - min_z) / (max_z - min_z + 1e-5f);
+//        
+//        // 3. Apply colormap
+//        matrix colors = apply_colormap(t, my_colormap);
+//        colors.eval_metal(); // Force computation so Viewer can read from Metal buffer
+//        
+//        ParticleController->update(ar_points, colors);
+//        ar_depth = (ar_depth * 20).clamp(0, 255);
+//        matrix image = matrix::stack({ar_depth, ar_depth, ar_depth, ar_depth.ones() * 255}, -1);
+//        [pRender updateBaseImageV2:image];
+        
+    } withFPS:30];
+}
+#endif
+
+#if TARGET_OS_IPHONE
+-(void) depth_streamer {
+    cap = [[CapReader alloc] initWithCam:0];
+    __block matrix image(3, dtype::UInt8);
+    __block matrix depth(2, dtype::Float16);
+    
+    auto viewer = std::make_shared<Viewer>();
+    auto ParicleController = std::make_shared<PointCloudController>("Depth");
+    
+    viewer->nodes.push_back(ParicleController->node);
+    pRender->viewers.push_back(viewer);
+    
+    __block matrix my_colormap = {
+        {0.0f, 0.0f, 1.0f, 1.0f}, // Blue (low)
+        {0.0f, 1.0f, 0.0f, 1.0f}, // Green (mid)
+        {1.0f, 0.0f, 0.0f, 1.0f}  // Red (high)
+    };
+    my_colormap.buildMetalBuffer();
+    my_colormap.begin_refcount(); // Just like the static inferno map to avoid memory issues
+    
+    auto stream = std::make_shared<QuantumSender>();
+    stream->start("192.168.2.1", "8080");
+    
+    [self attachToGCDQueue:^{
+        CameraIntrinsics cam_intrensic;
+        [cap read_metal:image];
+        [cap getDepth_metal:depth intrinsics:&cam_intrensic];
+        if (image.total_size == 0) return;
+        if (!depth.buffer) return;
+        
+        stream->stream_frame(depth, &cam_intrensic, sizeof(matrix_float3x3));
+        
+//        depth = (depth.astype(dtype::Float) * -5);
+//        
+//        matrix lineY = matrix::linespace(5.0f, -5.0f, depth.shape()[0]);
+//        matrix lineX = matrix::linespace(-5.0f, 5.0f, depth.shape()[1]);
+//        auto mesh = matrix::meshgrid(lineX, lineY);
+//        matrix X = mesh.first;
+//        matrix Y = mesh.second;
+//        
+//        matrix Z_flat = depth.flatten();
+//        matrix points = matrix::stack({X.flatten(), Y.flatten(), Z_flat}, -1);
+//        matrix colors = fovea::classify_ground_colors(points);
+//        ParicleController->update(points, colors);
+        
+//        float min_z = -25.0f;
+//        float max_z = 0.0f;
+//        matrix t = (Z_flat - min_z) / (max_z - min_z);
+//        t = t.clamp(0.0f, 1.0f);
+//        
+//        matrix colors = apply_colormap(t, my_colormap);
+//        colors.eval_metal(); // Force graph evaluation before pushing to render queue
+//        
+//        ParicleController->update(points, colors);
+    } withFPS:30];
+}
+
+
+#endif
+
+- (void) depth_reciver {
+    
+    auto viewer = std::make_shared<Viewer>();
+    auto ParicleController = std::make_shared<PointCloudController>("Depth");
+    
+    viewer->nodes.push_back(ParicleController->node);
+    pRender->viewers.push_back(viewer);
+    
+    // Again, shared_ptr is very safe for keeping C++ objects alive in async Obj-C blocks
+    __block auto slipspace_receiver = std::make_shared<QuantumReceiver>();
+    
+    // 1. OPEN THE PORTAL! (You missed this)
+    slipspace_receiver->start("8080");
+    
+    [self attachToGCDQueue:^{
+        
+        CameraIntrinsics cam_intrensic;
+        // 2. DIP INTO THE NETWORK BUCKET! (You missed this)
+        bool got_new_data = slipspace_receiver->pull_latest_data(&cam_intrensic, sizeof(CameraIntrinsics));
+        
+        if (got_new_data && slipspace_receiver->dag_leaf_matrix != nullptr) {
+            
+            // 3. Dereference the pointer (*) to get the actual matrix
+            matrix depth = *(slipspace_receiver->dag_leaf_matrix);
+            
+//            // 4. Build your graph
+//            depth = (depth * 20).clamp(0.0, 255.0);
+//            matrix image = matrix::stack({depth, depth, depth, depth.ones() * 255}, -1);
+            
+//            depth = (depth.astype(dtype::Float) * -5);
+            
+//            matrix lineY = matrix::linespace(5.0f, -5.0f, depth.shape()[0]);
+//            matrix lineX = matrix::linespace(-5.0f, 5.0f, depth.shape()[1]);
+//            auto mesh = matrix::meshgrid(lineX, lineY);
+//            matrix X = mesh.first;
+//            matrix Y = mesh.second;
+//        
+//            matrix Z_flat = depth.flatten();
+//            matrix points = matrix::stack({X.flatten(), Y.flatten(), Z_flat}, -1);
+            
+            matrix points = fovea::points_from_depth_intrinsics(depth, cam_intrensic);
+            matrix colors = fovea::classify_ground_colors(points);
+            ParicleController->update(points, colors);
+            
+//
+//            
+//            // 6. Send to UI (Fixed the typo here)
+//            [pRender updateBaseImageV2:image];
+        }
+        
+    } withFPS:20];
+}
+
+-(void) particle_render_graph {
+    matrix x = matrix::linespace(-10.0f, 10.0f, 500);
+    auto mesh = matrix::meshgrid(x, x);
+    matrix X = mesh.first;
+    matrix Y = mesh.second;
+    
+    matrix Z = 3 * matrix::exp(-0.1 * (X*X + Y*Y));
+    
+    matrix points = matrix::stack({X.flatten(), Z.flatten(), Y.flatten()}, -1);
+    
+    // Normalize Z for the colormap (0.0 to 1.0)
+    matrix Z_flat = Z.flatten();
+    float min_z = Z_flat.min().at<float>();
+    float max_z = Z_flat.max().at<float>();
+    matrix t = (Z_flat - min_z) / (max_z - min_z);
+    
+    // Define any custom color map (N x 4 colors)
+    matrix my_colormap = {
+        {0.0f, 0.0f, 1.0f, 1.0f}, // Blue (low)
+        {0.0f, 1.0f, 0.0f, 1.0f}, // Green (mid)
+        {1.0f, 0.0f, 0.0f, 1.0f}  // Red (high)
+    };
+    my_colormap.buildMetalBuffer();
+    my_colormap.begin_refcount(); // Just like the static inferno map to avoid memory issues
+    
+    matrix colors = apply_colormap(t, my_colormap);
+    colors.eval_metal(); // Force graph evaluation before pushing to render queue
+    
+    auto v = std::make_shared<Viewer>();
+    auto pointCloud = std::make_shared<PointCloudController>("Particles");
+    auto pointCloud_glow = std::make_shared<PointCloudController>("Glow");
+    pointCloud->update(points, colors);
+    pointCloud_glow->point_size *= 10;
+    pointCloud_glow->node->material.depth_bias.custom = true;
+    pointCloud_glow->node->material.depth_bias.bias = -10.0f;
+    v->nodes.push_back(pointCloud->node);
+    v->nodes.push_back(pointCloud_glow->node);
+    
+    self->pRender->viewers.push_back(v);
+    
+    __block uint64_t frame = 0;
+    [self attachToGCDQueue:^{
+        frame++;
+        matrix current_Z = 10.0f * std::sin(frame * 0.05f) * matrix::exp(-0.1f * (X*X + Y*Y));
+        
+        matrix current_points = matrix::stack({X.flatten(), current_Z.flatten(), Y.flatten()}, -1);
+        
+        matrix Z_flat = current_Z.flatten();
+        float min_z = Z_flat.min().at<float>();
+        float max_z = Z_flat.max().at<float>();
+        matrix t = (Z_flat - min_z) / (max_z - min_z);
+        
+        // Re-use the outer `my_colormap` buffer without re-allocating!
+        matrix current_colors = apply_colormap(t, my_colormap);
+        current_colors.eval_metal(); // Force graph evaluation before pushing to render queue
+        
+        pointCloud->update(current_points, current_colors);
+        pointCloud_glow->update(current_points, current_colors * 0.5);
+    } withFPS:60];
+}
+
 -(void) rendering_graph {
     
 }
@@ -12438,6 +13010,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 //    result3.print();
 //
     matrix image = matrix::zeros({1000, 1000, 4}, dtype::UInt8);
+    image.eval(); // zeros() is now lazy; the rasteriser writes into image.buffer directly below
     CPURasteriser rast;
 //    {
 //        Timer time;
@@ -12587,7 +13160,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     
     matrix s = matrix::zeros({1080, 1920, 4}, dtype::UInt8);
     matrix ss = matrix::zeros({1080, 1920, 4}, dtype::UInt8);
-    ss.buildMetalBuffer();
+    ss.eval(); // zeros() is now lazy; eval() materializes the buffer and (since total_size > threshold) builds the metal buffer too
     
     matrix img = matrix::fromImage();
     img.begin_refcount();
@@ -12809,7 +13382,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 //    
 //    pRender->viewers.push_back(v);
     auto graph_viewer = std::make_shared<GraphViewer>();
-    auto x = matrix::linespace(0.0f, 300.0f, 10000);
+    auto x = matrix::linespace(0.0f, 300.0f, 3000);
     auto y= x.zeros();
     auto wrap_centered = [](float x, float y) {
         return x - std::round(x / y) * y;
@@ -12828,12 +13401,13 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     }
     
 
+//    x = matrix::linespace(0, 300, 300);
     
     graph_viewer->render_graph(x, y, {1.0f, 0.0f, 0.0f, 1.0f}, 0.001);
     
 //
     auto g1 = LineController();
-    g1.update(x, matrix::sin(x+M_PI));
+    g1.update(x.astype(dtype::Float), matrix::sin(x+M_PI));
     
     pRender->viewers.push_back(graph_viewer);
     std::cout << sizeof(simd_float3) << "\n";
@@ -13113,6 +13687,8 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     matrix W_learned_sample = matrix::of<float>({0.0f, 0.0f, 0.0f, 0.0f}).reshape(4, 1);
     matrix W_learned = matrix::of<float>({0.0f, 0.0f, 0.0f, 0.0f}).reshape(4, 1);
     
+    neuron_loss(W_learned).print();
+    
     auto W_grad_fn = matrix::grad_graph_gpu(neuron_loss, W_learned_sample);
     
     
@@ -13122,6 +13698,9 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
         g.eval_metal();
         g.print();
         W_learned = W_learned - 0.05f * g;
+        W_learned.eval_metal();
+        W_learned.print();
+        
         
         
     }
@@ -13335,6 +13914,38 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     printf("Take Axis 1:\n");
     take_out_1.print();
 
+    matrix randint_test = matrix::randint(0, 100, {4, 4});
+    printf("Randint [0, 100) (4x4):\n");
+    randint_test.print();
+    
+    matrix rand_test = matrix::rand({4, 4});
+    printf("Rand [0, 1) (4x4):\n");
+    rand_test.print();
+    
+    matrix randn_test = matrix::randn({4, 4});
+    printf("Randn (4x4):\n");
+    randn_test.print();
+    matrix argmax_a = matrix::of<float>({1.0, 5.0, 3.0, 8.0, 2.0, 4.0}).reshape(2, 3);
+    
+    matrix argmax_out_0 = argmax_a.argmax(0);
+    argmax_out_0.eval();
+    printf("ArgMax Axis 0:\n");
+    argmax_out_0.print();
+    
+    matrix argmax_out_1 = argmax_a.argmax(1);
+    argmax_out_1.eval();
+    printf("ArgMax Axis 1:\n");
+    argmax_out_1.print();
+    
+    matrix argmin_out_0 = argmax_a.argmin(0);
+    argmin_out_0.eval();
+    printf("ArgMin Axis 0:\n");
+    argmin_out_0.print();
+    
+    matrix argmin_out_1 = argmax_a.argmin(1);
+    argmin_out_1.eval();
+    printf("ArgMin Axis 1:\n");
+    argmin_out_1.print();
 }
 
 - (void) EXR_CVE_EXPLOIT {
@@ -13599,13 +14210,13 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 //    auto Model = GeometryNode<uint32_t>::BuildGeoNodeFromModel("11_7_2024.usdz");
 //    pRender->_NodesQueue_32.push_back(std::move(Model));
 //
-    __block MatrixH<2, float> RN = MatrixH<2, float>::noise_texture({1000, 3}, 5.9, 2.0, 1.0);
-    __block MatrixH<2, float> RSS   = MatrixH<2, float>::concatGPU( MatrixH<2, float>::noise_texture({1000, 3}), MatrixH<2, float>::repeating({1000, 1}, 1.0f) , 1);
-    __block auto RS = std::make_shared<PointCloudNode>(RN, RSS);
+    __block MatrixH<2, float> rn = MatrixH<2, float>::noise_texture({1000, 3}, 5.9, 2.0, 1.0);
+    __block MatrixH<2, float> rs   = MatrixH<2, float>::concatGPU( MatrixH<2, float>::noise_texture({1000, 3}), MatrixH<2, float>::repeating({1000, 1}, 1.0f) , 1);
+    __block auto rss = std::make_shared<PointCloudNode>(rn, rs);
 //    
 ////    __block MatrixH<3, float> depth =
 //    auto noisy_img = MatrixH<3, float>::concatGPU( MatrixH<3, float>::noise_texture({100, 100, 3}), MatrixH<3, float>::repeating({100, 100, 1}, 1.0f) , 1);
-    pRender->_NodesQueuePtr.push_back(RS);
+    pRender->_NodesQueuePtr.push_back(rss);
 ////
     [_sidePanel updateAssetManager];
     auto [img, depthMap] = MatrixH<3, uint8_t>::fromImageWithDepth();
@@ -13618,7 +14229,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     
     MatrixH<3, float> normalisedFloatColour = ((MatrixH<3, float>)img ) / 255.0f;
     
-    RS->updatePoints(std::move(posEncodingMeshGrid).reshape(posEncodingMeshGrid.shape[0] * posEncodingMeshGrid.shape[1], posEncodingMeshGrid.shape[2]), std::move(normalisedFloatColour).reshape(normalisedFloatColour.shape[0] * normalisedFloatColour.shape[1], normalisedFloatColour.shape[2]));
+    rss->updatePoints(std::move(posEncodingMeshGrid).reshape(posEncodingMeshGrid.shape[0] * posEncodingMeshGrid.shape[1], posEncodingMeshGrid.shape[2]), std::move(normalisedFloatColour).reshape(normalisedFloatColour.shape[0] * normalisedFloatColour.shape[1], normalisedFloatColour.shape[2]));
     
 
     [pRender updateBaseImage:img];
@@ -13656,7 +14267,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 //    auto gridZz = sqrt(1 - (gridXx * gridXx + gridYx * gridYx));
 //    auto points_for_nish = MatrixH<3, float>::concat(std::move(gridXx).unsqueeze(-1), std::move(gridZz).unsqueeze(-1), std::move(gridYx).unsqueeze(-1), 2).flatten<1>();
 //    
-//    RS->updatePoints(points_for_nish, Colour);
+//    rss->updatePoints(points_for_nish, Colour);
     
 //                        MTLCaptureManager *captureManager = [MTLCaptureManager sharedCaptureManager];
 //                        MTLCaptureDescriptor *captureDescriptor = [[MTLCaptureDescriptor alloc] init];
@@ -13730,9 +14341,9 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 //            NSTimer *timer = [NSTimer timerWithTimeInterval:(1.0/30.0)
 //                                                     repeats:YES
 //                                                       block:^(NSTimer * _Nonnull timer) {
-//                RN = MatrixH<2, float>::rand_uniform({1000, 3}, -10, 10);
-//                RSS   = MatrixH<2, float>::concatGPU( MatrixH<2, float>::rand_uniform({1000, 3}, 0, 1), MatrixH<2, float>::repeating({1000, 1}, 1.0f) , 1);
-//                RS->updatePoints(RN, RSS);
+//                rn = MatrixH<2, float>::rand_uniform({1000, 3}, -10, 10);
+//                rs   = MatrixH<2, float>::concatGPU( MatrixH<2, float>::rand_uniform({1000, 3}, 0, 1), MatrixH<2, float>::repeating({1000, 1}, 1.0f) , 1);
+//                rss->updatePoints(rn, rs);
 //            }];
 //    
 //            NSRunLoop *runLoop = [NSRunLoop currentRunLoop];

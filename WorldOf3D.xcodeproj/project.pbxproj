@@ -26,10 +26,6 @@
 		AB300BB42C5FB5A20098A5A5 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE7D2C1C76DF00D0A599 /* MetalKit.framework */; };
 		AB300BB62C5FB8D60098A5A5 /* Filters.metal in Sources */ = {isa = PBXBuildFile; fileRef = AB300BB52C5FB8D60098A5A5 /* Filters.metal */; };
 		AB3751882EECC4B800540331 /* mediapipe in Resources */ = {isa = PBXBuildFile; fileRef = AB3751872EECC4B800540331 /* mediapipe */; };
-		AB3751902EF4B4AA00540331 /* libopencv_highgui.4.12.0.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AB3751582EEC1B6D00540331 /* libopencv_highgui.4.12.0.dylib */; platformFilters = (macos, xros, ); };
-		AB3751912EF4B4AA00540331 /* libopencv_imgproc.4.12.0.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AB37514A2EEB7AB900540331 /* libopencv_imgproc.4.12.0.dylib */; platformFilters = (macos, xros, ); };
-		AB3751922EF4B4AA00540331 /* libopencv_videoio.4.12.0.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AB3751592EEC1B6D00540331 /* libopencv_videoio.4.12.0.dylib */; platformFilters = (macos, xros, ); };
-		AB3751942EF4B5E500540331 /* libopencv_core.4.12.0.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = AB3751482EEB7A5900540331 /* libopencv_core.4.12.0.dylib */; platformFilters = (macos, xros, ); };
 		AB3EBC692D5BA402009D32BA /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABCB242F2C103798006EB7B6 /* Metal.framework */; };
 		AB3EBC6A2D5BA402009D32BA /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE7D2C1C76DF00D0A599 /* MetalKit.framework */; };
 		AB3EBC6B2D5BA412009D32BA /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABFBBE782C1B841A00D0A599 /* AppKit.framework */; };
@@ -1329,6 +1325,7 @@
 				Algos/linked_list_sum.cpp,
 				back.txt,
 				primitives.cpp,
+				Problem.cpp,
 				SOPs/Controllers.cpp,
 				SOPs/GeoNode.cpp,
 				SOPs/GraphViewer.cpp,
@@ -1401,10 +1398,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AB3751942EF4B5E500540331 /* libopencv_core.4.12.0.dylib in Frameworks */,
-				AB3751902EF4B4AA00540331 /* libopencv_highgui.4.12.0.dylib in Frameworks */,
-				AB3751912EF4B4AA00540331 /* libopencv_imgproc.4.12.0.dylib in Frameworks */,
-				AB3751922EF4B4AA00540331 /* libopencv_videoio.4.12.0.dylib in Frameworks */,
 				AB031A502E2CEC84005916D7 /* libmlx.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -6146,8 +6139,8 @@
 					/usr/local/lib,
 					"$(PROJECT_DIR)/AdityaIntelligenceProMax",
 					"$(PROJECT_DIR)",
-					/opt/homebrew/Cellar/opencv/4.12.0_17/lib,
 					"/private/var/tmp/_bazel_adityadude/eb3560479e75155bc8d80d1ef4345636/execroot/mediapipe/bazel-out/darwin_arm64-fastbuild/bin/mediapipe/examples/desktop",
+					/opt/homebrew/opt/opencv/lib,
 				);
 				LLVM_LTO = NO;
 				MACOSX_DEPLOYMENT_TARGET = 15.1;
@@ -6227,8 +6220,8 @@
 					/usr/local/lib,
 					"$(PROJECT_DIR)/AdityaIntelligenceProMax",
 					"$(PROJECT_DIR)",
-					/opt/homebrew/Cellar/opencv/4.12.0_17/lib,
 					"/private/var/tmp/_bazel_adityadude/eb3560479e75155bc8d80d1ef4345636/execroot/mediapipe/bazel-out/darwin_arm64-fastbuild/bin/mediapipe/examples/desktop",
+					/opt/homebrew/opt/opencv/lib,
 				);
 				LLVM_LTO = NO;
 				MACOSX_DEPLOYMENT_TARGET = 15.1;

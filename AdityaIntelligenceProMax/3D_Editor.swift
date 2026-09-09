@@ -173,15 +173,15 @@ struct _3D_Editor: View {
     var body: some View {
         #if os(macOS)
         HSplitView {
-            MTKViewWrapper(intel: inteligence, viewNo: 2)
-                .layoutPriority(1)
+//            MTKViewWrapper(intel: inteligence, viewNo: 2)
+//                .layoutPriority(1)
             MTKViewWrapper(intel: inteligence, viewNo: 1)
                 .layoutPriority(1)
                 .onAppear {
                     guard !Self.hasAppeared else { return }
                     Self.hasAppeared = true
                     print("BBBB")
-                    inteligence.render_graph()
+                    inteligence.differential_eqn()
                 }
             VSplitView {
                 
@@ -201,7 +201,7 @@ MTKViewWrapper(intel: inteligence, viewNo: 1)
         Self.hasAppeared = true
         //                    let matrix = MatrixH<_CInt_1, CFloat>([1.0, 2.0, 3.0] as [CFloat])
         
-        inteligence?.micTesting1234()
+        inteligence.depth_inplace()
     }
 #endif
     }

@@ -159,3 +159,101 @@
 //        }
 //    });
 //}
+
+//struct _3D_Editor: View {
+//    @StateObject var inteligence = Intelligence(CGRect(x: 0, y: 0, width: 300, height: 300))
+//    @State var oldDrag: CGSize = .zero
+//    @State var panDrag: CGSize = .zero
+//    @State var scrollEvent: Any?
+//    @State var keyMonitor: Any?
+//    @State var pressedKeys = Set<UInt16>()
+//    @State var cameraTimer: NSObject? = nil
+//    @State var pos: CGFloat = 0
+//    static var hasAppeared = false
+//    var body: some View {
+//        #if os(macOS)
+//        HSplitView {
+////            MTKViewWrapper(intel: inteligence, viewNo: 2)
+//            MTKViewWrapper(intel: inteligence, viewNo: 1)
+//                .layoutPriority(1)
+//                .onAppear {
+//                    guard !Self.hasAppeared else { return }
+//                    Self.hasAppeared = true
+////                    let matrix = MatrixH<_CInt_1, CFloat>([1.0, 2.0, 3.0] as [CFloat])
+////                    let list: std.initializer_list<CUnsignedInt>
+////                    let mat = matrix.zeros(list)
+////                    mat.print()
+//                    print("BBBB")
+//                    inteligence.render_graph()
+//                    //                scrollEvent = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel ) { scroll in
+//                    //                    inteligence.updateCam(CGSize(width: scroll.scrollingDeltaX, height: scroll.scrollingDeltaY), TransformationMode.Translate, 1)
+//                    //                    return scroll
+//                    //                }
+//                    //                NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+//                    //                    if (event.keyCode == 31) {
+//                    //                        inteligence?.updateCamProjection(false)
+//                    //                    } else if (event.keyCode == 35) {
+//                    //                        inteligence?.updateCamProjection(true)
+//                    //
+//                    //                    } else {
+//                    //                        pressedKeys.insert(event.keyCode)
+//                    //                    }
+//                    //
+//                    //                    return nil
+//                    //                }
+//                    //
+//                    //                NSEvent.addLocalMonitorForEvents(matching: [.keyUp]) { event in
+//                    //                    pressedKeys.remove(event.keyCode)
+//                    //                    return nil
+//                    //                }
+//                    //                // Use Timer instead of CADisplayLink
+//                    //                cameraTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120.0, repeats: true) { _ in
+//                    //                    updateCamera()
+//                    //                }
+//                    //
+//                    ////                keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+//                    ////                    switch event.keyCode {
+//                    ////                    case 123:
+//                    ////                        inteligence.updateCam(CGSize(width: -10, height: 0), TransformationMode.Translate)
+//                    ////                        return nil
+//                    ////                    case 124:
+//                    ////                        inteligence.updateCam(CGSize(width: 10, height: 0), TransformationMode.Translate)
+//                    ////                        return nil
+//                    ////                    case 125:
+//                    ////                        inteligence.updateCam(CGSize(width: 0, height: 10), TransformationMode.Translate)
+//                    ////                        return nil
+//                    ////                    case 126:
+//                    ////                        inteligence.updateCam(CGSize(width: 0, height: -10), TransformationMode.Translate)
+//                    ////                        return nil
+//                    ////                    default:
+//                    ////                        break
+//                    ////                    }
+//                    ////                    return event
+//                    //                }
+//                }
+//            VSplitView {
+//                
+//                NStoSwift(nsView: inteligence.sidePanel.view)
+//                ControlPanel(intel: inteligence)
+//                    .frame(minWidth: 220, maxWidth: .infinity)
+//                    .compositingGroup()
+//                
+////                    .layoutPriority(1)
+////                ContentViewBenchmark()
+//            }
+//        
+//        }
+//#endif
+//#if os(iOS)
+//MTKViewWrapper(intel: inteligence, viewNo: 1)
+//    .layoutPriority(1)
+//    .onAppear {
+//        guard !Self.hasAppeared else { return }
+//        Self.hasAppeared = true
+//        //                    let matrix = MatrixH<_CInt_1, CFloat>([1.0, 2.0, 3.0] as [CFloat])
+//        
+//        inteligence?.micTesting1234()
+//    }
+//#endif
+//    }
+//}

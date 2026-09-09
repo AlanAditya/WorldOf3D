@@ -380,3 +380,328 @@
 //    result.buildMetalBuffer();
 //    return result;
 //}
+
+//~MatrixH() {
+//    #ifdef DestructionLog
+//    std::cout << "Matrix Destroyed" << "\n";
+//    #endif
+//
+//    // HUGE ERROR IN PREVIOUS CODE flags & 0 was always false and buffer wasnt getting deleted
+////        if ((flags & 0)) {
+////            delete [] buffer;
+////            std::cout << "deleted" << "\n";
+////        }
+//    if (!(flags & NON_OWNERSHIP_FLAG)) {
+//        delete [] buffer;
+//        buffer = nullptr;
+//        #ifdef DestructionLog
+//        std::cout << "deleted" << "\n";
+//        #endif
+//    }
+//}
+//
+//MatrixH(const MatrixH<dims, Type>& other) : MatrixBase(dims, dtype_from_type<Type>()) {
+//#ifdef CopyLog
+//    std::cout << "Copied" << "\n";
+//#endif
+//    // copy constructor doesnt need to delete its buffer as  its called only on uninitlised matricies
+////        if () {
+//        buffer = new Type[other.total_size];
+//        total_size = other.total_size;
+//        metalBuffer = [GlobalGPUManager.metalDevice newBufferWithBytesNoCopy:buffer length:total_size * sizeof(Type) options:MTLResourceStorageModeShared deallocator:^(void * _Nonnull pointer, NSUInteger length) {
+//        }];
+////        gradFunc = other.gradFunc;
+////        parentNodes = other.parentNodes;
+////        } else if (total_size != other.total_size) {
+////            // copy constructor doesnt need to delete it
+//////            if (buffer) {
+//////                delete [] buffer;
+//////            }
+////            buffer = new Type[other.total_size];
+////            total_size = other.total_size;
+////
+////        }
+//    flags = other.flags; // FIX: We are allocating new buffer, so we own it. Reset the ownership flags.
+//    flags &= ~NON_OWNERSHIP_FLAG;
+//    memcpy(buffer, other.buffer, sizeof(Type) * total_size);
+//    memcpy(shape, other.shape, sizeof(size_m) * dims);
+//    memcpy(strides, other.strides, dims * sizeof(size_m));
+//    tape = other.tape;
+//}
+//
+//MatrixH( MatrixH<dims, Type>&& other) : MatrixBase(dims, dtype_from_type<Type>()) {
+//#ifdef MoveLog
+//    std::cout << "Moved" << "\n";
+//#endif
+//    
+//    if (flags & NON_OWNERSHIP_FLAG) {
+//        *this = (const MatrixH<dims, Type>&) other; // calls copy assignment
+//        return;
+//    }
+//    if (buffer) {
+//        delete [] buffer;
+//    }
+//    buffer = other.buffer;
+//    flags = other.flags;
+//    other.buffer = nullptr;
+//    memcpy(shape, other.shape, dims * sizeof(size_m));
+//    memcpy(strides, other.strides, dims * sizeof(size_m));
+//    metalBuffer = other.metalBuffer;
+//    total_size = other.total_size;
+////        gradFunc = std::move(other.gradFunc);
+////        parentNodes = std::move(other.parentNodes);
+//    other.~MatrixH();
+//}
+//
+//// const fill
+//MatrixH<dims, Type>& operator=(Type value) {
+//    if (flags & (1u << 1)) {
+//        fill_nd_iterative(buffer, shape, strides, dims, value);
+//    } else {
+//        std::fill(buffer, buffer+total_size, value);
+////            memset(buffer, 0, total_size * sizeof(Type));
+//    }
+//    
+//    return *this;
+//}
+//
+//MatrixH<2, Type>& operator=(const MatrixH<1, Type>& other) requires (dims == 2) {
+//    
+//    if (total_size != other.total_size) {
+//        std::cerr << "Error: MatrixH size mismatch — total_size = " << total_size
+//                  << ", other.total_size = " << other.total_size << std::endl;
+//        throw std::runtime_error("Tensor size mismatch in operation");
+//    }
+//    if (shape[1] != other.shape[0]) {
+//        std::cerr << "Error: MatrixH shape mismatch — shape[last] = " << shape[1]
+//                  << ", other.shape[last] = " << other.shape[0] << std::endl;
+//        throw std::runtime_error("MatrixH shape mismatch in operation");
+//        throw;
+//    }
+//    
+//    if ((flags & NON_CONTIGUOUS_FLAG) || (other.flags & NON_CONTIGUOUS_FLAG)) {
+//        for (int i = 0; i < shape[0]; i++) {
+//            for (int j = 0; j < shape[1]; j++) {
+//                buffer[strides[0] * i + strides[1] * j] = other.buffer[j * other.strides[0]];
+//            }
+//        }
+//        return *this;
+//    } else {
+//
+//#ifdef CopyLog
+//        std::cout << "Copy Assignment" << "\n";
+//#endif
+//        memcpy(buffer, other.buffer, total_size * sizeof(Type));
+//        memcpy(shape, other.shape, dims * sizeof(size_m));
+//        memcpy(strides, other.strides, dims * sizeof(size_m));
+////            gradFunc = other.gradFunc;
+////            parentNodes = other.parentNodes;
+//        
+//        
+//    }
+//    
+//    return *this;
+//}
+//
+//
+//// copy assignment
+//MatrixH<dims, Type>& operator=(const MatrixH<dims, Type>& other) {
+//    
+//    if (&other == this) { }
+//    // 2. Data Buffer Check (Same Underlying Data)
+//    // If both point to the same memory buffer, copying is redundant.
+//    else if (this->buffer == other.buffer) {
+//        return *this;
+//    }
+//    else if (total_size == other.total_size) {
+//        if ((flags & NON_CONTIGUOUS_FLAG) || (other.flags & NON_CONTIGUOUS_FLAG)) {
+//            
+//            size_m indexA[dims];
+//            size_m indexB[dims];
+//            for (int gid = 0; gid < total_size; gid++) {
+//                int remA = gid;
+//                int remB = gid;
+//                for (int i =dims-1; i >= 0; i--) {
+//                    indexA[i] = remA % shape[i];
+//                    indexB[i] = remB % other.shape[i];
+//                    remA /= shape[i];
+//                    remB /= other.shape[i];
+//                }
+//                
+//                int offsetA = dotArray(indexA, strides, dims);
+//                int offsetB = dotArray(indexB, other.strides, dims);
+//                buffer[offsetA] = other.buffer[offsetB];
+//            }
+//            return *this;
+//        }
+//#ifdef CopyLog
+//        std::cout << "Copy Assignment" << "\n";
+//#endif
+//        memcpy(buffer, other.buffer, total_size * sizeof(Type));
+//        memcpy(shape, other.shape, dims * sizeof(size_m));
+//        memcpy(strides, other.strides, dims * sizeof(size_m));
+////            gradFunc = other.gradFunc;
+////            parentNodes = other.parentNodes;
+//        
+//        
+//    } else {
+//#ifdef CopyLog
+//        std::cout << "Copy Create Assignment" << "\n";
+//#endif
+//        if (buffer && !(flags & NON_OWNERSHIP_FLAG)) {
+//            delete [] buffer;
+//        }
+//        flags = other.flags; // FIX: We are allocating new buffer, so we own it. Reset the ownership flags.
+//        flags &= ~NON_OWNERSHIP_FLAG;
+//        total_size = other.total_size;
+//        buffer = new Type[total_size];
+//        buildMetalBuffer();
+//        memcpy(buffer, other.buffer, total_size * sizeof(Type));
+//        memcpy(shape, other.shape, dims * sizeof(size_m));
+//        memcpy(strides, other.strides, dims * sizeof(size_m));
+////            gradFunc = other.gradFunc;
+////            parentNodes = other.parentNodes;
+//    }
+//    
+//    return *this;
+//}
+//
+//
+//MatrixH<dims, Type>& operator=(MatrixH<dims, Type>&& other) {
+//    if (&other == this) { return *this; }
+//    if (flags & NON_OWNERSHIP_FLAG) {
+//#ifdef CopyLog
+//        std::cout << "DONT OWN THE DATA COPYInG INSTEAD \n";
+//#endif
+//        *this = (const MatrixH<dims, Type>&) other;
+//        return *this;
+//    }
+////        else if (total_size == other.total_size) {
+////            std::cout << "Copy Assignment" << "\n";
+////            memcpy(buffer, other.buffer, total_size * sizeof(Type));
+////            memcpy(shape, other.shape, dims * sizeof(size_m));
+////        } else {
+//#ifdef MoveLog
+//    std::cout << "Move Assignment" << "\n";
+//#endif
+//    // WRONGGGGGG
+////        if (buffer && (flags & 0)) {
+////            delete [] buffer;
+////        }
+//    if (buffer && !(flags & NON_OWNERSHIP_FLAG)) {
+//        delete [] buffer;
+//    }
+//    buffer = other.buffer;
+//    metalBuffer = other.metalBuffer;
+//    flags = other.flags;
+//    other.buffer = nullptr;
+//    memcpy(shape, other.shape, dims * sizeof(size_m));
+//    memcpy(strides, other.strides, dims * sizeof(size_m));
+//    total_size = other.total_size;
+////        gradFunc = std::move(other.gradFunc);
+////        parentNodes = std::move(other.parentNodes);
+////        parentNodes = other.parentNodes; // its a pointer to a vector
+//    other.~MatrixH();
+//    return *this;
+//}
+//
+////    template <int d>
+////    MatrixH<d, Type>& operator=(MatrixH<d, Type>&& other) {
+////
+////        this->~MatrixH();
+////        return *other;
+////    }
+//MatrixH<dims, Type>& operator=(const simd_float3 other) {
+//    
+//    if ((float*)&other == this->buffer) { }
+//    else if (total_size == 3) {
+//        if (flags & NON_CONTIGUOUS_FLAG) {
+//            size_m indexA[dims];
+//            for (int gid = 0; gid < total_size; gid++) {
+//                int remA = gid;
+//                for (int i =dims-1; i >= 0; i--) {
+//                    indexA[i] = remA % shape[i];
+//                    remA /= shape[i];
+//                }
+//                
+//                int offsetA = dotArray(indexA, strides, dims);
+//                buffer[offsetA] = other[gid];
+//            }
+//            return *this;
+//        }
+//#ifdef CopyLog
+//        std::cout << "Copy Assignment" << "\n";
+//#endif
+//        memcpy(buffer, &other, total_size * sizeof(Type));
+//        
+//        
+//    } else {
+//        std::cerr << "Cant Paste SIMD_FLOAT3 with total size of " << total_size << "\n";
+//        throw;
+//    }
+//    
+//    return *this;
+//}
+
+//#import "Matrix.mm"
+//
+//
+//
+
+//class Primitive {
+//    mat operand1;
+//    mat operand2;
+//
+//    std::string MSLCode;
+//};
+
+//class mat {
+//public:
+//    int dims;
+//    size_t* shape;
+//    size_t* strides;
+//    size_t total_size;
+//    std::vector<std::string> prevCode;
+//    std::string MSLCode;
+//    mat(const std::string& name): MSLCode(name) {
+//        
+//    }
+//    mat() : dims(0), shape(nullptr), strides(nullptr), total_size(0), MSLCode("") {}
+//
+//    
+//    mat operator +( mat operand2) {
+//        mat result;
+//        result.prevCode.reserve(prevCode.size() + operand2.prevCode.size());
+//        std::copy(prevCode.begin(), prevCode.end(), result.prevCode.begin());
+//        std::copy(operand2.prevCode.begin(), operand2.prevCode.end(), result.prevCode.begin() + prevCode.size());
+//        result.MSLCode = MSLCode + " + " + operand2.MSLCode;
+//        return result;
+//    }
+//    
+//    mat operator -(mat operand2) {
+//        mat result;
+//        result.prevCode.reserve(prevCode.size() + operand2.prevCode.size());
+//        std::copy(prevCode.begin(), prevCode.end(), result.prevCode.begin());
+//        std::copy(operand2.prevCode.begin(), operand2.prevCode.end(), result.prevCode.begin() + prevCode.size());
+//        result.MSLCode = MSLCode + " - " + operand2.MSLCode;
+//        return result;
+//    }
+//    
+//    mat operator *(mat operand2) {
+//        mat result;
+//        result.prevCode.reserve(prevCode.size() + operand2.prevCode.size());
+//        std::copy(prevCode.begin(), prevCode.end(), result.prevCode.begin());
+//        std::copy(operand2.prevCode.begin(), operand2.prevCode.end(), result.prevCode.begin() + prevCode.size());
+//        result.MSLCode = MSLCode + " * " + operand2.MSLCode;
+//        return result;
+//    }
+//    
+//    mat operator /(mat operand2) {
+//        mat result;
+//        result.prevCode.reserve(prevCode.size() + operand2.prevCode.size());
+//        std::copy(prevCode.begin(), prevCode.end(), result.prevCode.begin());
+//        std::copy(operand2.prevCode.begin(), operand2.prevCode.end(), result.prevCode.begin() + prevCode.size());
+//        result.MSLCode = MSLCode + " + " + operand2.MSLCode;
+//        return result;
+//    }
+//};

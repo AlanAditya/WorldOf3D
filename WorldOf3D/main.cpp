@@ -294,7 +294,7 @@ int main(int argc, const char * argv[]) {
     CGRect frame = (CGRect){ {100.0, 100.0}, {640.0, 640.0} };
     NS::Window* window = NS::Window::alloc()->init(frame, NS::WindowStyleMaskTitled | NS::WindowStyleMaskClosable | NS::WindowStyleMaskResizable, NS::BackingStoreBuffered, false);
     
-    const NS::String* WinName = NS::String::string("DAMM YOU", NS::UTF8StringEncoding);
+    const NS::String* WinName = NS::String::string("Heyyy YOU", NS::UTF8StringEncoding);
     window->setTitle(WinName);
     
     MTL::Device* device = MTL::CreateSystemDefaultDevice();
