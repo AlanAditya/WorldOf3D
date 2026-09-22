@@ -13946,6 +13946,125 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     argmin_out_1.eval();
     printf("ArgMin Axis 1:\n");
     argmin_out_1.print();
+
+    printf("\n--- RESAMPLE TEST (METAL & CPU) ---\n");
+    // 1D: [0,10,20,30] (4) -> (7). scale = 3/6 = 0.5.
+    // Nearest expected: [0,10,10,20,20,30,30]
+    // Linear  expected: [0,5,10,15,20,25,30]
+    matrix resample_1d = matrix::of<float>({0.0f, 10.0f, 20.0f, 30.0f});
+
+    matrix resample_1d_near_cpu = matrix::resample(resample_1d, {7}, ResampleMode::Nearest);
+    resample_1d_near_cpu.eval_cpu();
+    printf("Resample 1D Nearest CPU (expect 0 10 10 20 20 30 30):\n");
+    resample_1d_near_cpu.print();
+
+    matrix resample_1d_near_gpu = matrix::resample(resample_1d, {7}, ResampleMode::Nearest);
+    resample_1d_near_gpu.eval_metal();
+    printf("Resample 1D Nearest Metal (expect 0 10 10 20 20 30 30):\n");
+    resample_1d_near_gpu.print();
+
+    matrix resample_1d_lin_cpu = matrix::resample(resample_1d, {7}, ResampleMode::Linear);
+    resample_1d_lin_cpu.eval_cpu();
+    printf("Resample 1D Linear CPU (expect 0 5 10 15 20 25 30):\n");
+    resample_1d_lin_cpu.print();
+
+    matrix resample_1d_lin_gpu = matrix::resample(resample_1d, {7}, ResampleMode::Linear);
+    resample_1d_lin_gpu.eval_metal();
+    printf("Resample 1D Linear Metal (expect 0 5 10 15 20 25 30):\n");
+    resample_1d_lin_gpu.print();
+
+    // 2D: [[0,10],[20,30]] (2x2) -> (3x3). scale = 1/2 = 0.5 on both axes.
+    // Nearest expected: [[0,10,10],[20,30,30],[20,30,30]]
+    // Linear  expected: [[0,5,10],[10,15,20],[20,25,30]]
+    matrix resample_2d = matrix::of<float>({0.0f, 10.0f, 20.0f, 30.0f}).reshape(2, 2);
+
+    matrix resample_2d_near_cpu = matrix::resample(resample_2d, {3, 3}, ResampleMode::Nearest);
+    resample_2d_near_cpu.eval_cpu();
+    printf("Resample 2D Nearest CPU (expect [0 10 10][20 30 30][20 30 30]):\n");
+    resample_2d_near_cpu.print();
+
+    matrix resample_2d_near_gpu = matrix::resample(resample_2d, {3, 3}, ResampleMode::Nearest);
+    resample_2d_near_gpu.eval_metal();
+    printf("Resample 2D Nearest Metal (expect [0 10 10][20 30 30][20 30 30]):\n");
+    resample_2d_near_gpu.print();
+
+    matrix resample_2d_lin_cpu = matrix::resample(resample_2d, {3, 3}, ResampleMode::Linear);
+    resample_2d_lin_cpu.eval_cpu();
+    printf("Resample 2D Linear CPU (expect [0 5 10][10 15 20][20 25 30]):\n");
+    resample_2d_lin_cpu.print();
+
+    matrix resample_2d_lin_gpu = matrix::resample(resample_2d, {3, 3}, ResampleMode::Linear);
+    resample_2d_lin_gpu.eval_metal();
+    printf("Resample 2D Linear Metal (expect [0 5 10][10 15 20][20 25 30]):\n");
+    resample_2d_lin_gpu.print();
+
+    printf("\n--- RESAMPLE IDENTITY-TAIL FAST PATH TEST (METAL & CPU) ---\n");
+    // Same (2,2) -> (3,3) case as above, but with an extra trailing channel axis
+    // (2,2,2) -> (3,3,2) left untouched. Channel 0 == the 2D case above; channel 1
+    // is the same values +100, so this exercises resample_tail() and should match
+    // the 2D results above exactly, per channel, if the fast path is correct.
+    matrix resample_3d = matrix::of<float>({0.0f, 100.0f, 10.0f, 110.0f, 20.0f, 120.0f, 30.0f, 130.0f}).reshape(2, 2, 2);
+
+    matrix resample_3d_near_cpu = matrix::resample(resample_3d, {3, 3, 2}, ResampleMode::Nearest);
+    resample_3d_near_cpu.eval_cpu();
+    printf("Resample Tail 3D Nearest CPU (expect ch0 [0 10 10][20 30 30][20 30 30], ch1 = ch0+100):\n");
+    resample_3d_near_cpu.print();
+
+    matrix resample_3d_near_gpu = matrix::resample(resample_3d, {3, 3, 2}, ResampleMode::Nearest);
+    resample_3d_near_gpu.eval_metal();
+    printf("Resample Tail 3D Nearest Metal (expect ch0 [0 10 10][20 30 30][20 30 30], ch1 = ch0+100):\n");
+    resample_3d_near_gpu.print();
+
+    matrix resample_3d_lin_cpu = matrix::resample(resample_3d, {3, 3, 2}, ResampleMode::Linear);
+    resample_3d_lin_cpu.eval_cpu();
+    printf("Resample Tail 3D Linear CPU (expect ch0 [0 5 10][10 15 20][20 25 30], ch1 = ch0+100):\n");
+    resample_3d_lin_cpu.print();
+
+    matrix resample_3d_lin_gpu = matrix::resample(resample_3d, {3, 3, 2}, ResampleMode::Linear);
+    resample_3d_lin_gpu.eval_metal();
+    printf("Resample Tail 3D Linear Metal (expect ch0 [0 5 10][10 15 20][20 25 30], ch1 = ch0+100):\n");
+    resample_3d_lin_gpu.print();
+
+    printf("\n--- RESAMPLE MULTI-AXIS COLLAPSED TAIL TEST (METAL & CPU) ---\n");
+    // (2,2,2,3) -> (3,3,2,3): H,W get resampled, the trailing (2,3) block is identity
+    // AND contiguously packed (a plain reshape, so strides are dense row-major), so
+    // resample_collapsed_tail_start() should collapse it into ONE flat tail of size 6
+    // (leading_rank=2), not fall back to treating only the very last axis as the tail.
+    // Deliberately NOT size 4 (or 1): tail_size in {1,4} for Float is exactly what
+    // routes a leading_rank==2 tail through the CPU-only vImage fast path
+    // (resample_try_vimage_tail() in Matrix.mm), which uses a different interpolation
+    // kernel than the rest of this file and would make the "expect" values below
+    // wrong for the Linear CPU case specifically. Size 6 keeps this test on the
+    // exact-math path so the printed values are checkable by eye.
+    // value[h][w][t0][t1] = base(h,w) + (t0*3+t1)*100, base = [[0,10],[20,30]] (same
+    // as the 2D case), so each of the 6 flattened tail slots should independently
+    // reproduce the 2D nearest/linear pattern with its own +0/100/200/300/400/500 offset.
+    matrix resample_4d = matrix::of<float>({
+        0.0f, 100.0f, 200.0f, 300.0f, 400.0f, 500.0f,      // h=0,w=0 (base=0)
+        10.0f, 110.0f, 210.0f, 310.0f, 410.0f, 510.0f,     // h=0,w=1 (base=10)
+        20.0f, 120.0f, 220.0f, 320.0f, 420.0f, 520.0f,     // h=1,w=0 (base=20)
+        30.0f, 130.0f, 230.0f, 330.0f, 430.0f, 530.0f      // h=1,w=1 (base=30)
+    }).reshape(2, 2, 2, 3);
+
+    matrix resample_4d_near_cpu = matrix::resample(resample_4d, {3, 3, 2, 3}, ResampleMode::Nearest);
+    resample_4d_near_cpu.eval_cpu();
+    printf("Resample Collapsed-Tail 4D Nearest CPU (expect base [0 10 10][20 30 30][20 30 30], +0/100/200/300/400/500 per tail slot):\n");
+    resample_4d_near_cpu.print();
+
+    matrix resample_4d_near_gpu = matrix::resample(resample_4d, {3, 3, 2, 3}, ResampleMode::Nearest);
+    resample_4d_near_gpu.eval_metal();
+    printf("Resample Collapsed-Tail 4D Nearest Metal (expect base [0 10 10][20 30 30][20 30 30], +0/100/200/300/400/500 per tail slot):\n");
+    resample_4d_near_gpu.print();
+
+    matrix resample_4d_lin_cpu = matrix::resample(resample_4d, {3, 3, 2, 3}, ResampleMode::Linear);
+    resample_4d_lin_cpu.eval_cpu();
+    printf("Resample Collapsed-Tail 4D Linear CPU (expect base [0 5 10][10 15 20][20 25 30], +0/100/200/300/400/500 per tail slot):\n");
+    resample_4d_lin_cpu.print();
+
+    matrix resample_4d_lin_gpu = matrix::resample(resample_4d, {3, 3, 2, 3}, ResampleMode::Linear);
+    resample_4d_lin_gpu.eval_metal();
+    printf("Resample Collapsed-Tail 4D Linear Metal (expect base [0 5 10][10 15 20][20 25 30], +0/100/200/300/400/500 per tail slot):\n");
+    resample_4d_lin_gpu.print();
 }
 
 - (void) EXR_CVE_EXPLOIT {
