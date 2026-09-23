@@ -1,4 +1,4 @@
-#ifdef OS_TARGET_IPHONE
+#if TARGET_OS_IPHONE
 #pragma once
 #import <ARKit/ARKit.h>
 #import <CoreVideo/CoreVideo.h>

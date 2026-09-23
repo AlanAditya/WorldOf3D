@@ -1,4 +1,4 @@
-#ifdef OS_TARGET_IPHONE
+#if TARGET_OS_IPHONE
 #import "GravitySensor.h"
 #import <CoreMotion/CoreMotion.h>
 

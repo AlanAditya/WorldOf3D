@@ -1,4 +1,4 @@
-#ifdef OS_TARGET_IPHONE
+#if TARGET_OS_IPHONE
 #import "ARSessionCapture.h"
 #import "../Mods/Utils.h"
 @import GPUManager;
