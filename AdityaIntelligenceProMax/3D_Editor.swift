@@ -31,105 +31,148 @@ import SwiftUI
 //}
 import Combine
 
-// Make this a class so ObservableObject works
-final class ComponentList: ObservableObject, RandomAccessCollection {
-    typealias Element = UIComponent
-    typealias Index = Int
+// Legacy SwiftUI panel over Intelligence.components (UIComponent). Replaced by the native
+// AppletPanel (UI/AppletPanel.h) shown through the ControlPanel representable below.
+//// Make this a class so ObservableObject works
+//final class ComponentList: ObservableObject, RandomAccessCollection {
+//    typealias Element = UIComponent
+//    typealias Index = Int
+//
+//    let intel: Intelligence                      // Objective-C owner (must be NSObject/KVO-compliant)
+//    @Published private(set) var items: [UIComponent] = []
+//
+//    // RandomAccessCollection requirements
+//    var startIndex: Int { items.startIndex }
+//    var endIndex: Int { items.endIndex }
+//    var count: Int { items.count }
+//    subscript(position: Int) -> UIComponent { items[position] }
+//
+//    private var cancellable: AnyCancellable?
+//
+//    init(intel: Intelligence) {
+//        self.intel = intel
+//        // initial snapshot from NSMutableArray -> [UIComponent]
+//        if let comps = intel.components as? [UIComponent] {
+//            self.items = comps
+//        } else if let nsarr = intel.components as? NSMutableArray {
+//            self.items = nsarr.compactMap { $0 as? UIComponent }
+//        }
+//
+//        // KVO publisher: observe the Obj-C property 'components'.
+//        // This requires 'components' be KVO-compliant (NSObject subclass and exposed as @property).
+//        cancellable = intel.publisher(for: \.components)
+//            .receive(on: DispatchQueue.main)   // UI updates on main
+//            .sink { [weak self] newVal in
+//                guard let self = self else { return }
+//                // copy into Swift array snapshot
+//                if let arr = newVal as? [UIComponent] {
+//                    self.items = arr
+//                } else if let nsarr = newVal as? NSMutableArray {
+//                    self.items = nsarr.compactMap { $0 as? UIComponent }
+//                } else {
+//                    self.items = []
+//                }
+//            }
+//    }
+//
+//    // Helper to update a UIComponent property and notify Obj-C owner.
+//    // This ensures the Obj-C array is mutated in a KVO-friendly way.
+//    func updateValue(at index: Int, newValue: Float) {
+//        guard index >= 0 && index < items.count else { return }
+//        let comp = items[index]
+//
+//        // mutate the underlying Obj-C model in a KVO-friendly way.
+//        // Ideally Intelligence exposes methods to mutate its components so it wraps willChange/didChange.
+//        // Example call:
+//        intel.willChangeValue(forKey: "components")
+//        comp.value = newValue
+//        // if the Obj-C container needs actual replacement, update it:
+//        // intel.components.replaceObject(at: index, with: comp)
+//        intel.didChangeValue(forKey: "components")
+//        // local snapshot will be refreshed from KVO sink once didChange fires.
+//        // Optionally update the local snapshot immediately for smoother UI:
+//        var copy = items
+//        copy[index] = comp
+//        self.items = copy
+//    }
+//}
+//
+//struct ControlPanel: View {
+//    let intel: Intelligence  // Just use 'let' for reference types
+//    @StateObject var list: ComponentList
+//    init(intel: Intelligence) {
+//        self.intel = intel
+//        _list = StateObject(wrappedValue: ComponentList(intel: intel))
+//    }
+//
+//
+//    var body: some View {
+//        List {
+//            ForEach(0..<list.count, id: \.self) { i in
+//                let c = list[i]
+//                if c.type == 0 {
+//                    Text("\(c.title): \(c.value, specifier: "%.2f")")
+//                    Slider(
+//                        value: Binding(
+//                            get: { c.value },
+//                            set: { newValue in
+//                                c.value = newValue
+//                                c.valueChangedCallback(newValue);
+//                                list.updateValue(at: i, newValue: newValue)
+//                                                            print(c.value)
+//                            }
+//                        ),
+//                        in: c.minValue ... c.maxValue,
+//                    )
+//                    .compositingGroup()
+//
+//                }
+//            }
+//        }
+//
+//    }
+//}
 
-    let intel: Intelligence                      // Objective-C owner (must be NSObject/KVO-compliant)
-    @Published private(set) var items: [UIComponent] = []
-
-    // RandomAccessCollection requirements
-    var startIndex: Int { items.startIndex }
-    var endIndex: Int { items.endIndex }
-    var count: Int { items.count }
-    subscript(position: Int) -> UIComponent { items[position] }
-
-    private var cancellable: AnyCancellable?
-
-    init(intel: Intelligence) {
-        self.intel = intel
-        // initial snapshot from NSMutableArray -> [UIComponent]
-        if let comps = intel.components as? [UIComponent] {
-            self.items = comps
-        } else if let nsarr = intel.components as? NSMutableArray {
-            self.items = nsarr.compactMap { $0 as? UIComponent }
-        }
-
-        // KVO publisher: observe the Obj-C property 'components'.
-        // This requires 'components' be KVO-compliant (NSObject subclass and exposed as @property).
-        cancellable = intel.publisher(for: \.components)
-            .receive(on: DispatchQueue.main)   // UI updates on main
-            .sink { [weak self] newVal in
-                guard let self = self else { return }
-                // copy into Swift array snapshot
-                if let arr = newVal as? [UIComponent] {
-                    self.items = arr
-                } else if let nsarr = newVal as? NSMutableArray {
-                    self.items = nsarr.compactMap { $0 as? UIComponent }
-                } else {
-                    self.items = []
-                }
-            }
+// Native applet controls (AppKit on macOS, UIKit on iOS): see UI/AppletPanel.h. Same name and
+// call site as the old SwiftUI ControlPanel, so the layout code doesn't change.
+#if os(macOS)
+struct ControlPanel: NSViewRepresentable {
+    let intel: Intelligence
+    func makeNSView(context: Context) -> NSView { intel.appletPanel.view }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+#else
+struct ControlPanel: UIViewRepresentable {
+    let intel: Intelligence
+    var translucent = false   // true on the floating sheet's material
+    func makeUIView(context: Context) -> UIView {
+        intel.appletPanel.translucent = translucent
+        return intel.appletPanel.view
     }
-
-    // Helper to update a UIComponent property and notify Obj-C owner.
-    // This ensures the Obj-C array is mutated in a KVO-friendly way.
-    func updateValue(at index: Int, newValue: Float) {
-        guard index >= 0 && index < items.count else { return }
-        let comp = items[index]
-
-        // mutate the underlying Obj-C model in a KVO-friendly way.
-        // Ideally Intelligence exposes methods to mutate its components so it wraps willChange/didChange.
-        // Example call:
-        intel.willChangeValue(forKey: "components")
-        comp.value = newValue
-        // if the Obj-C container needs actual replacement, update it:
-        // intel.components.replaceObject(at: index, with: comp)
-        intel.didChangeValue(forKey: "components")
-        // local snapshot will be refreshed from KVO sink once didChange fires.
-        // Optionally update the local snapshot immediately for smoother UI:
-        var copy = items
-        copy[index] = comp
-        self.items = copy
+    func updateUIView(_ uiView: UIView, context: Context) {
+        intel.appletPanel.translucent = translucent
     }
 }
 
-struct ControlPanel: View {
-    let intel: Intelligence  // Just use 'let' for reference types
-    @StateObject var list: ComponentList
-    init(intel: Intelligence) {
-        self.intel = intel
-        _list = StateObject(wrappedValue: ComponentList(intel: intel))
-    }
-
-    
-    var body: some View {
-        List {
-            ForEach(0..<list.count, id: \.self) { i in
-                let c = list[i]
-                if c.type == 0 {
-                    Text("\(c.title): \(c.value, specifier: "%.2f")")
-                    Slider(
-                        value: Binding(
-                            get: { c.value },
-                            set: { newValue in
-                                c.value = newValue
-                                c.valueChangedCallback(newValue);
-                                list.updateValue(at: i, newValue: newValue)
-                                                            print(c.value)
-                            }
-                        ),
-                        in: c.minValue ... c.maxValue,
-                    )
-                    .compositingGroup()
-                    
-                }
-            }
+// iOS 26+: leave the sheet's background alone so the system draws it in Liquid Glass.
+// Earlier: a frosted material.
+struct PanelSheetBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+        } else {
+            content.presentationBackground(.regularMaterial)
         }
-        
     }
 }
+
+// How the applet controls are shown on iOS.
+enum IOSPanelMode {
+    case floating   // Maps / Find My style sheet over the view: glass, resized only by its grabber
+    case docked     // opaque panel below the view (the original layout)
+}
+#endif
+
 
 #if os(macOS)
 struct NStoSwift: NSViewRepresentable {
@@ -169,6 +212,10 @@ struct _3D_Editor: View {
     @State var pressedKeys = Set<UInt16>()
     @State var cameraTimer: NSObject? = nil
     @State var pos: CGFloat = 0
+#if os(iOS)
+    @State var panelMode: IOSPanelMode = .floating
+    @State var panelDetent: PresentationDetent = .height(110)
+#endif
     static var hasAppeared = false
     var body: some View {
         #if os(macOS)
@@ -181,31 +228,63 @@ struct _3D_Editor: View {
                     guard !Self.hasAppeared else { return }
                     Self.hasAppeared = true
                     print("BBBB")
-                    inteligence.particle_sim_intersteller()
+                    inteligence.perlin_playground()
                 }
             VSplitView {
                 
                 NStoSwift(nsView: inteligence.sidePanel.view)
                 ControlPanel(intel: inteligence)
-                    .frame(minWidth: 220, maxWidth: .infinity)
-                    .compositingGroup()
+                    .frame(minWidth: 240, maxWidth: .infinity, minHeight: 160)
             }
         
         }
 #endif
 #if os(iOS)
-MTKViewWrapper(intel: inteligence, viewNo: 1)
-    .layoutPriority(1)
-    .onAppear {
-        guard !Self.hasAppeared else { return }
-        Self.hasAppeared = true
-        //                    let matrix = MatrixH<_CInt_1, CFloat>([1.0, 2.0, 3.0] as [CFloat])
-        
-        inteligence.particle_sim_intersteller()
+switch panelMode {
+case .docked:
+    VStack(spacing: 0) {
+        metalView
+        ControlPanel(intel: inteligence)
+            .frame(height: 280)
     }
+case .floating:
+    metalView
+        .sheet(isPresented: .constant(true)) {
+            ControlPanel(intel: inteligence, translucent: true)
+                .ignoresSafeArea(edges: .bottom)
+                .padding(.top, 18)                                                 // clear strip around the grabber: the only place that resizes
+                .presentationDetents([.height(110), .medium, .large], selection: $panelDetent)
+                .presentationDragIndicator(.visible)                               // the grey capsule
+                .presentationContentInteraction(.scrolls)                          // scrolling scrolls the controls, never resizes
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))   // the view stays usable under it
+                .modifier(PanelSheetBackground())
+                .interactiveDismissDisabled()                                      // it can't be swiped away
+        }
+}
 #endif
     }
 }
+
+#if os(iOS)
+extension _3D_Editor {
+    var metalView: some View {
+        MTKViewWrapper(intel: inteligence, viewNo: 1)
+            .layoutPriority(1)
+            .ignoresSafeArea()   // edge to edge: under the status bar, Dynamic Island and home indicator
+            // Near the screen edges iOS's own gestures (home swipe, Notification/Control Center)
+            // take a drag over and cancel the renderer's touches, so orbit/pan stop mid-drag.
+            // Deferring gives the first edge swipe to the app; a second one opens the system UI.
+            .defersSystemGestures(on: .all)
+            .onAppear {
+                guard !Self.hasAppeared else { return }
+                Self.hasAppeared = true
+                //                    let matrix = MatrixH<_CInt_1, CFloat>([1.0, 2.0, 3.0] as [CFloat])
+                
+                inteligence.perlin_playground()
+            }
+    }
+}
+#endif
 
 #Preview {
     _3D_Editor()

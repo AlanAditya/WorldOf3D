@@ -12392,6 +12392,10 @@ public:
 //    return 2.0 * x * x + sin(x); // This builds an expression tree
 //}
 
+// Legacy slider model, shown by the old SwiftUI ControlPanel (now commented out in
+// 3D_Editor.swift). Kept only because older applets (RGBCam, GeometryNodeTesterV2) still read
+// their sliders' values; they are no longer displayed. New applets use SliderGroup +
+// AppletPanel (UI/MatrixSliders.h, UI/AppletPanel.h).
 @interface UIComponent : NSObject
 
     @property (nonatomic, strong) NSString *cid;
@@ -12438,6 +12442,8 @@ public:
 
 @end
 
+#import "UI/AppletPanel.h"
+#include "UI/MatrixSliders.h"
 #import "SidePannel.h"
 #include "Algos/graph_visualiser.cpp"
 #include "Algos/graph_visualiserV2.cpp"
@@ -12475,7 +12481,8 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 @property (nonatomic, strong) MyMetalView *view2;
 @property (nonatomic, strong) SidePannel* sidePanel;
 @property (strong, nonatomic) AVPlayer *player;
-@property (nonatomic, strong) NSMutableArray<UIComponent *> *components;
+@property (nonatomic, strong) NSMutableArray<UIComponent *> *components;   // legacy, no longer displayed
+@property (nonatomic, strong) AppletPanel* appletPanel;                      // shown by ControlPanel in 3D_Editor.swift
 @property (nonatomic, strong) Renderer* pRender;
 
 -(void) Logic;
@@ -12507,6 +12514,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     -(void) computational_graphV2;
     -(void) vec_field;
     - (void)attachToGCDQueue:(void (^)(void))block withFPS:(float)fps;
+    - (void)attachToGCDQueue:(void (^)(void))block withFPS:(float)fps onQueue:(dispatch_queue_t)queue;
     - (void)attachContinuousLoop:(void (^)(void))block;
 - (void) EXR_CVE_EXPLOIT;
 -(void) new_concurrancy_model;
@@ -12525,6 +12533,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 -(void) particle_sim_intersteller;
 -(void) resampler_tester;
 - (void) basics;
+- (void) perlin_playground;
 @property (nonatomic, strong) NSMutableArray *activeTimers;
 @end
 
@@ -12533,7 +12542,12 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 @synthesize pRender = pRender;
 
 - (void)attachToGCDQueue:(void (^)(void))block withFPS:(float)fps {
-    dispatch_queue_t queue = dispatch_queue_create("com.engine.compute", DISPATCH_QUEUE_SERIAL);
+    [self attachToGCDQueue:block withFPS:fps onQueue:dispatch_queue_create("com.engine.compute", DISPATCH_QUEUE_SERIAL)];
+}
+
+// Same, on a serial queue the caller made: lets an applet give that queue to a SliderGroup too,
+// so its sliders and buttons run on the loop's own thread (see UI/MatrixSliders.h).
+- (void)attachToGCDQueue:(void (^)(void))block withFPS:(float)fps onQueue:(dispatch_queue_t)queue {
     dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
     
     uint64_t interval = (uint64_t)((1.0 / fps) * NSEC_PER_SEC);
@@ -12563,18 +12577,19 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     
     _components = [[NSMutableArray alloc] init];
     _activeTimers = [[NSMutableArray alloc] init];
+    _appletPanel = [[AppletPanel alloc] init];
     
-    UIComponent *slider = [[UIComponent alloc] init];
-    slider.title = @"Brightness";
-    slider.type = 0;
-    slider.value = 0.5;
-    slider.minValue = 0.0;
-    slider.maxValue = 1.0;
-    slider.valueChangedCallback = ^(float newValue) {
-        NSLog(@"Brightness changed to: %f", newValue);
-        // Do something with the value
-    };
-    [_components addObject:slider];
+//    UIComponent *slider = [[UIComponent alloc] init];
+//    slider.title = @"Brightness";
+//    slider.type = 0;
+//    slider.value = 0.5;
+//    slider.minValue = 0.0;
+//    slider.maxValue = 1.0;
+//    slider.valueChangedCallback = ^(float newValue) {
+//        NSLog(@"Brightness changed to: %f", newValue);
+//        // Do something with the value
+//    };
+//    [_components addObject:slider];
     
     id<MTLDevice> metalDevice = MTLCreateSystemDefaultDevice();
     std::cout << "Initaialised Metal Device \n";
@@ -12616,21 +12631,55 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     return self;
 }
 
-- (void)addSliderWithTitle:(NSString*)title
-                       min:(float)min
-                       max:(float)max
-                  callback:(std::function<void(float)>)callback
-{
-    UIComponent *slider = [[UIComponent alloc] init];
-    slider.title = @"Brightness";
-    slider.type = 0;
-    slider.value = 0.5;
-    slider.minValue = 0.0;
-    slider.maxValue = 1.0;
+// Legacy: ignored its arguments and never stored the callback. Use SliderGroup instead.
+//- (void)addSliderWithTitle:(NSString*)title
+//                       min:(float)min
+//                       max:(float)max
+//                  callback:(std::function<void(float)>)callback
+//{
+//    UIComponent *slider = [[UIComponent alloc] init];
+//    slider.title = @"Brightness";
+//    slider.type = 0;
+//    slider.value = 0.5;
+//    slider.minValue = 0.0;
+//    slider.maxValue = 1.0;
+//
+//    [_components addObject:slider];
+//
+//
+//}
 
-    [_components addObject:slider];
+// Slider demo (UI/MatrixSliders.h): the graph is built once. The noise sliders are tracked
+// perlin() parameters, the colour sliders are plain arithmetic inputs; moving any of them
+// re-runs only the dirty path and republishes the image.
+- (void) perlin_playground {
+    SliderGroup ui(self);
+    ui.section(@"Noise");
+    matrix scale       = ui.slider(@"Scale", 0.5f, 20.0f, 5.0f);
+    matrix octaves     = ui.slider_int(@"Octaves", 1, 8, 4);
+    matrix persistence = ui.slider(@"Persistence", 0.0f, 1.0f, 0.5f);
+    ui.section(@"Colour");
+    matrix red         = ui.slider(@"Red", 0.0f, 1.0f, 1.0f);
+    matrix green       = ui.slider(@"Green", 0.0f, 1.0f, 0.8f);
+    matrix blue        = ui.slider(@"Blue", 0.0f, 1.0f, 0.6f);
 
+    // A button drives a leaf that no slider shows: 0 = normal, 1 = inverted.
+    matrix invert = matrix::leaf_scalar(0.0f);
+    ui.button(@"Invert", ^{
+        matrix inv = invert;
+        *(float*)inv.buffer = 1.0f - *(float*)inv.buffer;
+        inv.mark_changed();
+    });
 
+    matrix base  = matrix::perlin({512, 512}, scale, octaves, persistence, 2.0f) * 255.0f;
+    matrix noise = base + invert * (255.0f - base * 2.0f);
+    matrix alpha = matrix::ones({512, 512}) * 255.0f;
+    // BGRA, and already UInt8 so updateBaseImageV2 doesn't build a cast node on every publish.
+    matrix bgra = matrix::stack({noise * blue, noise * green, noise * red, alpha}, -1).astype(dtype::UInt8);
+
+    ui.on_change(bgra, ^(matrix& out) {
+        [self->pRender updateBaseImageV2:out];
+    });
 }
 
 - (void) basics {
