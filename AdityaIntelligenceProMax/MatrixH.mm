@@ -15403,6 +15403,35 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
     scatter_count.eval_metal();
     printf("Scatter count axis 1 Metal (expect [[1 0 0 3][1 0 0 3]]):\n");
     scatter_count.print();
+
+    printf("\n--- EQUAL + REDUCTION GRADIENT TEST (verified against MLX mx.grad) ---\n");
+    matrix red_x = matrix::of<float>({{1, 3, 3}, {2, 0, 2}});
+    matrix eq = matrix::equal(red_x, matrix::of<float>({2, 3, 2}));
+    eq.eval_metal();
+    printf("equal(x, [2 3 2]) Metal (expect [[0 1 0][1 0 1]]):\n");
+    eq.print();
+    matrix red_w = matrix::of<float>({1, 2});
+    matrix f_sum = (red_x.sum(1) * red_w).sum();
+    matrix g_sum = matrix::build_grad_graph(f_sum, red_x);
+    g_sum.eval_cpu();
+    printf("grad sum(sum(x, 1) * [1 2]) CPU (expect [[1 1 1][2 2 2]]):\n");
+    g_sum.print();
+    matrix f_max = red_x.max(1).sum();
+    matrix g_max = matrix::build_grad_graph(f_max, red_x);
+    g_max.eval_metal();
+    printf("grad sum(max(x, 1)) Metal, ties split (expect [[0 0.5 0.5][0.5 0 0.5]]):\n");
+    g_max.print();
+    matrix f_min = red_x.min(1, true).sum();
+    matrix g_min = matrix::build_grad_graph(f_min, red_x);
+    g_min.eval_cpu();
+    printf("grad sum(min(x, 1, keepdims)) CPU (expect [[1 0 0][0 1 0]]):\n");
+    g_min.print();
+    matrix sq_x = matrix::of<float>({1, 4, 9});
+    matrix f_sqrt = matrix::sqrt(sq_x).sum();
+    matrix g_sqrt = matrix::build_grad_graph(f_sqrt, sq_x);
+    g_sqrt.eval_cpu();
+    printf("grad sum(sqrt([1 4 9])) CPU (expect [0.5 0.25 0.1667]):\n");
+    g_sqrt.print();
 }
 
 - (void) EXR {
