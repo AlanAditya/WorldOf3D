@@ -15432,6 +15432,19 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
     g_sqrt.eval_cpu();
     printf("grad sum(sqrt([1 4 9])) CPU (expect [0.5 0.25 0.1667]):\n");
     g_sqrt.print();
+
+    // Elementwise max/min: ties go to the second operand, as in MLX
+    matrix mm_x = matrix::of<float>({-2, -1, 0, 1, 2});
+    matrix f_relu = matrix::max(mm_x, matrix::scalar(0.0f)).sum();
+    matrix g_relu = matrix::build_grad_graph(f_relu, mm_x);
+    g_relu.eval_cpu();
+    printf("grad sum(max(x, 0)) CPU (expect [0 0 0 1 1]):\n");
+    g_relu.print();
+    matrix f_cap = matrix::min(mm_x, matrix::scalar(1.0f)).sum();
+    matrix g_cap = matrix::build_grad_graph(f_cap, mm_x);
+    g_cap.eval_metal();
+    printf("grad sum(min(x, 1)) Metal (expect [1 1 1 0 0]):\n");
+    g_cap.print();
 }
 
 - (void) EXR {
