@@ -15373,6 +15373,36 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
     resample_4d_lin_gpu.eval_metal();
     printf("Resample Collapsed-Tail 4D Linear Metal (expect base [0 5 10][10 15 20][20 25 30], +0/100/200/300/400/500 per tail slot):\n");
     resample_4d_lin_gpu.print();
+
+    printf("\n--- SCATTER TEST (METAL & CPU, verified against MLX .at[] / __setitem__) ---\n");
+    // dst = arange(8), indices [1 3 1 7 0 3] (duplicates at 1 and 3), updates [10 20 30 40 50 60]
+    matrix scatter_dst = matrix::of<float>({0, 1, 2, 3, 4, 5, 6, 7});
+    matrix scatter_idx = matrix::of<int32_t>({1, 3, 1, 7, 0, 3});
+    matrix scatter_upd = matrix::of<float>({10, 20, 30, 40, 50, 60});
+    const char* scatter_expect[] = {
+        "SET (unique indices [1 3 7 0 5 2]) expect [40 10 60 20 4 50 6 30]",
+        "ADD  expect [50 41 2 83 4 5 6 47]",
+        "PROD expect [0 300 2 3600 4 5 6 280]",
+        "MAX  expect [50 30 2 60 4 5 6 40]",
+        "MIN (updates - 35) expect [0 -25 2 -15 4 5 6 5]",
+    };
+    for (int mode = 0; mode < 5; mode++) {
+        matrix idx = mode == 0 ? matrix::of<int32_t>({1, 3, 7, 0, 5, 2}) : scatter_idx;
+        matrix upd = mode == 4 ? scatter_upd - 35.0f : scatter_upd;
+        matrix scatter_cpu = matrix::scatter(scatter_dst, idx, upd, 0, (ScatterMode)mode);
+        scatter_cpu.eval_cpu();
+        printf("Scatter %s, CPU:\n", scatter_expect[mode]);
+        scatter_cpu.print();
+        matrix scatter_gpu = matrix::scatter(scatter_dst, idx, upd, 0, (ScatterMode)mode);
+        scatter_gpu.eval_metal();
+        printf("Scatter %s, Metal:\n", scatter_expect[mode]);
+        scatter_gpu.print();
+    }
+    // Counting along axis 1 with a broadcast scalar update: 2x4 zeros, indices [3 0 3 3]
+    matrix scatter_count = matrix::scatter(matrix::zeros({2, 4}, dtype::Int32), matrix::of<int32_t>({3, 0, 3, 3}), matrix::scalar(1), 1, ScatterMode::ADD);
+    scatter_count.eval_metal();
+    printf("Scatter count axis 1 Metal (expect [[1 0 0 3][1 0 0 3]]):\n");
+    scatter_count.print();
 }
 
 - (void) EXR {
