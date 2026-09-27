@@ -12517,6 +12517,8 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 -(void) arkit_inplace;
 -(void) random_test;
 -(void) differential_eqn;
+-(void) resampler_tester;
+- (void) basics;
 @property (nonatomic, strong) NSMutableArray *activeTimers;
 @end
 
@@ -12625,21 +12627,134 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 
 }
 
+- (void) basics {
+
+    matrix vishesh = matrix::ones({10, 10}, dtype::Float) * 69.f;
+    matrix abeer = matrix::zeros({10}, dtype::Float);
+    
+    matrix aditya = matrix::ones({3, 3, 3});
+    
+    matrix sidharth = matrix::rand({10, 10}) * 10 + 1;
+    
+    
+    // [H, W, C]
+    matrix img = matrix::fromImage();
+    
+    matrix Red = img[R(), R(), 0];
+    matrix G = img[R(), R(), 1];
+    matrix B = img[R(), R(), 2];
+    matrix A = img[R(), R(), 3];
+    
+    matrix corrected_image = matrix::stack({B, G, Red, A}, -1);
+    [pRender updateBaseImageV2:corrected_image];
+    
+    
+    abeer.print();
+    vishesh.print();
+    aditya.print();
+    sidharth.print();
+    
+}
+
 - (void) differential_eqn {
     // dy/dt = - sin(t), y(0) = 1  =>  y(t) = cos(t), range [-1, 1]
     __block matrix dt = matrix::ones({100, 100}, dtype::Float) * 0.05;
     __block matrix t = matrix::perlin({100, 100}) * (2 * M_PI);
     __block matrix y = matrix::cos(t);
+    __block uint64_t frame = 0;
 
     [self attachToGCDQueue:^{
         matrix dy = - 1 * matrix::sin(t) * dt;
         y = y + dy;
         t = t + dt;
 
+        // y/t recur every frame (y = y + dy, t = t + dt), so without periodically
+        // collapsing the tape the compute graph grows without bound forever.
+        if (++frame % 30 == 0) {
+            y.eval_metal();
+            y.releaseTape();
+            t.eval_metal();
+            t.releaseTape();
+        }
+
         matrix channel = (y + 1) * 127.5;
         matrix image = matrix::stack({channel, channel, channel, channel.ones() * 255}, -1);
         [pRender updateBaseImageV2:image];
     } withFPS:30];
+}
+
+-(void) resampler_tester {
+    
+//    const std::vector<size_m> new_shape = {10, 10, 4};
+//    std::function<matrix(matrix)> resample = [new_shape](matrix input) -> matrix {
+//        if (new_shape.size() != input.dims)
+//            throw std::invalid_argument("matrix: matrix and new shape rank dont watch");
+//        matrix gid = matrix::zeros(new_shape, dtype::UInt32);
+//        for (int i = 0; i < input.dims; i++) {
+//            gid = gid + matrix::linespace<uint32_t>(0, input.shape()[i] - 1, new_shape[i]).unsqueeze(-1, input.dims-i-1) * input.strides()[i];
+//        }
+//        
+//        return input.flatten().take(gid, 0);
+//    };
+    
+    
+    auto upsample = [](matrix input, const std::vector<size_m>& new_shape) -> matrix {
+        if (new_shape.size() != input.dims)
+            throw std::invalid_argument("matrix: matrix and new shape rank dont watch");
+        matrix gid = matrix::zeros(new_shape, dtype::UInt32);
+        for (int i = 0; i < input.dims; i++) {
+            gid = gid + matrix::linespace<uint32_t>(0, input.shape()[i] - 1, new_shape[i]).unsqueeze(-1, input.dims-i-1) * input.strides()[i];
+        }
+        
+        return input.flatten().take(gid, 0);
+    };
+
+    // Uniform nearest-neighbor resize: partitions each destination axis into
+    // new_shape[i] equal-width bins and floors (src_idx = dst_idx * src_size /
+    // dst_size). Unlike `upsample`'s corner-aligned linspace mapping, which
+    // pins the first and last output samples to the first and last source
+    // pixels and unevenly spaces everything in between, this gives every
+    // source pixel a uniform block in the output — e.g. scaling a 10x10 grid
+    // up to 1000x1000 reproduces it as clean 100x100 blocks with no
+    // interpolation.
+    auto resize_nearest = [](matrix input, const std::vector<size_m>& new_shape) -> matrix {
+        if (new_shape.size() != input.dims)
+            throw std::invalid_argument("matrix: matrix and new shape rank dont watch");
+        matrix gid = matrix::zeros(new_shape, dtype::UInt32);
+        for (int i = 0; i < input.dims; i++) {
+            size_m src_size = input.shape()[i];
+            size_m dst_size = new_shape[i];
+            matrix axis_idx(1, dst_size, dtype::UInt32);
+            axis_idx.shape()[0] = dst_size;
+            axis_idx.calcStrides();
+            uint32_t* buf = static_cast<uint32_t*>(axis_idx.buffer);
+            for (size_m j = 0; j < dst_size; j++) {
+                buf[j] = (uint32_t)((j * src_size) / dst_size);
+            }
+            gid = gid + axis_idx.unsqueeze(-1, input.dims-i-1) * input.strides()[i];
+        }
+
+        return input.flatten().take(gid, 0);
+    };
+
+    cap = [[CapReader alloc] initWithCam:0];
+    
+//    matrix sample = matrix::zeros({(size_m)cap->height, (size_m)cap->width, 4}, dtype::UInt8);
+//    auto resample_jit = matrix::jit_graph_gpu(resample, sample);
+    
+    __block matrix image;
+    [self attachToGCDQueue:^{
+        [cap read_metal:image];
+        if (!image.buffer || image.total_size == 0) {
+            return;
+        }
+        matrix img = matrix::resample(image, {20, 20, 4}, ResampleMode::Nearest);
+
+        img = matrix::resample(img, {1000, 1000, 4}, ResampleMode::Nearest);
+        
+        [pRender updateBaseImageV2:img];
+    } withFPS:30];
+
 }
 
 -(void) random_test {
