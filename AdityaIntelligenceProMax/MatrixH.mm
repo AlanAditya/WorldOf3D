@@ -80,6 +80,7 @@ typedef uint16_t uint16;
 #include <atomic>
 #include "cpu_rasteriser.hpp"
 #include "SOPs/Viewer.cpp"
+#include "SOPs/ImageViewer.h"
 #include "SOPs/Controllers.cpp"
 #include "SOPs/PlotterViewer.h"
 #include "SOPs/GraphViewer.cpp"
@@ -10901,6 +10902,15 @@ struct Assets {
         Camera3D cam;
         std::vector<std::function<bool(drag_info&)>> drag_event_subscribers;
         std::vector<std::shared_ptr<Viewer>> viewers;
+#if TARGET_OS_IPHONE
+        // Pages: viewers shown one at a time over the whole view, swiped between on the applet
+        // panel (-[Intelligence showPages:titles:]). Drawn after `viewers`, each with its own
+        // camera if it has one; the infinite grid is drawn per page (show_grid) instead of once.
+        // page_position is 0 on the first page, 1 on the second, fractional mid-swipe. Main
+        // thread writes it; atomic so an applet's queue can ask what's on screen (isPageOnScreen:).
+        std::vector<std::shared_ptr<Viewer>> pages;
+        std::atomic<float> page_position;
+#endif
         matrix metal_frame;
         uint32_t view_num;
         bool renderInfiniteGrid;
@@ -10911,8 +10921,24 @@ struct Assets {
 - (MTLVertexDescriptor*) createPlaneMetalVertexDescriptor;
 
 - (void)updateBaseImage:(MatrixH<3, uint8_t>&) layer;
-- (void)updateBaseImageV2:(matrix&) layer;
+- (void)updateBaseImageV2:(matrix) layer;
 - (void)createRenderPiplineState:(NSString*)vertexFunc :(NSString*)fragmentFunc;
+// An ImageViewer drawn with this renderer's base-image pipeline (SOPs/ImageViewer.h).
+- (std::shared_ptr<ImageViewer>)makeImageViewer;
+// The camera orbit / pan / zoom should move: the current page's (nullptr if that page isn't
+// interactive), or `cam` when there are no pages. Main thread.
+- (Camera3D*)interactionCamera;
+#if TARGET_OS_IPHONE
+// Whether any part of page `index` is on screen (mid-swipe, two are). Safe from any thread.
+- (bool)isPageOnScreen:(size_t)index;
+// The page gestures go to (the nearer one mid-swipe), nullptr without pages. Main thread.
+- (Viewer*)currentPage;
+#endif
+// Where the touch handlers' camera calls go: to the current page's viewer (Viewer::handle_camera,
+// which calls its camera's handleMouseEvents with the same arguments), or straight to `cam`
+// without pages. Main thread.
+- (void)cameraGesture:(float)deltaX :(float)deltaY :(bool)isRightMouseButton :(bool)isShiftPressed :(TransformationMode)mode;
+- (void)cameraUpdateOLD;
 
 @end
 
@@ -10930,6 +10956,9 @@ struct Assets {
     height = 1080;
     self->sampleCount = sampleCount;
     self->renderInfiniteGrid = true;
+#if TARGET_OS_IPHONE
+    page_position = 0.0f;
+#endif
     worldColour = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
     customRenderPipelineStates = [[NSMutableArray alloc] init];
     library = [metalDevice newDefaultLibrary];
@@ -11246,7 +11275,7 @@ struct Assets {
 
 
 
-- (void)updateBaseImageV2:(matrix&) layer {
+- (void)updateBaseImageV2:(matrix) layer {
     
     if (layer.shape()[2] != 4) {
         throw std::runtime_error("Renderer: updateBaseImageV2: expected 4 channels (RGBA), got " + std::to_string(layer.shape()[2]));
@@ -11452,14 +11481,21 @@ struct Assets {
     
     cam.updateMatrix();
     simd_float4x4 transform;
-    if (self->renderInfiniteGrid) {
+    auto draw_grid = [&](Camera3D& c) {
         [cmdEncoder setRenderPipelineState:InfiniteGridRenderPipelineState];
-        [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:0];
-        [cmdEncoder setVertexBytes:&cam.target length:sizeof(simd_float3) atIndex:1];
-        [cmdEncoder setVertexBytes:&cam.inverseProjectionMatrix length:sizeof(simd_float4x4) atIndex:2];
-        [cmdEncoder setFragmentBytes:&cam.target length:sizeof(simd_float3) atIndex:0];
-        [cmdEncoder setFragmentBytes:&cam.inverseProjectionMatrix length:sizeof(simd_float4x4) atIndex:1];
+        [cmdEncoder setVertexBytes:&c.viewMatrix length:sizeof(simd_float4x4) atIndex:0];
+        [cmdEncoder setVertexBytes:&c.target length:sizeof(simd_float3) atIndex:1];
+        [cmdEncoder setVertexBytes:&c.inverseProjectionMatrix length:sizeof(simd_float4x4) atIndex:2];
+        [cmdEncoder setFragmentBytes:&c.target length:sizeof(simd_float3) atIndex:0];
+        [cmdEncoder setFragmentBytes:&c.inverseProjectionMatrix length:sizeof(simd_float4x4) atIndex:1];
         [cmdEncoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+    };
+    bool paged = false;
+#if TARGET_OS_IPHONE
+    paged = !pages.empty();   // the pages draw the grid themselves, each with its own camera
+#endif
+    if (self->renderInfiniteGrid && !paged) {
+        draw_grid(cam);
     }
     
     if (0 < _objectQueue.size() || 0 < _meshObjectQueue.size()) {
@@ -11589,9 +11625,48 @@ struct Assets {
         _NodesQueuePtr[i]->draw(cmdEncoder, metalDevice, predefinedRenderPipelineState, customRenderPipelineStates, &cam, active_state);
     }
     
+    // A viewer draws into its viewport (shifted right by offset_x pixels), clipped to the part of
+    // it that's on screen, with its own camera if it has one.
+    const double target_w = passDescriptor.colorAttachments[0].texture.width;
+    const double target_h = passDescriptor.colorAttachments[0].texture.height;
+    auto draw_viewer = [&](Viewer* v, double offset_x, bool grid) {
+        double x = v->viewport.x * target_w + offset_x, y = v->viewport.y * target_h;
+        double w = v->viewport.z * target_w, h = v->viewport.w * target_h;
+        // The scissor must lie inside the drawable, in whole pixels; the viewport may stick out.
+        long x0 = std::lround(std::max(x, 0.0)), x1 = std::lround(std::min(x + w, target_w));
+        long y0 = std::lround(std::max(y, 0.0)), y1 = std::lround(std::min(y + h, target_h));
+        if (x1 <= x0 || y1 <= y0) return;
+        [cmdEncoder setViewport:(MTLViewport){x, y, w, h, 0.0, 1.0}];
+        [cmdEncoder setScissorRect:(MTLScissorRect){(NSUInteger)x0, (NSUInteger)y0, (NSUInteger)(x1 - x0), (NSUInteger)(y1 - y0)}];
+
+        Camera3D* c = &cam;
+        if (v->camera) {
+            c = v->camera.get();
+            float aspect = (float)(w / h);
+            if (c->getAspectRatio() != aspect) c->updateAspectRatio(aspect);
+            c->updateMatrix();
+        }
+        if (grid) {
+            draw_grid(*c);
+            active_state = -1;   // the grid's pipeline isn't one of the predefined states
+        }
+        v->draw(cmdEncoder, metalDevice, predefinedRenderPipelineState, c, active_state);
+    };
+
     for (int i=0; i < viewers.size(); i++) {
-        viewers[i]->draw(cmdEncoder, metalDevice, predefinedRenderPipelineState, &cam, active_state);
+        if (!viewers[i]->visible) continue;
+        draw_viewer(viewers[i].get(), 0.0, false);
     }
+
+#if TARGET_OS_IPHONE
+    // Page i sits (i - position) view-widths to the right: mid-swipe two pages share the screen.
+    const float position = page_position.load();
+    for (size_t i = 0; i < pages.size(); i++) {
+        float offset = (float)i - position;
+        if (std::fabs(offset) >= 1.0f || !pages[i]->visible) continue;
+        draw_viewer(pages[i].get(), offset * target_w, renderInfiniteGrid && pages[i]->show_grid);
+    }
+#endif
     
     [cmdEncoder endEncoding];
     [cmdBuffer presentDrawable:drawable];
@@ -11670,6 +11745,52 @@ struct Assets {
 }
 
 
+- (std::shared_ptr<ImageViewer>)makeImageViewer {
+    return std::make_shared<ImageViewer>(metalDevice, PlaneRenderPipelineState, BasicDepthStencilState);
+}
+
+- (Camera3D*)interactionCamera {
+#if TARGET_OS_IPHONE
+    if (Viewer* page = [self currentPage]) {
+        if (!page->interactive) return nullptr;
+        return page->camera ? page->camera.get() : &cam;
+    }
+#endif
+    return &cam;
+}
+
+- (void)cameraGesture:(float)deltaX :(float)deltaY :(bool)isRightMouseButton :(bool)isShiftPressed :(TransformationMode)mode {
+#if TARGET_OS_IPHONE
+    if (Viewer* page = [self currentPage]) {
+        page->handle_camera(deltaX, deltaY, isRightMouseButton, isShiftPressed, mode, cam);
+        return;
+    }
+#endif
+    cam.handleMouseEvents(deltaX, deltaY, isRightMouseButton, isShiftPressed, mode);
+}
+
+- (void)cameraUpdateOLD {
+#if TARGET_OS_IPHONE
+    if (Viewer* page = [self currentPage]) {
+        page->camera_update_old(cam);
+        return;
+    }
+#endif
+    cam.updateOLD();
+}
+
+#if TARGET_OS_IPHONE
+- (bool)isPageOnScreen:(size_t)index {
+    return std::fabs((float)index - page_position.load()) < 1.0f;
+}
+
+- (Viewer*)currentPage {
+    if (pages.empty()) return nullptr;
+    long i = std::clamp(std::lround(page_position.load()), 0L, (long)pages.size() - 1);
+    return pages[i].get();
+}
+#endif
+
 - (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size {
     cam.updateAspectRatio(size.width / size.height);
 }
@@ -11698,6 +11819,89 @@ struct Assets {
 
 
 @end
+
+#if TARGET_OS_IPHONE
+#import <UIKit/UIGestureRecognizerSubclass.h>
+
+// Keeps other views' gesture recognizers from stealing the renderer's raw touches.
+//
+// Orbit and pan are raw touchesMoved (tuned by hand). UIKit cancels a view's raw touches as soon
+// as any recognizer that sees them takes over, and the floating ControlPanel's system sheet puts a
+// pan recognizer on the UIWindow, so orbit/pan moved a little and then stopped. Every recognizer
+// on the renderer's ancestors (up to and including the window) is made to require this one to
+// fail, and this one *recognizes* as soon as a touch lands on the renderer and ends when the last
+// finger lifts - so those recognizers fail instead of waiting. (It used to fail on lift, which
+// released the sheet's pan with the swipe's leftover velocity and made the sheet jump.) It doesn't
+// cancel touches, so the raw touchesMoved still gets every touch, and it never blocks the renderer's
+// own pinch. Touches that don't start on the renderer (e.g. dragging the sheet's grabber) never
+// reach it.
+@interface RendererTouchShield : UIGestureRecognizer
+@end
+
+@implementation RendererTouchShield {
+    NSHashTable<UIGestureRecognizer*>* _blocked;   // weak: recognizers already made to wait for us
+}
+- (instancetype)init {
+    self = [super initWithTarget:nil action:nil];
+    self.cancelsTouchesInView = NO;
+    self.delaysTouchesBegan = NO;
+    self.delaysTouchesEnded = NO;
+    _blocked = [NSHashTable weakObjectsHashTable];
+    return self;
+}
+// The delegate-style request below isn't honoured by every system recognizer (the window pan
+// ignored it), so also set the requirement explicitly on each ancestor recognizer. Done on every
+// touch because the sheet adds its recognizers after the renderer is on screen.
+- (void)blockAncestorRecognizers {
+    for (UIView* v = self.view.superview; v; v = v.superview) {
+        for (UIGestureRecognizer* g in v.gestureRecognizers) {
+            if ([_blocked containsObject:g]) continue;
+            [_blocked addObject:g];
+            [g requireGestureRecognizerToFail:self];
+        }
+    }
+}
+- (BOOL)shouldBeRequiredToFailByGestureRecognizer:(UIGestureRecognizer *)other {
+    return other.view != self.view;
+}
+// Recognizing prevents other recognizers by default; only prevent the ones outside the renderer.
+- (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)other {
+    return other.view != self.view;
+}
+- (BOOL)canBePreventedByGestureRecognizer:(UIGestureRecognizer *)other {
+    return NO;
+}
+- (bool)allLifted:(UIEvent *)event {
+    for (UITouch* t in [event touchesForGestureRecognizer:self]) {
+        if (t.phase != UITouchPhaseEnded && t.phase != UITouchPhaseCancelled) return false;
+    }
+    return true;
+}
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesBegan:touches withEvent:event];
+    [self blockAncestorRecognizers];
+    if (self.state == UIGestureRecognizerStatePossible) self.state = UIGestureRecognizerStateBegan;
+}
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesMoved:touches withEvent:event];
+    if (self.state == UIGestureRecognizerStateBegan || self.state == UIGestureRecognizerStateChanged)
+        self.state = UIGestureRecognizerStateChanged;
+}
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesEnded:touches withEvent:event];
+    if ([self allLifted:event]) self.state = UIGestureRecognizerStateEnded;
+}
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [super touchesCancelled:touches withEvent:event];
+    if ([self allLifted:event]) self.state = UIGestureRecognizerStateCancelled;
+}
+@end
+
+@interface MyMetalView ()
+@property (nonatomic, strong) UIPinchGestureRecognizer* zoomPinch;
+@property (nonatomic, strong) RendererTouchShield* touchShield;
+@end
+#endif
 
 std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_float2 view_coords, simd_float2 view_bounds, Camera3D& cam) {
     // Returns Ray origin , Ray direction, event location in view [-1.0f, 1.0f] (metal style coord)
@@ -11812,7 +12016,7 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
     viewer_event.ray_dir = ray_direction;
     
     for (int i = 0; i < renderer->viewers.size(); i++) {
-        if (renderer->viewers[i]->handle_event(viewer_event)) {
+        if (renderer->viewers[i]->visible && renderer->viewers[i]->handle_event(viewer_event)) {
             return; // Event consumed
         }
     }
@@ -11852,17 +12056,17 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
     - (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
         NSArray<UITouch *> *allTouches = [[event allTouches] allObjects];
         NSUInteger touchCount = [allTouches count];
-        
+
         Renderer *renderer = (Renderer *)self.delegate;
 
         // --- CASE 1: Two-Finger Pan (Priority) ---
         // We handle this FIRST to prevent accidentally clicking objects while trying to pan
         printf("%lu fingers detected. \n", static_cast<unsigned long>(touchCount));
         if (touchCount == 2) {
-            
+
             float totalDeltaX = 0;
             float totalDeltaY = 0;
-            
+
             // Calculate the average movement of BOTH fingers
             // This fixes the issue where one stationary finger cancels out the movement
             for (UITouch *t in allTouches) {
@@ -11871,19 +12075,20 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
                 totalDeltaX += (cur.x - prev.x);
                 totalDeltaY += (cur.y - prev.y);
             }
-            
+
             float avgDeltaX = totalDeltaX / 2.0f;
             float avgDeltaY = totalDeltaY / 2.0f;
-            
+
             // Optional: Touch screens need a slight boost compared to mouse
             float touchSensitivity = 2.5f;
-            
+
             // Send Translate Command immediately and return
-            renderer->cam.handleMouseEvents(avgDeltaX * touchSensitivity,
-                                            avgDeltaY * touchSensitivity,
-                                            NO,
-                                            NO, // isShift
-                                            TransformationMode::Translate);
+            // (the renderer hands it to the current page's viewer, which calls Camera3D)
+            [renderer cameraGesture:avgDeltaX * touchSensitivity
+                                   :avgDeltaY * touchSensitivity
+                                   :NO
+                                   :NO // isShift
+                                   :TransformationMode::Translate];
             return;
         }
 
@@ -11892,22 +12097,22 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
             UITouch *touch = [touches anyObject];
             CGPoint currentPos = [touch locationInView:self];
             CGPoint previousPos = [touch previousLocationInView:self];
-            
+
             float deltaX = currentPos.x - previousPos.x;
             float deltaY = currentPos.y - previousPos.y;
-            
+
             bool onShape = false;
-            
+
             // --- Object Dragging Logic ---
             CGPoint mouseLocation = currentPos;
             simd_float2 currentMousePos = simd_make_float2((mouseLocation.x / self.frame.size.width), (mouseLocation.y / self.frame.size.height));
             simd_float4 currentMouseDrag = simd_make_float4((deltaX / (float)self.frame.size.width), (-deltaY / (float)self.frame.size.height), 0, 1);
-            
+
             currentMouseDrag.xyz *= 2;
             currentMousePos = 2 * currentMousePos - 1.0f;
             simd_float4 rayInViewSpace = simd_make_float4(currentMousePos, 0, 1);
             simd_float4 intPoint;
-            
+
             for (int i = 0; i < renderer->_objectQueue.size(); i++) {
                 if (renderer->_objectQueue[i].dragable) {
                     // ... (Keep your existing Raycast logic exactly as is) ...
@@ -11924,24 +12129,54 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
                     }
                 }
             }
-            
+
             // --- Orbit Logic (Only if we didn't touch an object) ---
             if (!onShape) {
-                renderer->cam.handleMouseEvents(deltaX, -deltaY, NO, NO, TransformationMode::Orbit);
+                [renderer cameraGesture:deltaX :-deltaY :NO :NO :TransformationMode::Orbit];
             }
         }
     }
     
+#if DEBUG
+    // Orbit/pan stop when UIKit cancels these touches. Logs who did it, so a stall can be traced:
+    // a recognizer that won the touch (and its view), or the system itself (screen-edge gesture,
+    // an alert, an incoming call...) when no recognizer claimed it.
+    - (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+        [super touchesCancelled:touches withEvent:event];
+        bool found = false;
+        for (UITouch* t in touches) {
+            for (UIGestureRecognizer* g in t.gestureRecognizers) {
+                if (g == self.touchShield) continue;   // always active mid-drag, never the culprit
+                if (g.state == UIGestureRecognizerStateBegan || g.state == UIGestureRecognizerStateChanged ||
+                    g.state == UIGestureRecognizerStateEnded) {
+                    NSLog(@"[MyMetalView] touches cancelled by %@ on %@ (delegate %@)", NSStringFromClass(g.class),
+                          NSStringFromClass(g.view.class), g.delegate ? NSStringFromClass([(NSObject*)g.delegate class]) : @"none");
+                    found = true;
+                }
+            }
+        }
+        if (!found) NSLog(@"[MyMetalView] touches cancelled by the system (no recognizer claimed them)");
+    }
+#endif
+
     - (void)didMoveToWindow {
         [super didMoveToWindow];
         // iOS doesn't strictly require makeFirstResponder for gestures, but good for menus
         [self becomeFirstResponder];
 
+        // didMoveToWindow runs again whenever the view is re-parented (e.g. switching the panel
+        // mode), so add these only once - a second pinch would double the zoom.
+        if (self.zoomPinch) return;
+
         // 1. Add the Pinch Gesture
-        UIPinchGestureRecognizer *pinch = [[UIPinchGestureRecognizer alloc]
-                                           initWithTarget:self
-                                           action:@selector(handlePinch:)];
-        [self addGestureRecognizer:pinch];
+        self.zoomPinch = [[UIPinchGestureRecognizer alloc]
+                          initWithTarget:self
+                          action:@selector(handlePinch:)];
+        [self addGestureRecognizer:self.zoomPinch];
+
+        // 2. Keep other views' recognizers (the floating panel's sheet) off our raw touches
+        self.touchShield = [[RendererTouchShield alloc] init];
+        [self addGestureRecognizer:self.touchShield];
     }
 
     - (void)handlePinch:(UIPinchGestureRecognizer *)gesture {
@@ -11952,7 +12187,7 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
         if (renderer) {
             // macOS: passed (1 + mag).
             // iOS: 'scale' IS (1 + mag), so pass it directly.
-            renderer->cam.handleMouseEvents(currentScale, currentScale, NO, NO, TransformationMode::Zoom);
+            [renderer cameraGesture:currentScale :currentScale :NO :NO :TransformationMode::Zoom];
         }
 
         // 3. CRITICAL: Reset the scale to 1.0
@@ -11963,7 +12198,7 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
 
         // 4. Handle End State
         if (gesture.state == UIGestureRecognizerStateEnded) {
-            renderer->cam.updateOLD();
+            [renderer cameraUpdateOLD];
         }
     }
 #endif
@@ -11995,7 +12230,7 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
     viewer_event.prev_ray_dir = prev_ray_direction;
     
     for (int i = 0; i < renderer->viewers.size(); i++) {
-        if (renderer->viewers[i]->handle_event(viewer_event)) {
+        if (renderer->viewers[i]->visible && renderer->viewers[i]->handle_event(viewer_event)) {
             return; // Event consumed
         }
     }
@@ -12069,7 +12304,7 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
     viewer_event.prev_ray_dir = prev_ray_direction;
     
     for (int i = 0; i < renderer->viewers.size(); i++) {
-        if (renderer->viewers[i]->handle_event(viewer_event)) {
+        if (renderer->viewers[i]->visible && renderer->viewers[i]->handle_event(viewer_event)) {
             return;
         }
     }
@@ -12199,7 +12434,7 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
     viewer_event.prev_ray_dir = ray_direction;
     
     for (int i = 0; i < renderer->viewers.size(); i++) {
-        if (renderer->viewers[i]->handle_event(viewer_event)) {
+        if (renderer->viewers[i]->visible && renderer->viewers[i]->handle_event(viewer_event)) {
             gesture.magnification = 0.0;
             return;
         }
@@ -12272,7 +12507,7 @@ std::tuple<simd_float3, simd_float3, simd_float2> ray_from_screen_space(simd_flo
 
     
     for (int i = 0; i < renderer->viewers.size(); i++) {
-        if (renderer->viewers[i]->handle_event(viewer_event)) {
+        if (renderer->viewers[i]->visible && renderer->viewers[i]->handle_event(viewer_event)) {
             return; // Event consumed
         }
     }
