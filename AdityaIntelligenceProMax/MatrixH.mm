@@ -7384,6 +7384,14 @@ enum class CAM {
 #endif
 }
 -(id) initWithCam:(int)CamNo;
+// iOS: `disparity` = NO gives depth in metres (kCVPixelFormatType_DepthFloat16), YES gives
+// disparity in 1/metres (kCVPixelFormatType_DisparityFloat16). Ignored on macOS (no depth).
+-(id) initWithCam:(int)CamNo disparity:(BOOL)disparity;
+#if TARGET_OS_IPHONE
+// What getDepth* returns: NO = depth (metres, the default), YES = disparity (1/metres). Can be
+// changed while running: frames are converted to the requested type as they arrive.
+@property (atomic) BOOL useDisparity;
+#endif
 -(void) captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection;
 
 
@@ -7407,7 +7415,14 @@ enum class CAM {
 @implementation CapReader
 
 - (id)initWithCam:(int)CamNo {
+    return [self initWithCam:CamNo disparity:NO];
+}
+
+- (id)initWithCam:(int)CamNo disparity:(BOOL)disparity {
     self = [super init];
+#if TARGET_OS_IPHONE
+    _useDisparity = disparity;
+#endif
     NSError* error = nil;
     
     if (CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, GlobalGPUManager.metalDevice, nil, &mTextureCache) != kCVReturnSuccess) {
@@ -7512,8 +7527,18 @@ enum class CAM {
             if (dim.width == 1920) {
                 bestFormat = format;
                 
-                // Pick the efficient depth format (usually kCVPixelFormatType_DepthFloat16 or 32)
+                // Pick the depth format by its actual type. supportedDepthFormats mixes depth and
+                // disparity, and [0] is typically DisparityFloat16 (1/metres): taking it blindly made
+                // "depth" disparity - far objects squashed together, near ones stretched out.
+                // Float16 either way: getDepth_metal copies it through an R16Float texture.
+                OSType wanted = _useDisparity ? kCVPixelFormatType_DisparityFloat16 : kCVPixelFormatType_DepthFloat16;
                 bestDepthFormat = supportedDepthFormats[0];
+                for (AVCaptureDeviceFormat *depthFormat in supportedDepthFormats) {
+                    if (CMFormatDescriptionGetMediaSubType(depthFormat.formatDescription) == wanted) {
+                        bestDepthFormat = depthFormat;
+                        break;
+                    }
+                }
                 break;
             }
         }
@@ -7619,6 +7644,26 @@ enum class CAM {
 - (void) depthDataOutput:(AVCaptureDepthDataOutput *)output didOutputDepthData:(AVDepthData *)depthData timestamp:(CMTime)timestamp connection:(AVCaptureConnection *)connection {
     // Process depthData here.
     // For example, you can convert the depth data to a CVPixelBuffer:
+    // Deliver exactly the requested type (Float16 depth or disparity), whatever format the
+    // device picked or if useDisparity was changed while running.
+    OSType wanted = self.useDisparity ? kCVPixelFormatType_DisparityFloat16 : kCVPixelFormatType_DepthFloat16;
+    OSType delivered = depthData.depthDataType;
+    if (delivered != wanted) {
+        depthData = [depthData depthDataByConvertingToDepthDataType:wanted];
+    }
+#if DEBUG
+    // Log the depth type once (and whenever it changes): 'hdep'/'fdep' = depth in metres,
+    // 'hdis'/'fdis' = disparity in 1/metres.
+    static OSType lastDelivered = 0, lastOut = 0;
+    OSType out = depthData.depthDataType;
+    if (delivered != lastDelivered || out != lastOut) {
+        auto fourcc = [](OSType t) { return [NSString stringWithFormat:@"%c%c%c%c", (char)(t >> 24), (char)(t >> 16), (char)(t >> 8), (char)t]; };
+        NSLog(@"[CapReader] depth delivered as '%@', handed out as '%@' (%zu x %zu)", fourcc(delivered), fourcc(out),
+              CVPixelBufferGetWidth(depthData.depthDataMap), CVPixelBufferGetHeight(depthData.depthDataMap));
+        lastDelivered = delivered;
+        lastOut = out;
+    }
+#endif
     CVPixelBufferRef depthBufferLocal = [depthData depthDataMap];
 //    std::cout << "Sptth:" << ([depthData depthDataType] == kCVPixelFormatType_DepthFloat32) << "\n";
 //    NSLog(@"%b", [depthData depthDataType] == kCVPixelFormatType_DepthFloat16);
@@ -12461,6 +12506,8 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 #include "FoveaMap/FoveaOverlay.h"
 #include "inputs/ARSessionCapture.h"
 #include "FoveaMap/FoveaRansacGPU.h"
+#include "FoveaMap/FoveaNormals.h"
+#include "FoveaMap/FoveaPlaneSegmentation.h"
 #include "FoveaMap/FoveaCluster.h"
 #include "FoveaMap/FoveaColorFromImage.h"
 
