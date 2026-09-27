@@ -12808,6 +12808,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 -(void) particle_render_graph;
 -(void) plot_EDs;
 -(void) depth_streamer;
+-(void) depth_sender;
 - (void) depth_reciver;
 -(void) depth_inplace;
 -(void) arkit_inplace;
@@ -12819,6 +12820,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 - (void) basics;
 - (void) point_cloud_environment;
 - (void) perlin_playground;
+
 @property (nonatomic, strong) NSMutableArray *activeTimers;
 @end
 
@@ -13018,6 +13020,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     sidharth.print();
     
 }
+
 
 - (void) particle_sim {
     pRender->renderInfiniteGrid = false;
@@ -13457,64 +13460,269 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 #endif
 
 #if TARGET_OS_IPHONE
--(void) depth_streamer {
+// Shows `pages` one at a time over the whole renderer; a horizontal swipe on the applet panel
+// (outside its controls) or a tap on its page dots moves between them, `titles` naming them.
+// Orbit / pan / zoom move the current page's camera (a page without one uses pRender->cam, one
+// that isn't `interactive` ignores them). Ask [pRender isPageOnScreen:i] to skip work for pages
+// nobody can see. Call once, from main (e.g. at the start of an applet).
+- (void)showPages:(std::vector<std::shared_ptr<Viewer>>)pages titles:(NSArray<NSString*>*)titles {
+    Renderer* renderer = pRender;
+    renderer->pages = pages;
+    renderer->page_position = 0.0f;
+    [_appletPanel setPageTitles:titles onScroll:^(CGFloat position) { renderer->page_position = (float)position; }];
+}
+
+static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam);   // below, above kitti_replay
+
+// Two pages, swiped between on the panel: the camera image (top) over the LiDAR depth, jet
+// colour-mapped (bottom), and the depth as a point cloud coloured by the camera, with its own
+// orbit camera. Only the page(s) on screen are computed. The "Send" button sends the current raw
+// depth [H, W] Float16 and the camera image resized to it [H, W, 4] BGRA UInt8 as two matrices
+// (plus the camera intrinsics); depth_reciver on the Mac turns them into a coloured point cloud.
+// Nothing is streamed until you press Send.
+-(void) depth_sender {
     cap = [[CapReader alloc] initWithCam:0];
     __block matrix image(3, dtype::UInt8);
     __block matrix depth(2, dtype::Float16);
-    
-    auto viewer = std::make_shared<Viewer>();
-    auto ParicleController = std::make_shared<PointCloudController>("Depth");
-    
-    viewer->nodes.push_back(ParicleController->node);
-    pRender->viewers.push_back(viewer);
-    
-    __block matrix my_colormap = {
-        {0.0f, 0.0f, 1.0f, 1.0f}, // Blue (low)
-        {0.0f, 1.0f, 0.0f, 1.0f}, // Green (mid)
-        {1.0f, 0.0f, 0.0f, 1.0f}  // Red (high)
+    // Latest frame, for Send. Only touched on `queue` (the loop and the button both run there).
+    __block matrix latest_depth;       // raw depth (metres), as captured
+    __block matrix latest_camera;      // camera image resized to the depth map
+    __block CameraIntrinsics latest_intrinsics;
+    __block int stats_tick = 0;
+
+    Renderer* renderer = pRender;
+    auto image_page = [pRender makeImageViewer];
+    auto cloud_page = std::make_shared<Viewer>();
+    cloud_page->camera = std::make_shared<Camera3D>();
+    auto cloud = std::make_shared<PointCloudController>("LiDAR depth");
+    cloud_page->nodes.push_back(cloud->node);
+    [self showPages:std::vector<std::shared_ptr<Viewer>>{image_page, cloud_page}
+             titles:@[@"Camera + depth", @"Point cloud"]];
+
+    // One thread owns everything here: the capture loop, the sliders' leaves and the Send button.
+    dispatch_queue_t queue = dispatch_queue_create("com.engine.depth_sender", DISPATCH_QUEUE_SERIAL);
+    SliderGroup ui(self, queue);
+    ui.section(@"Depth range (m)");
+    matrix near_m = ui.slider(@"Near", 0.0f, 3.0f, 0.2f);
+    matrix far_m  = ui.slider(@"Far", 0.5f, 10.0f, 4.0f);
+    // Fits Near/Far to the depth in view right now: mean +- 2 standard deviations, clamped to the
+    // frame's min/max so a few stray pixels (e.g. LiDAR's 0.2 m spikes) don't stretch the range.
+    ui.button(@"Auto range", ^{
+        if (!latest_depth.buffer) return;
+        matrix d = latest_depth.astype(dtype::Float);
+        float mean = d.mean().at<float>();
+        float sd = std::sqrt(std::max((d * d).mean().at<float>() - mean * mean, 0.0f));
+        float lo = std::max(mean - 2.0f * sd, d.min().at<float>());
+        float hi = std::min(mean + 2.0f * sd, d.max().at<float>());
+        ui.set(near_m, lo);
+        ui.set(far_m, hi);
+        NSLog(@"depth_sender: auto range %.2f - %.2f m", lo, hi);
+    });
+
+    // Jet: near = dark blue, far = dark red. Rows are BGRA, the renderer's channel order.
+    matrix colormap = {
+        {0.5f, 0.0f, 0.0f, 1.0f},   // dark blue (near)
+        {1.0f, 0.0f, 0.0f, 1.0f},   // blue
+        {1.0f, 1.0f, 0.0f, 1.0f},   // cyan
+        {0.0f, 1.0f, 1.0f, 1.0f},   // yellow
+        {0.0f, 0.0f, 1.0f, 1.0f},   // red
+        {0.0f, 0.0f, 0.5f, 1.0f},   // dark red (far)
     };
-    my_colormap.buildMetalBuffer();
-    my_colormap.begin_refcount(); // Just like the static inferno map to avoid memory issues
-    
-    auto stream = std::make_shared<QuantumSender>();
+    colormap.buildMetalBuffer();
+    colormap.begin_refcount();
+
+    auto stream = std::make_shared<QuantumSenderUDP>();
     stream->start("192.168.2.1", "8080");
-    
+
+    ui.section(@"Mac");
+    ui.button(@"Send", ^{
+        if (!latest_depth.buffer || !latest_camera.buffer) return;
+        // UDP loses the whole frame if any one of its chunks is dropped, so send it a few times;
+        // the receiver just uses the newest complete one. stream_frame copies the bytes right away.
+        std::vector<matrix> frame = {latest_depth, latest_camera};
+        for (int i = 0; i < 3; i++) stream->stream_frame(frame, &latest_intrinsics, sizeof(CameraIntrinsics));
+        NSLog(@"depth_sender: sent depth + camera, %u x %u", latest_depth.shape()[1], latest_depth.shape()[0]);
+    });
+
     [self attachToGCDQueue:^{
-        CameraIntrinsics cam_intrensic;
-        [cap read_metal:image];
-        [cap getDepth_metal:depth intrinsics:&cam_intrensic];
-        if (image.total_size == 0) return;
+        CameraIntrinsics intrinsics;
+        [self->cap read_metal:image];
+        [self->cap getDepth_metal:depth intrinsics:&intrinsics];
+        if (image.total_size == 0 || !depth.buffer) return;
+        size_m H = depth.shape()[0], W = depth.shape()[1];
+
+#if DEBUG
+        // Once a second: the actual depth values vs the slider range, to check units (metres vs disparity).
+        if (++stats_tick % 30 == 0) {
+            matrix d = depth.astype(dtype::Float);
+            NSLog(@"[depth_sender] depth %zu x %zu: min %.3f  mean %.3f  max %.3f | Near %.2f  Far %.2f",
+                  (size_t)W, (size_t)H, d.min().at<float>(), d.mean().at<float>(), d.max().at<float>(),
+                  *(float*)near_m.buffer, *(float*)far_m.buffer);
+        }
+#endif
+
+        // Camera image down to the depth map's size: shown, sent, and colours the cloud.
+        matrix camera = matrix::resample(image, {H, W, 4}, ResampleMode::Linear);
+        camera.eval();
+
+        // Page 0: camera on top of the jet-coloured depth, [2H, W, 4].
+        if ([renderer isPageOnScreen:0]) {
+            matrix range = matrix::max(far_m - near_m, matrix::scalar(0.01f));
+            matrix t = (depth.astype(dtype::Float) - near_m) / range;
+            matrix depth_bgra = (apply_colormap(t, colormap) * 255.0f).astype(dtype::UInt8);
+            matrix both = matrix::concat({camera, depth_bgra}, 0);
+            both.eval();
+            image_page->update(both);
+        }
+
+        // Page 1: depth -> points with the intrinsics, one camera colour per point (as depth_reciver).
+        if ([renderer isPageOnScreen:1] && intrinsics.referenceWidth > 0) {
+            matrix points = unproject_depth(depth, intrinsics);
+            matrix bgra = (camera.astype(dtype::Float) / 255.0f).flatten(0, 1);
+            matrix colours = bgra.take(matrix::of<int32_t>({2, 1, 0, 3}), 1);   // BGRA -> RGBA
+            points.eval();
+            colours.eval();
+            // `depth` and `camera` are rewritten next tick, so hand the renderer plain copies.
+            const size_m n = points.shape()[0];
+            matrix points_copy = matrix::withShape({n, 3}, dtype::Float);
+            matrix colours_copy = matrix::withShape({n, 4}, dtype::Float);
+            points_copy.begin_refcount();
+            colours_copy.begin_refcount();
+            memcpy(points_copy.buffer, points.buffer, (size_t)n * 3 * sizeof(float));
+            memcpy(colours_copy.buffer, colours.buffer, (size_t)n * 4 * sizeof(float));
+            cloud->update(points_copy, colours_copy);
+        }
+
+        latest_depth = depth;          // getDepth_metal overwrites `depth` in place next tick, on this queue
+        latest_camera = camera;
+        latest_intrinsics = intrinsics;
+    } withFPS:30 onQueue:queue];
+}
+
+// Streams the LiDAR depth to the Mac, continuously (30 FPS): [H, W] Float16 in metres, with the
+// camera intrinsics as the aux blob so the receiver can unproject it (salsa_reciver). No colour.
+// ~115 KB a frame, ~3.5 MB/s. Also shows the depth on the phone, jet colour-mapped over 0.2-5 m.
+-(void) depth_streamer {
+    cap = [[CapReader alloc] initWithCam:0];
+    __block matrix depth(2, dtype::Float16);
+
+    // Jet: near = dark blue, far = dark red. Rows are BGRA, the renderer's channel order.
+    matrix colormap = {
+        {0.5f, 0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f},
+        {0.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.5f, 1.0f},
+    };
+    colormap.buildMetalBuffer();
+    colormap.begin_refcount();
+
+    auto stream = std::make_shared<QuantumSenderUDP>();
+    stream->start("192.168.2.1", "8080");
+    __block uint64_t sent = 0;
+
+    [self attachToGCDQueue:^{
+        CameraIntrinsics intrinsics;
+        [self->cap getDepth_metal:depth intrinsics:&intrinsics];
         if (!depth.buffer) return;
-        
-        stream->stream_frame(depth, &cam_intrensic, sizeof(matrix_float3x3));
-        
-//        depth = (depth.astype(dtype::Float) * -5);
-//        
-//        matrix lineY = matrix::linespace(5.0f, -5.0f, depth.shape()[0]);
-//        matrix lineX = matrix::linespace(-5.0f, 5.0f, depth.shape()[1]);
-//        auto mesh = matrix::meshgrid(lineX, lineY);
-//        matrix X = mesh.first;
-//        matrix Y = mesh.second;
-//        
-//        matrix Z_flat = depth.flatten();
-//        matrix points = matrix::stack({X.flatten(), Y.flatten(), Z_flat}, -1);
-//        matrix colors = fovea::classify_ground_colors(points);
-//        ParicleController->update(points, colors);
-        
-//        float min_z = -25.0f;
-//        float max_z = 0.0f;
-//        matrix t = (Z_flat - min_z) / (max_z - min_z);
-//        t = t.clamp(0.0f, 1.0f);
-//        
-//        matrix colors = apply_colormap(t, my_colormap);
-//        colors.eval_metal(); // Force graph evaluation before pushing to render queue
-//        
-//        ParicleController->update(points, colors);
+        stream->stream_frame(depth, &intrinsics, sizeof(CameraIntrinsics));
+        if (++sent % 90 == 0) NSLog(@"depth_streamer: %llu frames sent (%d x %d)", sent, (int)depth.shape()[1], (int)depth.shape()[0]);
+
+        matrix t = (depth.astype(dtype::Float) - 0.2f) / 4.8f;
+        matrix bgra = (apply_colormap(t, colormap) * 255.0f).astype(dtype::UInt8);
+        [self->pRender updateBaseImageV2:bgra];
     } withFPS:30];
 }
 
+// Previous version: streamed the camera image, not depth.
+//-(void) depth_streamer {
+//    cap = [[CapReader alloc] initWithCam:0];
+//    __block matrix image(3, dtype::UInt8);
+//    __block matrix depth(2, dtype::Float16);
+//
+//    auto viewer = std::make_shared<Viewer>();
+//    auto ParicleController = std::make_shared<PointCloudController>("Depth");
+//
+//    viewer->nodes.push_back(ParicleController->node);
+//    pRender->viewers.push_back(viewer);
+//
+//    __block matrix my_colormap = {
+//        {0.0f, 0.0f, 1.0f, 1.0f}, // Blue (low)
+//        {0.0f, 1.0f, 0.0f, 1.0f}, // Green (mid)
+//        {1.0f, 0.0f, 0.0f, 1.0f}  // Red (high)
+//    };
+//    my_colormap.buildMetalBuffer();
+//    my_colormap.begin_refcount(); // Just like the static inferno map to avoid memory issues
+//
+//    auto stream = std::make_shared<QuantumSenderUDP>();
+//    stream->start("192.168.2.1", "8080");
+//
+//    [self attachToGCDQueue:^{
+//        CameraIntrinsics cam_intrensic;
+//        [cap read_metal:image];
+//        [cap getDepth_metal:depth intrinsics:&cam_intrensic];
+//        if (image.total_size == 0) return;
+//        if (!depth.buffer) return;
+//        std::cout << cam_intrensic.intrinsicMatrix << "\n";
+////        stream->stream_frame(std::vector<matrix>{depth, image}, &(cam_intrensic), sizeof(CameraIntrinsics));
+//        stream->stream_frame(image);
+//
+////        depth = (depth.astype(dtype::Float) * -5);
+////        
+////        matrix lineY = matrix::linespace(5.0f, -5.0f, depth.shape()[0]);
+////        matrix lineX = matrix::linespace(-5.0f, 5.0f, depth.shape()[1]);
+////        auto mesh = matrix::meshgrid(lineX, lineY);
+////        matrix X = mesh.first;
+////        matrix Y = mesh.second;
+////        
+////        matrix Z_flat = depth.flatten();
+////        matrix points = matrix::stack({X.flatten(), Y.flatten(), Z_flat}, -1);
+////        matrix colors = fovea::classify_ground_colors(points);
+////        ParicleController->update(points, colors);
+//
+////        float min_z = -25.0f;
+////        float max_z = 0.0f;
+////        matrix t = (Z_flat - min_z) / (max_z - min_z);
+////        t = t.clamp(0.0f, 1.0f);
+////        
+////        matrix colors = apply_colormap(t, my_colormap);
+////        colors.eval_metal(); // Force graph evaluation before pushing to render queue
+////        
+////        ParicleController->update(points, colors);
+//    } withFPS:30];
+//}
+
 
 #endif
+
+// Depth map [H, W] (metres) -> [H*W, 3] camera-space points with the pinhole model:
+// X = (u - cx) Z / fx, Y = (v - cy) Z / fy. Returned Y-up and looking down -Z, like the viewer.
+//
+// The calibration is in the sensor's native (landscape) orientation, but CapReader rotates depth
+// to portrait (180 x 320). When the depth map's orientation doesn't match the reference size, the
+// axes are swapped: fx <-> fy, and the principal point rotated with the image. Applied unrotated,
+// the intrinsics hit the wrong axes and skew the cloud (fovea::points_from_depth_intrinsics
+// assumes they match). The rotation direction only moves cx between cy and refH - cy, which are
+// close because the principal point sits near the image centre.
+static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) {
+    matrix Z = depth.astype(dtype::Float);
+    size_m h = Z.shape()[0], w = Z.shape()[1];
+
+    float refW = cam.referenceWidth, refH = cam.referenceHeight;
+    float fx = cam.intrinsicMatrix.columns[0].x, fy = cam.intrinsicMatrix.columns[1].y;
+    float cx = cam.intrinsicMatrix.columns[2].x, cy = cam.intrinsicMatrix.columns[2].y;
+    if ((w < h) != (refW < refH)) {
+        float rfx = fy, rfy = fx, rcx = refH - cy, rcy = cx;
+        fx = rfx; fy = rfy; cx = rcx; cy = rcy;
+        std::swap(refW, refH);
+    }
+    // Rescale from the calibration's resolution to the depth map's.
+    float sx = (float)w / refW, sy = (float)h / refH;
+    fx *= sx; cx *= sx;
+    fy *= sy; cy *= sy;
+
+    auto mesh = matrix::meshgrid(matrix::linespace(0.0f, (float)(w - 1), w), matrix::linespace(0.0f, (float)(h - 1), h));
+    matrix X = (mesh.first - cx) * Z / fx;
+    matrix Y = (mesh.second - cy) * Z / fy;
+    return matrix::stack({X.flatten(), (Y * -1.0f).flatten(), (Z * 1.0f).flatten()}, -1);
+}
 
 - (void) depth_reciver {
     
@@ -13525,48 +13733,114 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     pRender->viewers.push_back(viewer);
     
     // Again, shared_ptr is very safe for keeping C++ objects alive in async Obj-C blocks
-    __block auto slipspace_receiver = std::make_shared<QuantumReceiver>();
+    __block auto slipspace_receiver = std::make_shared<QuantumReceiverUDP>();
     
     // 1. OPEN THE PORTAL! (You missed this)
     slipspace_receiver->start("8080");
+    __block int64_t frame = 0;
+
+    // The receive loop and the panel's controls share one queue (see UI/MatrixSliders.h).
+    dispatch_queue_t queue = dispatch_queue_create("com.engine.depth_reciver", DISPATCH_QUEUE_SERIAL);
+    SliderGroup ui(self, queue);
+    ui.section(@"Point cloud");
+    // On: real metric positions from the intrinsics depth_sender sends with each frame. Off: the
+    // pixel grid (X/Y spread over +-5, Z in metres). Plane distances only mean metres when on.
+    matrix unproject = ui.toggle(@"Unproject with intrinsics", true);
+    ui.section(@"Normals");
+    matrix voxel       = ui.slider(@"Voxel size (m)", 0.01f, 0.20f, 0.04f);
+    ui.section(@"Planes (RANSAC)");
+    matrix max_planes  = ui.slider_int(@"Max planes", 1, 16, 3);
+    matrix distance    = ui.slider(@"Distance threshold (m)", 0.002f, 0.10f, 0.02f);
+    matrix angle       = ui.slider(@"Normal angle (deg, 90 = off)", 1.0f, 90.0f, 20.0f);
+    matrix min_inliers = ui.slider_int(@"Min inliers", 50, 5000, 500);
+    matrix iterations  = ui.slider_int(@"Iterations", 50, 5000, 1000);
+    ui.section(@"Display");
+    matrix show_planes = ui.toggle(@"Colour planes", true);
+
+    // The graph is built once, on the first frame (its shapes come from the sender). Each new frame
+    // is copied into these leaves and marked changed, so a pass re-runs only what a new frame or a
+    // slider actually affects - RANSAC is random, so re-running it on every tick would flicker.
+    __block matrix depth_leaf, image_leaf, points, shown, labels;
+    __block bool built = false;
     
     [self attachToGCDQueue:^{
         
         CameraIntrinsics cam_intrensic;
-        // 2. DIP INTO THE NETWORK BUCKET! (You missed this)
+        // 2. DIP INTO THE NETWORK BUCKET! (You missed this). True once per new frame.
         bool got_new_data = slipspace_receiver->pull_latest_data(&cam_intrensic, sizeof(CameraIntrinsics));
-        
-        if (got_new_data && slipspace_receiver->dag_leaf_matrix != nullptr) {
-            
-            // 3. Dereference the pointer (*) to get the actual matrix
-            matrix depth = *(slipspace_receiver->dag_leaf_matrix);
-            
-//            // 4. Build your graph
-//            depth = (depth * 20).clamp(0.0, 255.0);
-//            matrix image = matrix::stack({depth, depth, depth, depth.ones() * 255}, -1);
-            
-//            depth = (depth.astype(dtype::Float) * -5);
-            
-//            matrix lineY = matrix::linespace(5.0f, -5.0f, depth.shape()[0]);
-//            matrix lineX = matrix::linespace(-5.0f, 5.0f, depth.shape()[1]);
-//            auto mesh = matrix::meshgrid(lineX, lineY);
-//            matrix X = mesh.first;
-//            matrix Y = mesh.second;
-//        
-//            matrix Z_flat = depth.flatten();
-//            matrix points = matrix::stack({X.flatten(), Y.flatten(), Z_flat}, -1);
-            
-            matrix points = fovea::points_from_depth_intrinsics(depth, cam_intrensic);
-            matrix colors = fovea::classify_ground_colors(points);
-            ParicleController->update(points, colors);
-            
-//
-//            
-//            // 6. Send to UI (Fixed the typo here)
-//            [pRender updateBaseImageV2:image];
+
+        // depth_sender sends two matrices per frame: [0] depth [H, W] Float16, [1] camera [H, W, 4] BGRA UInt8.
+        if (got_new_data && slipspace_receiver->dag_leaf_matrices.size() >= 2) {
+            matrix* recv_depth = slipspace_receiver->dag_leaf_matrices[0];
+            matrix* recv_image = slipspace_receiver->dag_leaf_matrices[1];
+
+            if (!built) {
+                depth_leaf = matrix::leaf({recv_depth->shape()[0], recv_depth->shape()[1]}, recv_depth->type);
+                image_leaf = matrix::leaf({recv_image->shape()[0], recv_image->shape()[1], recv_image->shape()[2]}, recv_image->type);
+
+                // 3. Depth map -> point cloud, both ways; the toggle blends between them
+                matrix Z = depth_leaf.astype(dtype::Float) * -1;   // -Z is away from the viewer
+                auto mesh = matrix::meshgrid(matrix::linespace(-5.0f, 5.0f, depth_leaf.shape()[1]),
+                                             matrix::linespace(5.0f, -5.0f, depth_leaf.shape()[0]));
+                matrix grid_points = matrix::stack({mesh.first.flatten(), mesh.second.flatten(), Z.flatten()}, -1);
+                matrix metric_points = cam_intrensic.referenceWidth > 0 ? unproject_depth(depth_leaf, cam_intrensic) : grid_points;
+                points = unproject * metric_points + (1.0f - unproject) * grid_points;
+
+                // 4. Camera pixels -> one colour per point: [H, W, 4] BGRA UInt8 -> [H*W, 4] RGBA Float in [0, 1]
+                matrix bgra = (image_leaf.astype(dtype::Float) / 255.0f).flatten(0, 1);
+                matrix colors = bgra.take(matrix::of<int32_t>({2, 1, 0, 3}), 1);
+
+                // 5. Planes: normals -> RANSAC labels -> a colour per plane (see FoveaMap/FoveaPlaneSegmentation.h)
+                matrix normals = fovea::estimate_normals(points, voxel);
+                labels = fovea::segment_planar_surfaces_labels(points, normals, max_planes, distance, angle, min_inliers, iterations);
+                matrix plane_colours = fovea::colour_plane_labels(labels, colors);
+                shown = show_planes * plane_colours + (1.0f - show_planes) * colors;
+                built = true;
+            }
+
+            if (recv_depth->total_size != depth_leaf.total_size || recv_image->total_size != image_leaf.total_size) {
+                NSLog(@"depth_reciver: frame size changed - restart the receiver to rebuild for it");
+                return;
+            }
+            memcpy(depth_leaf.buffer, recv_depth->buffer, depth_leaf.total_size * dtype_size(depth_leaf.type));
+            memcpy(image_leaf.buffer, recv_image->buffer, image_leaf.total_size * dtype_size(image_leaf.type));
+            depth_leaf.mark_changed();
+            image_leaf.mark_changed();
+
+//            if (frame == 200) {
+//                NSLog(@"Saved");
+//                matrix::save_as_npz({depth_leaf}, "/Users/adityadude/Downloads/data/save.npz");
+//            }
+            frame += 1;
         }
-        
-    } withFPS:20];
+        if (!built) return;
+
+        // 6. Re-run whatever a new frame or a slider changed; nothing changed = keep what's on screen
+        if (!SliderGroup::run_graph_pass(shown)) return;
+        points.eval();   // computed in this pass already; just fetches the buffer
+        labels.eval();
+
+        // The graph rewrites these buffers on the next pass, so hand the renderer plain copies
+        const size_m n = points.shape()[0];
+        matrix points_copy = matrix::withShape({n, 3}, dtype::Float);
+        matrix colours_copy = matrix::withShape({n, 4}, dtype::Float);
+        points_copy.begin_refcount();
+        colours_copy.begin_refcount();
+        memcpy(points_copy.buffer, points.buffer, (size_t)n * 3 * sizeof(float));
+        memcpy(colours_copy.buffer, shown.buffer, (size_t)n * 4 * sizeof(float));
+        ParicleController->update(points_copy, colours_copy);
+
+        const int32_t* L = static_cast<const int32_t*>(labels.buffer);
+        std::vector<size_t> counts;
+        for (size_m i = 0; i < n; ++i) {
+            if (L[i] < 0) continue;
+            if ((size_t)L[i] >= counts.size()) counts.resize(L[i] + 1, 0);
+            counts[L[i]]++;
+        }
+        std::cout << "depth_reciver: " << counts.size() << " planes:";
+        for (size_t c : counts) std::cout << " " << c;
+        std::cout << "\n";
+    } withFPS:20 onQueue:queue];
 }
 
 -(void) particle_render_graph {

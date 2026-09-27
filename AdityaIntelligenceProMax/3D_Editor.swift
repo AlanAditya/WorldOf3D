@@ -283,7 +283,7 @@ extension _3D_Editor {
                 Self.hasAppeared = true
                 //                    let matrix = MatrixH<_CInt_1, CFloat>([1.0, 2.0, 3.0] as [CFloat])
                 
-                inteligence.perlin_playground()
+                inteligence.depth_sender()
             }
     }
 }
