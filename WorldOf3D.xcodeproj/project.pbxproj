@@ -1348,6 +1348,7 @@
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = AB1BE7232D7DE4DB00D29037 /* Resources */;
 			membershipExceptions = (
+				.claude,
 				module.modulemap,
 			);
 			platformFiltersByRelativePath = {
@@ -1361,6 +1362,7 @@
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			buildPhase = AB1BE7212D7DE4DB00D29037 /* Sources */;
 			membershipExceptions = (
+				.claude,
 				back.txt,
 				Mods/GPUManager.h,
 				SidePannel.h,
@@ -1515,6 +1517,13 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		AB0E628F30614D4500A1D98C /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		AB300BAC2C5FB5690098A5A5 /* ImageProcessing */ = {
 			isa = PBXGroup;
 			children = (
@@ -5515,6 +5524,7 @@
 				AB1BE7262D7DE4DB00D29037 /* AdityaIntelligenceProMax */,
 				ABB242362C0DFECE005A1498 /* Products */,
 				ABCB242A2C103782006EB7B6 /* Frameworks */,
+				AB0E628F30614D4500A1D98C /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -6116,7 +6126,7 @@
 				HEADER_SEARCH_PATHS = (
 					/usr/local/include,
 					"$(SRCROOT)/AdityaIntelligenceProMax",
-					/opt/homebrew/Cellar/opencv/4.12.0_17/include/opencv4/,
+					/opt/homebrew/Cellar/opencv/5.0.0_10/include/opencv5/,
 					/opt/homebrew/include,
 					/opt/homebrew/Cellar/onedpl/2022.11.0/include,
 				);
@@ -6197,7 +6207,7 @@
 				HEADER_SEARCH_PATHS = (
 					/usr/local/include,
 					"$(SRCROOT)/AdityaIntelligenceProMax",
-					/opt/homebrew/Cellar/opencv/4.12.0_17/include/opencv4/,
+					/opt/homebrew/Cellar/opencv/5.0.0_10/include/opencv5/,
 					/opt/homebrew/include,
 					/opt/homebrew/Cellar/onedpl/2022.11.0/include,
 				);

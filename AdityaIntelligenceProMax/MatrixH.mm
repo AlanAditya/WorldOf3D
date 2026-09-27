@@ -12803,7 +12803,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     - (void)attachToGCDQueue:(void (^)(void))block withFPS:(float)fps;
     - (void)attachToGCDQueue:(void (^)(void))block withFPS:(float)fps onQueue:(dispatch_queue_t)queue;
     - (void)attachContinuousLoop:(void (^)(void))block;
-- (void) EXR_CVE_EXPLOIT;
+- (void) EXR;
 -(void) new_concurrancy_model;
 -(void) MicTesting1234;
 -(void) rendering_graph;
@@ -15375,7 +15375,7 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
     resample_4d_lin_gpu.print();
 }
 
-- (void) EXR_CVE_EXPLOIT {
+- (void) EXR {
     matrix img = matrix::repeating({1000, 1000}, matrix({(uint8_t)255, (uint8_t)255, (uint8_t)255, (uint8_t)255}));
     img.save_as_image("/Users/adityadude/Documents/OUTPUT_IMAGES/img1.exr", ImgType::EXR);
     
