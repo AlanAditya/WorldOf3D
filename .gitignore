@@ -6,3 +6,11 @@
 *.xcschememanagement.plist
 *.xcbkptlist
 
+
+# Editor / tool caches
+.cache/
+.idea/inspectionProfiles/
+.claude/
+
+# Build products
+*.dSYM/
