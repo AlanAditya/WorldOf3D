@@ -12723,6 +12723,7 @@ public:
 @end
 
 #import "UI/AppletPanel.h"
+#import "UI/AppletToolbar.h"
 #include "UI/MatrixSliders.h"
 #import "SidePannel.h"
 #include "Algos/graph_visualiser.cpp"
@@ -12765,6 +12766,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 @property (strong, nonatomic) AVPlayer *player;
 @property (nonatomic, strong) NSMutableArray<UIComponent *> *components;   // legacy, no longer displayed
 @property (nonatomic, strong) AppletPanel* appletPanel;                      // shown by ControlPanel in 3D_Editor.swift
+@property (nonatomic, strong) AppletToolbar* appletToolbar;                  // floating capsule, bottom right of the renderer (AppletToolbarView)
 @property (nonatomic, strong) Renderer* pRender;
 
 -(void) Logic;
@@ -12861,6 +12863,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     _components = [[NSMutableArray alloc] init];
     _activeTimers = [[NSMutableArray alloc] init];
     _appletPanel = [[AppletPanel alloc] init];
+    _appletToolbar = [[AppletToolbar alloc] init];
     
 //    UIComponent *slider = [[UIComponent alloc] init];
 //    slider.title = @"Brightness";
@@ -12911,7 +12914,29 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     _Blue = 1;
     _Green = 1;
     
+    [self addDefaultToolbarItems];
+    
     return self;
+}
+
+// The capsule's default controls, present for every applet: the infinite grid on/off and a
+// "..." menu of standard camera views. Callbacks run on main, where pRender draws.
+- (void)addDefaultToolbarItems {
+    Renderer* renderer = pRender;
+    [_appletToolbar addToggleWithIcon:@"grid"
+                                title:@"Infinite Grid"
+                                value:renderer->renderInfiniteGrid
+                             onChange:^(BOOL on) { renderer->renderInfiniteGrid = on; }];
+
+    // Front = the side the camera starts on (-z), Right = +x, Top = +y. The viewer is y up.
+    [_appletToolbar addMenuWithIcon:@"ellipsis"
+                              title:@"Camera"
+                         itemTitles:@[@"Top", @"Front", @"Right"]
+                          itemIcons:@[@"arrow.down.to.line", @"arrow.forward.to.line", @"arrow.backward.to.line"]
+                           onSelect:^(NSInteger index) {
+        static const simd_float3 views[] = {{0, 1, 0}, {0, 0, -1}, {1, 0, 0}};
+        if (Camera3D* cam = [renderer interactionCamera]) cam->setViewDirection(views[index]);
+    }];
 }
 
 // Legacy: ignored its arguments and never stored the callback. Use SliderGroup instead.

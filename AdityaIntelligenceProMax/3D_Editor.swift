@@ -223,6 +223,7 @@ struct _3D_Editor: View {
 //            MTKViewWrapper(intel: inteligence, viewNo: 2)
 //                .layoutPriority(1)
             MTKViewWrapper(intel: inteligence, viewNo: 1)
+                .appletToolbar(inteligence.appletToolbar)
                 .layoutPriority(1)
                 .onAppear {
                     guard !Self.hasAppeared else { return }
@@ -244,11 +245,13 @@ switch panelMode {
 case .docked:
     VStack(spacing: 0) {
         metalView
+            .appletToolbar(inteligence.appletToolbar)
         ControlPanel(intel: inteligence)
             .frame(height: 280)
     }
 case .floating:
     metalView
+        .appletToolbar(inteligence.appletToolbar, bottomInset: 110 + 12)   // above the sheet's smallest detent
         .sheet(isPresented: .constant(true)) {
             ControlPanel(intel: inteligence, translucent: true)
                 .ignoresSafeArea(edges: .bottom)
