@@ -12746,6 +12746,9 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 #include "FoveaMap/FoveaPlaneSegmentation.h"
 #include "FoveaMap/FoveaCluster.h"
 #include "FoveaMap/FoveaColorFromImage.h"
+#include "AI/Kitti.h"
+#include "AI/FoveatedGrid.h"
+#include "AI/RangeProjection.h"   // SalsaNext (MLX), macOS only
 
 @interface Intelligence : NSObject
 {
@@ -12808,6 +12811,10 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 -(void) particle_render_graph;
 -(void) plot_EDs;
 -(void) depth_streamer;
+#if !TARGET_OS_IPHONE
+-(void) kitti_replay;
+-(void) salsa_reciver;
+#endif
 -(void) depth_sender;
 - (void) depth_reciver;
 -(void) depth_inplace;
@@ -13723,6 +13730,382 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
     matrix Y = (mesh.second - cy) * Z / fy;
     return matrix::stack({X.flatten(), (Y * -1.0f).flatten(), (Z * 1.0f).flatten()}, -1);
 }
+
+#if !TARGET_OS_IPHONE
+// Replays a SemanticKITTI sequence through SalsaNext (MLX, AI/SalsaNext.h): each scan -> range image
+// -> network -> one class per point -> the foveated 2.5D grid (AI/FoveatedGrid.h: 5 cm cells near,
+// 40 cm far, each with min/max height and the most important class). Draws the grid as one tile per
+// occupied cell at its height, and/or the labelled points, coloured by group (terrain / static /
+// dynamic, PS 26053's three) or by SemanticKITTI class, with the ground truth one toggle away.
+// Accuracy against the labels (per group, and by distance), timing and the grid's memory next to a
+// uniform grid's are logged to the console.
+// Point kSequence at your sequence folder and kModel at the converted weights.
+-(void) kitti_replay {
+    static const std::string kSequence = "/Users/adityadude/Documents/C++XCODE/datasets/SemanticKITTI/dataset/sequences/08";
+    static const std::string kModel = "/Users/adityadude/Documents/C++XCODE/pretrained/salsanext.safetensors";
+
+    std::shared_ptr<kitti::Sequence> seq;
+    std::shared_ptr<ai::SalsaNext> net;
+    try {
+        seq = std::make_shared<kitti::Sequence>(kSequence);
+        net = std::make_shared<ai::SalsaNext>(kModel);
+    } catch (const std::exception& e) {
+        NSLog(@"kitti_replay: %s", e.what());
+        return;
+    }
+    if (seq->size() == 0) { NSLog(@"kitti_replay: no scans in %s", kSequence.c_str()); return; }
+    NSLog(@"kitti_replay: %zu scans, labels %s", seq->size(), seq->has_labels() ? "yes" : "no");
+
+    auto viewer = std::make_shared<Viewer>();
+    auto cloud = std::make_shared<PointCloudController>("KITTI");
+    auto tiles = std::make_shared<TriangleMeshController>("Foveated grid");
+    viewer->nodes.push_back(cloud->node);
+    viewer->nodes.push_back(tiles->node);
+    pRender->viewers.push_back(viewer);
+
+    // Everything below runs on this queue: the playback loop, the panel's controls, the network.
+    dispatch_queue_t queue = dispatch_queue_create("com.engine.kitti_replay", DISPATCH_QUEUE_SERIAL);
+    SliderGroup ui(self, queue);
+    ui.section(@"Playback");
+    matrix playing = ui.toggle(@"Play", true);
+    matrix frame   = ui.slider_int(@"Frame", 0, (int)seq->size() - 1, 0);
+    matrix fps     = ui.slider(@"Frames per second", 1.0f, 20.0f, 10.0f);
+    ui.section(@"Colours");
+    matrix by_class = ui.toggle(@"By class (off: terrain / static / dynamic)", false);
+    matrix truth    = ui.toggle(@"Show ground truth", false);
+    ui.section(@"Show");
+    matrix show_grid   = ui.toggle(@"2.5D grid (5 cm near, 40 cm far)", true);
+    matrix show_points = ui.toggle(@"Points", false);
+
+    struct State {
+        kitti::Scan scan;
+        std::vector<int32_t> pred;                        // SalsaNext class per point, for `scan`
+        int frame = -1;
+        float by_class = -1, truth = -1, show_grid = -1, show_points = -1;
+        foveated::Grid grid;
+        double last_advance = 0;
+        // Accuracy on the groups, over every frame shown since the last reset.
+        uint64_t inter[4] = {}, uni[4] = {};
+        uint64_t band_ok[3] = {}, band_n[3] = {};         // 0-10 m, 10-30 m, 30 m+
+        int frames = 0;
+        double proj_ms = 0, net_ms = 0;
+    };
+    auto st = std::make_shared<State>();
+    ui.button(@"Reset accuracy", ^{
+        std::fill(std::begin(st->inter), std::end(st->inter), 0);
+        std::fill(std::begin(st->uni), std::end(st->uni), 0);
+        std::fill(std::begin(st->band_ok), std::end(st->band_ok), 0);
+        std::fill(std::begin(st->band_n), std::end(st->band_n), 0);
+        st->frames = 0;
+        st->proj_ms = st->net_ms = 0;
+    });
+    std::cout << "kitti_replay: foveated grid " << st->grid.cell_count() << " cells, " << st->grid.bytes() / 1e6
+              << " MB; a uniform 5 cm grid over the same 200 m x 200 m would be " << st->grid.uniform_cell_count()
+              << " cells, " << st->grid.uniform_cell_count() * sizeof(foveated::Cell) / 1e6 << " MB\n";
+
+    [self attachToGCDQueue:^{
+        using clock = std::chrono::steady_clock;
+        auto ms_since = [](clock::time_point t) { return std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - t).count() / 1000.0; };
+
+        // --- playback: advance on the FPS clock, or follow the Frame slider ---
+        int f = *(int32_t*)frame.buffer;
+        double now = std::chrono::duration<double>(clock::now().time_since_epoch()).count();
+        if (*(float*)playing.buffer > 0.5f && st->frame >= 0 &&
+            now - st->last_advance >= 1.0 / std::max(*(float*)fps.buffer, 1.0f)) {
+            f = (st->frame + 1) % (int)seq->size();
+            ui.set(frame, (float)f);
+            st->last_advance = now;
+        }
+        float bc = *(float*)by_class.buffer, gt = *(float*)truth.buffer;
+        float sg = *(float*)show_grid.buffer, sp = *(float*)show_points.buffer;
+        bool new_frame = f != st->frame;
+        if (!new_frame && bc == st->by_class && gt == st->truth && sg == st->show_grid && sp == st->show_points) return;
+
+        // --- a new scan: load -> range image -> SalsaNext -> class per point ---
+        if (new_frame) {
+            st->scan = seq->load((size_t)f);
+            auto t0 = clock::now();
+            ai::RangeImage ri = ai::project(st->scan.xyz.data(), st->scan.remission.data(), st->scan.size(), *net);
+            ai::mx::eval(ri.input);
+            double proj_ms = ms_since(t0);
+            t0 = clock::now();
+            ai::mx::array probs = (*net)(ri.input);
+            ai::mx::eval(probs);
+            double net_ms = ms_since(t0);
+            st->pred = ai::labels_for_points(probs, ri);
+            st->frame = f;
+
+            if (!st->scan.labels.empty()) {
+                for (size_t i = 0; i < st->scan.size(); ++i) {
+                    int t = (int)kitti::group_of(kitti::to_train_class(st->scan.labels[i]));
+                    if (t == 0) continue;                                     // unlabelled: not scored
+                    int p = (int)kitti::group_of(st->pred[i]);
+                    for (int g = 1; g < 4; ++g) {
+                        st->inter[g] += (p == g && t == g);
+                        st->uni[g] += (p == g || t == g);
+                    }
+                    float x = st->scan.xyz[i * 3], y = st->scan.xyz[i * 3 + 1];
+                    float r = std::sqrt(x * x + y * y);
+                    int band = r < 10.0f ? 0 : (r < 30.0f ? 1 : 2);
+                    st->band_ok[band] += (p == t);
+                    st->band_n[band]++;
+                }
+            }
+            st->frames++;
+            st->proj_ms += proj_ms;
+            st->net_ms += net_ms;
+            std::cout << "kitti_replay: scan " << f << ", " << st->scan.size() << " points, projection "
+                      << proj_ms << " ms, network " << net_ms << " ms\n";
+            if (st->frames % 50 == 0 && st->band_n[0] + st->band_n[1] + st->band_n[2] > 0) {
+                auto iou = [&](int g) { return st->uni[g] ? 100.0 * st->inter[g] / st->uni[g] : 0.0; };
+                auto acc = [&](int b) { return st->band_n[b] ? 100.0 * st->band_ok[b] / st->band_n[b] : 0.0; };
+                std::cout << "kitti_replay: over " << st->frames << " scans - IoU terrain " << iou(1) << "%, static "
+                          << iou(2) << "%, dynamic " << iou(3) << "% | accuracy 0-10 m " << acc(0) << "%, 10-30 m "
+                          << acc(1) << "%, 30 m+ " << acc(2) << "% | avg projection " << st->proj_ms / st->frames
+                          << " ms, network " << st->net_ms / st->frames << " ms\n";
+            }
+        }
+        st->by_class = bc;
+        st->truth = gt;
+        st->show_grid = sg;
+        st->show_points = sp;
+
+        // --- colours: group (terrain / static / dynamic) or SemanticKITTI class ---
+        const size_m n = (size_m)st->scan.size();
+        const bool show_truth = gt > 0.5f && !st->scan.labels.empty();
+        static const float group_rgb[4][3] = {{0.35f, 0.35f, 0.35f}, {0.30f, 0.75f, 0.35f}, {0.40f, 0.55f, 0.95f}, {1.0f, 0.30f, 0.20f}};
+        std::vector<uint8_t> cls(n), grp(n);
+        for (size_m i = 0; i < n; ++i) {
+            cls[i] = (uint8_t)(show_truth ? kitti::to_train_class(st->scan.labels[i]) : st->pred[i]);
+            grp[i] = (uint8_t)kitti::group_of(cls[i]);
+        }
+        auto rgb_of = [&](int c) { return bc > 0.5f ? &net->class_colors[c * 3] : group_rgb[(int)kitti::group_of(c)]; };
+
+        // KITTI is x forward / y left / z up; the viewer is y up, looking down -z.
+        auto to_view = [](const float* p, float* out) { out[0] = -p[1]; out[1] = p[2]; out[2] = -p[0]; };
+
+        // --- the 2.5D grid: bin the labelled points, one tile per occupied cell at its highest point ---
+        if (sg > 0.5f) {
+            auto t0 = clock::now();
+            st->grid.clear();
+            st->grid.insert(st->scan.xyz.data(), n, grp.data(), cls.data());
+            double bin_ms = ms_since(t0);
+            t0 = clock::now();
+            foveated::Mesh mesh = foveated::tiles(st->grid, [&](const foveated::Cell& c, float* rgba) {
+                const float* rgb = rgb_of(c.cls);
+                // Taller cells brighter, so height reads at a glance (the sensor is 1.73 m above the road).
+                float shade = 0.55f + 0.45f * std::clamp((c.zmax + 1.73f) / 3.0f, 0.0f, 1.0f);
+                rgba[0] = rgb[0] * shade; rgba[1] = rgb[1] * shade; rgba[2] = rgb[2] * shade; rgba[3] = 1.0f;
+            });
+            const size_m v = (size_m)(mesh.xyz.size() / 3), ni = (size_m)mesh.indices.size();
+            if (v > 0) {
+                matrix verts = matrix::withShape({v, 3}, dtype::Float);
+                matrix vcols = matrix::withShape({v, 4}, dtype::Float);
+                matrix idx = matrix::withShape({ni}, dtype::UInt32);
+                verts.begin_refcount(); vcols.begin_refcount(); idx.begin_refcount();
+                for (size_m k = 0; k < v; ++k) to_view(&mesh.xyz[k * 3], (float*)verts.buffer + k * 3);
+                memcpy(vcols.buffer, mesh.rgba.data(), mesh.rgba.size() * sizeof(float));
+                memcpy(idx.buffer, mesh.indices.data(), mesh.indices.size() * sizeof(uint32_t));
+                tiles->update(verts, vcols, idx);
+            }
+            if (new_frame) {
+                std::cout << "kitti_replay: grid " << st->grid.occupied() << " occupied cells, binning " << bin_ms
+                          << " ms, tiles " << ms_since(t0) << " ms\n";
+            }
+        } else {
+            tiles->clear();
+        }
+
+        // --- the labelled points ---
+        if (sp > 0.5f) {
+            matrix points = matrix::withShape({n, 3}, dtype::Float);
+            matrix colours = matrix::withShape({n, 4}, dtype::Float);
+            points.begin_refcount();
+            colours.begin_refcount();
+            float* P = (float*)points.buffer;
+            float* C = (float*)colours.buffer;
+            for (size_m i = 0; i < n; ++i) {
+                to_view(&st->scan.xyz[i * 3], P + i * 3);
+                const float* rgb = rgb_of(cls[i]);
+                C[i * 4 + 0] = rgb[0]; C[i * 4 + 1] = rgb[1]; C[i * 4 + 2] = rgb[2]; C[i * 4 + 3] = 1.0f;
+            }
+            cloud->update(points, colours);
+        } else {
+            cloud->clear();
+        }
+    } withFPS:60 onQueue:queue];
+}
+#endif
+
+#if !TARGET_OS_IPHONE
+// Experiment: SalsaNext on the phone's LiDAR, streamed by depth_streamer. Each depth frame is
+// unprojected to metric points with the phone's intrinsics, turned into KITTI's axes (x forward,
+// y left, z up) and run through SalsaNext; the labelled points and/or the 2.5D grid are drawn.
+// The model was trained on a car's 360-degree, 64-beam LiDAR seeing streets 5-80 m away, so expect
+// mostly wrong labels on a phone's 5 m forward view. The sliders move the phone data towards what
+// it saw in training: the floor at the height KITTI's road is (1.73 m under the sensor), distances
+// scaled up, and a reflection value (the phone has none).
+-(void) salsa_reciver {
+    static const std::string kModel = "/Users/adityadude/Documents/C++XCODE/pretrained/salsanext.safetensors";
+    std::shared_ptr<ai::SalsaNext> net;
+    try {
+        net = std::make_shared<ai::SalsaNext>(kModel);
+    } catch (const std::exception& e) {
+        NSLog(@"salsa_reciver: %s", e.what());
+        return;
+    }
+
+    auto viewer = std::make_shared<Viewer>();
+    auto cloud = std::make_shared<PointCloudController>("Phone LiDAR");
+    auto tiles = std::make_shared<TriangleMeshController>("Foveated grid");
+    viewer->nodes.push_back(cloud->node);
+    viewer->nodes.push_back(tiles->node);
+    pRender->viewers.push_back(viewer);
+
+    auto receiver = std::make_shared<QuantumReceiverUDP>();
+    receiver->start("8080");
+
+    // The receive loop, the network and the panel's controls all run on this queue.
+    dispatch_queue_t queue = dispatch_queue_create("com.engine.salsa_reciver", DISPATCH_QUEUE_SERIAL);
+    SliderGroup ui(self, queue);
+    ui.section(@"Make it look like KITTI");
+    matrix height    = ui.slider(@"Phone height above the floor (m)", 0.2f, 2.5f, 1.2f);
+    matrix scale     = ui.slider(@"Distance scale", 1.0f, 10.0f, 1.0f);
+    matrix remission = ui.slider(@"Fake remission", 0.0f, 1.0f, 0.21f);
+    ui.section(@"Show");
+    matrix by_class    = ui.toggle(@"By class (off: terrain / static / dynamic)", false);
+    matrix show_points = ui.toggle(@"Points", true);
+    matrix show_grid   = ui.toggle(@"2.5D grid", false);
+
+    struct State {
+        matrix depth = matrix(0, 0, dtype::Float16);
+        CameraIntrinsics cam = {};
+        bool have = false;
+        float params[6] = {-1, -1, -1, -1, -1, -1};
+        uint64_t frames = 0;
+        double last_log = 0;
+        foveated::Grid grid;
+    };
+    auto st = std::make_shared<State>();
+
+    [self attachToGCDQueue:^{
+        using clock = std::chrono::steady_clock;
+        auto ms_since = [](clock::time_point t) { return std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - t).count() / 1000.0; };
+
+        // --- a new depth frame? (pull_latest_data is true once per new frame) ---
+        CameraIntrinsics cam;
+        bool new_frame = receiver->pull_latest_data(&cam, sizeof(CameraIntrinsics)) && !receiver->dag_leaf_matrices.empty();
+        if (new_frame) {
+            st->depth = *(receiver->dag_leaf_matrices[0]);   // a copy: the receiver refills its leaf on the next pull
+            st->cam = cam;
+            st->have = true;
+            st->frames++;
+        }
+        if (!st->have || st->cam.referenceWidth <= 0) return;
+        float params[6] = {*(float*)height.buffer, *(float*)scale.buffer, *(float*)remission.buffer,
+                           *(float*)by_class.buffer, *(float*)show_points.buffer, *(float*)show_grid.buffer};
+        if (!new_frame && std::equal(params, params + 6, st->params)) return;
+        std::copy(params, params + 6, st->params);
+        const float h = params[0], s = params[1], rem = params[2];
+
+        // --- depth -> metric points (viewer axes: x right, y up, -z forward) -> KITTI's axes ---
+        auto t0 = clock::now();
+        matrix view_pts = unproject_depth(st->depth, st->cam);
+        view_pts.eval();
+        const size_m n = view_pts.shape()[0];
+        const float* V = (const float*)view_pts.buffer;
+        std::vector<float> metric(n * 3), fake(n * 3), remissions(n, rem);
+        for (size_m i = 0; i < n; ++i) {
+            const float* v = V + i * 3;
+            float* m = &metric[i * 3];
+            m[0] = -v[2]; m[1] = -v[0]; m[2] = v[1];                  // x forward, y left, z up, metres
+            float* f = &fake[i * 3];
+            if (m[0] <= 0.0f) { f[0] = f[1] = f[2] = 0.0f; continue; } // no return: stays at the origin (skipped)
+            // Scaled up, with the floor (at -h under the phone) moved to KITTI's road height, -1.73 m.
+            f[0] = m[0] * s; f[1] = m[1] * s; f[2] = (m[2] + h) * s - 1.73f;
+        }
+        double prep_ms = ms_since(t0);
+
+        // --- SalsaNext ---
+        t0 = clock::now();
+        ai::RangeImage ri = ai::project(fake.data(), remissions.data(), n, *net);
+        ai::mx::array probs = (*net)(ri.input);
+        std::vector<int32_t> pred = ai::labels_for_points(probs, ri);
+        double net_ms = ms_since(t0);
+
+        // --- what it thinks it sees, once a second ---
+        double now = std::chrono::duration<double>(clock::now().time_since_epoch()).count();
+        if (now - st->last_log > 1.0) {
+            st->last_log = now;
+            std::vector<size_t> hist(net->classes, 0);
+            size_t valid = 0;
+            for (size_m i = 0; i < n; ++i) if (metric[i * 3] > 0.0f) { hist[pred[i]]++; valid++; }
+            std::vector<int> order(net->classes);
+            for (int c = 0; c < net->classes; ++c) order[c] = c;
+            std::sort(order.begin(), order.end(), [&](int a, int b) { return hist[a] > hist[b]; });
+            std::cout << "salsa_reciver: frame " << st->frames << ", " << valid << " points, prep " << prep_ms
+                      << " ms, SalsaNext " << net_ms << " ms | ";
+            for (int k = 0; k < 4 && valid; ++k)
+                std::cout << net->class_names[order[k]] << " " << (int)(100.0 * hist[order[k]] / valid) << "%  ";
+            std::cout << "\n";
+        }
+
+        // --- draw (real metric geometry, coloured by what SalsaNext said) ---
+        static const float group_rgb[4][3] = {{0.35f, 0.35f, 0.35f}, {0.30f, 0.75f, 0.35f}, {0.40f, 0.55f, 0.95f}, {1.0f, 0.30f, 0.20f}};
+        auto rgb_of = [&](int c) { return params[3] > 0.5f ? &net->class_colors[c * 3] : group_rgb[(int)kitti::group_of(c)]; };
+        auto to_view = [](const float* p, float* out) { out[0] = -p[1]; out[1] = p[2]; out[2] = -p[0]; };
+
+        if (params[4] > 0.5f) {
+            matrix points = matrix::withShape({n, 3}, dtype::Float);
+            matrix colours = matrix::withShape({n, 4}, dtype::Float);
+            points.begin_refcount();
+            colours.begin_refcount();
+            memcpy(points.buffer, V, (size_t)n * 3 * sizeof(float));
+            float* C = (float*)colours.buffer;
+            for (size_m i = 0; i < n; ++i) {
+                const float* rgb = rgb_of(pred[i]);
+                C[i * 4 + 0] = rgb[0]; C[i * 4 + 1] = rgb[1]; C[i * 4 + 2] = rgb[2];
+                C[i * 4 + 3] = metric[i * 3] > 0.0f ? 1.0f : 0.0f;
+            }
+            cloud->update(points, colours);
+        } else {
+            cloud->clear();
+        }
+
+        if (params[5] > 0.5f) {
+            std::vector<uint8_t> cls(n), grp(n);
+            std::vector<float> binned;
+            binned.reserve(n * 3);
+            for (size_m i = 0; i < n; ++i) {
+                if (metric[i * 3] <= 0.0f) continue;
+                binned.insert(binned.end(), &metric[i * 3], &metric[i * 3] + 3);
+                cls[binned.size() / 3 - 1] = (uint8_t)pred[i];
+                grp[binned.size() / 3 - 1] = (uint8_t)kitti::group_of(pred[i]);
+            }
+            st->grid.clear();
+            st->grid.insert(binned.data(), binned.size() / 3, grp.data(), cls.data());
+            foveated::Mesh mesh = foveated::tiles(st->grid, [&](const foveated::Cell& c, float* rgba) {
+                const float* rgb = rgb_of(c.cls);
+                float shade = 0.55f + 0.45f * std::clamp((c.zmax + h) / 2.0f, 0.0f, 1.0f);   // taller = brighter
+                rgba[0] = rgb[0] * shade; rgba[1] = rgb[1] * shade; rgba[2] = rgb[2] * shade; rgba[3] = 1.0f;
+            });
+            const size_m v = (size_m)(mesh.xyz.size() / 3), ni = (size_m)mesh.indices.size();
+            if (v > 0) {
+                matrix verts = matrix::withShape({v, 3}, dtype::Float);
+                matrix vcols = matrix::withShape({v, 4}, dtype::Float);
+                matrix idx = matrix::withShape({ni}, dtype::UInt32);
+                verts.begin_refcount(); vcols.begin_refcount(); idx.begin_refcount();
+                for (size_m k = 0; k < v; ++k) to_view(&mesh.xyz[k * 3], (float*)verts.buffer + k * 3);
+                memcpy(vcols.buffer, mesh.rgba.data(), mesh.rgba.size() * sizeof(float));
+                memcpy(idx.buffer, mesh.indices.data(), mesh.indices.size() * sizeof(uint32_t));
+                tiles->update(verts, vcols, idx);
+            }
+        } else {
+            tiles->clear();
+        }
+    } withFPS:60 onQueue:queue];
+}
+#endif
 
 - (void) depth_reciver {
     

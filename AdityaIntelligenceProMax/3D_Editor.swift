@@ -229,7 +229,7 @@ struct _3D_Editor: View {
                     guard !Self.hasAppeared else { return }
                     Self.hasAppeared = true
                     print("BBBB")
-                    inteligence.point_cloud_environment()
+                    inteligence.kitti_replay()
                 }
             VSplitView {
                 
