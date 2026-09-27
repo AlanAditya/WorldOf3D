@@ -181,7 +181,7 @@ struct _3D_Editor: View {
                     guard !Self.hasAppeared else { return }
                     Self.hasAppeared = true
                     print("BBBB")
-                    inteligence.differential_eqn()
+                    inteligence.particle_sim_intersteller()
                 }
             VSplitView {
                 
@@ -201,7 +201,7 @@ MTKViewWrapper(intel: inteligence, viewNo: 1)
         Self.hasAppeared = true
         //                    let matrix = MatrixH<_CInt_1, CFloat>([1.0, 2.0, 3.0] as [CFloat])
         
-        inteligence.depth_inplace()
+        inteligence.particle_sim_intersteller()
     }
 #endif
     }

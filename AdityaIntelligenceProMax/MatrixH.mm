@@ -10858,6 +10858,7 @@ struct Assets {
         std::vector<std::shared_ptr<Viewer>> viewers;
         matrix metal_frame;
         uint32_t view_num;
+        bool renderInfiniteGrid;
     }
 
 //@property std::vector<Shape<uint16>> objectQueue;
@@ -10883,6 +10884,7 @@ struct Assets {
     width = 1920;
     height = 1080;
     self->sampleCount = sampleCount;
+    self->renderInfiniteGrid = true;
     worldColour = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
     customRenderPipelineStates = [[NSMutableArray alloc] init];
     library = [metalDevice newDefaultLibrary];
@@ -11405,13 +11407,15 @@ struct Assets {
     
     cam.updateMatrix();
     simd_float4x4 transform;
-    [cmdEncoder setRenderPipelineState:InfiniteGridRenderPipelineState];
-    [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:0];
-    [cmdEncoder setVertexBytes:&cam.target length:sizeof(simd_float3) atIndex:1];
-    [cmdEncoder setVertexBytes:&cam.inverseProjectionMatrix length:sizeof(simd_float4x4) atIndex:2];
-    [cmdEncoder setFragmentBytes:&cam.target length:sizeof(simd_float3) atIndex:0];
-    [cmdEncoder setFragmentBytes:&cam.inverseProjectionMatrix length:sizeof(simd_float4x4) atIndex:1];
-    [cmdEncoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+    if (self->renderInfiniteGrid) {
+        [cmdEncoder setRenderPipelineState:InfiniteGridRenderPipelineState];
+        [cmdEncoder setVertexBytes:&cam.viewMatrix length:sizeof(simd_float4x4) atIndex:0];
+        [cmdEncoder setVertexBytes:&cam.target length:sizeof(simd_float3) atIndex:1];
+        [cmdEncoder setVertexBytes:&cam.inverseProjectionMatrix length:sizeof(simd_float4x4) atIndex:2];
+        [cmdEncoder setFragmentBytes:&cam.target length:sizeof(simd_float3) atIndex:0];
+        [cmdEncoder setFragmentBytes:&cam.inverseProjectionMatrix length:sizeof(simd_float4x4) atIndex:1];
+        [cmdEncoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+    }
     
     if (0 < _objectQueue.size() || 0 < _meshObjectQueue.size()) {
         [cmdEncoder setRenderPipelineState:BasicRenderPipelineState];
@@ -12517,6 +12521,8 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 -(void) arkit_inplace;
 -(void) random_test;
 -(void) differential_eqn;
+-(void) particle_sim;
+-(void) particle_sim_intersteller;
 -(void) resampler_tester;
 - (void) basics;
 @property (nonatomic, strong) NSMutableArray *activeTimers;
@@ -12654,6 +12660,89 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     aditya.print();
     sidharth.print();
     
+}
+
+- (void) particle_sim {
+    pRender->renderInfiniteGrid = false;
+    
+    matrix x = matrix::linespace(-10.0f, 10.0f, 20);
+    matrix y = matrix::linespace(-10.0f, 10.0f, 20);
+    matrix z = matrix::linespace(-10.0f, 10.0f, 20);
+    
+    auto tup = matrix::meshgrid(x, y, z);
+    
+    matrix X = std::get<0>(tup);
+    matrix Y = std::get<1>(tup);
+    matrix Z = std::get<2>(tup);
+    
+    __block matrix points = matrix::stack({X.flatten(), Y.flatten(), Z.flatten()}, -1);
+    
+    auto viewer = std::make_shared<Viewer>();
+    auto point_controller = std::make_shared<PointCloudController>("Points");
+    auto sphere_controller = std::make_shared<SphereController>("Earth");
+    
+    auto noise = matrix::perlin({100, 100}).unsqueeze(-1);
+    auto earth_texture = noise * matrix::of({0.0f, 0.0f, 1.0f, 1.0f}) + (1-noise) * matrix::of({0.0f, 1.0f, 0.0f, 1.0f});
+    sphere_controller->node->material.has_texture = true;
+    [pRender updateBaseImageV2:earth_texture];
+    sphere_controller->node->material.texture = earth_texture.ToMTLTexture();
+//    earth_texture = earth_texture * 255.0f;
+
+//    sphere_controller->node->material.colors = matrix::of({0.0f, 0.0f, 1.0f, 1.0f});
+    sphere_controller->node->mesh = MeshPrimitives::sphere(0.5f);
+    viewer->nodes.push_back(point_controller->node);
+    viewer->nodes.push_back(sphere_controller->node);
+   __block matrix color = matrix::concat({matrix::rand({points.shape()[0], 3}), matrix::ones({points.shape()[0], 1})}, -1);
+    
+//    matrix R = matrix::perlin({x.shape()[0], y.shape()[0], z.shape()[0]});
+//    matrix G = matrix::perlin({x.shape()[0], y.shape()[0], z.shape()[0]});
+//    matrix B = matrix::perlin({x.shape()[0], y.shape()[0], z.shape()[0]});
+//    matrix A = matrix::ones({x.shape()[0], y.shape()[0], z.shape()[0]}, dtype::Float);
+//    __block matrix color = matrix::stack({R.flatten(), G.flatten(), B.flatten(), A.flatten()}, -1);
+    
+    point_controller->update(points, color);
+    
+    pRender->viewers.push_back(viewer);
+
+    __block matrix velocity = matrix::rand({points.shape()[0], 3}) * 2 - 1;
+    [self attachToGCDQueue:^{
+//        matrix vx = matrix::perlin({x.shape()[0], y.shape()[0], z.shape()[0]});
+//        matrix vy = matrix::perlin({x.shape()[0], y.shape()[0], z.shape()[0]});
+//        matrix vz = matrix::perlin({x.shape()[0], y.shape()[0], z.shape()[0]});
+//        matrix velocity = matrix::stack({vx.flatten(), vy.flatten(), vz.flatten()}, -1) * 2 - 1;
+        // r/|r|^3
+        
+        matrix r2 = (points * points).sum(-1, true);
+        matrix r3_2 = r2 * matrix::sqrt(r2);
+        velocity = velocity - points * (1/r3_2);
+        points = points + velocity * 0.1;
+        point_controller->update(points, color);
+    } withFPS:30];
+    
+    
+}
+
+- (void) particle_sim_intersteller {
+    matrix x = matrix::linespace(-10.0f, 10.0f, 200);
+    matrix y = matrix::linespace(-10.0f, 10.0f, 200);
+    matrix z = matrix::linespace(-10.0f, 10.0f, 200);
+    
+    auto tup = matrix::meshgrid(x, y, z);
+    
+    __block matrix X = std::get<0>(tup);
+    __block matrix Y = std::get<1>(tup);
+    __block matrix Z = std::get<2>(tup);
+    
+    matrix points = matrix::stack({X.flatten(), Y.flatten(), Z.flatten()}, -1);
+    
+    auto viewer = std::make_shared<Viewer>();
+    auto point_controller = std::make_shared<PointCloudController>("Points");
+    viewer->nodes.push_back(point_controller->node);
+    matrix color = matrix::concat({matrix::rand({points.shape()[0], 3}), matrix::ones({points.shape()[0], 1})}, -1);
+    
+    point_controller->update(points, color);
+    
+    pRender->viewers.push_back(viewer);
 }
 
 - (void) differential_eqn {
