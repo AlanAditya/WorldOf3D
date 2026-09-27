@@ -12580,6 +12580,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 -(void) particle_sim_intersteller;
 -(void) resampler_tester;
 - (void) basics;
+- (void) point_cloud_environment;
 - (void) perlin_playground;
 @property (nonatomic, strong) NSMutableArray *activeTimers;
 @end
@@ -12965,6 +12966,96 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     matrix rgb = matrix::stack({r, g, b, alpha}, -1);
     [pRender updateBaseImageV2:rgb];
 }
+
+// Loads a LiDAR scan and segments its planes live: the normals and every RANSAC parameter are
+// sliders. The graph is built once; a slider change re-runs only what depends on it (e.g. Max
+// planes re-runs RANSAC but not the normals). It runs on its own queue, since RANSAC over a whole
+// scan takes a while, and each result goes to the renderer as a plain copy with no graph attached.
+-(void) point_cloud_environment {
+    auto data = matrix::pointsFromPLY("/Users/adityadude/Downloads/Scan at 23.49.ply", {{"x", "y", "z"}, {"red", "green", "blue"}});
+    matrix points = data[0];
+    matrix colours = (data[1].astype(dtype::Float) / 255.0f).pad(0, 1, -1, matrix::scalar(1.0f));
+    points.eval();
+    colours.eval();
+    const size_m n = points.shape()[0];
+
+    auto viewer = std::make_shared<Viewer>();
+    auto point_cloud_controller = std::make_shared<PointCloudController>("scene");
+    point_cloud_controller->update(points, colours);   // the raw scan, until the first segmentation is ready
+    viewer->nodes.push_back(point_cloud_controller->node);
+    pRender->viewers.push_back(viewer);
+
+    dispatch_queue_t queue = dispatch_queue_create("com.engine.point_cloud_environment", DISPATCH_QUEUE_SERIAL);
+    SliderGroup ui(self, queue);
+    ui.section(@"Normals");
+    matrix voxel       = ui.slider(@"Voxel size (m)", 0.01f, 0.20f, 0.04f);
+    ui.section(@"Planes (RANSAC)");
+    matrix max_planes  = ui.slider_int(@"Max planes", 1, 32, 3);
+    matrix distance    = ui.slider(@"Distance threshold (m)", 0.002f, 0.10f, 0.02f);
+    matrix angle       = ui.slider(@"Normal angle (deg, 90 = off)", 1.0f, 90.0f, 20.0f);
+    matrix min_inliers = ui.slider_int(@"Min inliers", 100, 20000, 1000);
+    matrix iterations  = ui.slider_int(@"Iterations", 50, 5000, 1000);
+    ui.section(@"Display");
+    matrix show_planes = ui.toggle(@"Colour planes", true);
+
+    matrix normals = fovea::estimate_normals(points, voxel);
+    matrix labels  = fovea::segment_planar_surfaces_labels(points, normals, max_planes, distance, angle, min_inliers, iterations);
+    matrix plane_colours = fovea::colour_plane_labels(labels, colours);
+    matrix shown = show_planes * plane_colours + (1.0f - show_planes) * colours;
+
+    ui.on_change(shown, ^(matrix& out) {
+        // `out` is the live graph's buffer (rewritten by the next change) and has a tape into the
+        // graph this queue owns, so give the renderer a plain copy instead.
+        matrix snapshot = matrix::withShape({n, 4}, dtype::Float);
+        snapshot.begin_refcount();
+        memcpy(snapshot.buffer, out.buffer, (size_t)n * 4 * sizeof(float));
+        point_cloud_controller->update(points, snapshot);
+
+        matrix l = labels;
+        l.eval();   // already computed in this pass; just fetches the buffer
+        const int32_t* L = static_cast<const int32_t*>(l.buffer);
+        std::vector<size_t> counts;
+        for (size_m i = 0; i < n; ++i) {
+            if (L[i] < 0) continue;
+            if ((size_t)L[i] >= counts.size()) counts.resize(L[i] + 1, 0);
+            counts[L[i]]++;
+        }
+        std::cout << "point_cloud_environment: " << counts.size() << " planes:";
+        for (size_t c : counts) std::cout << " " << c;
+        std::cout << "\n";
+    });
+}
+
+// Previous version: one fixed segmentation, no sliders.
+//-(void) point_cloud_environment {
+//    auto data = matrix::pointsFromPLY("/Users/adityadude/Downloads/Scan at 23.49.ply", {{"x", "y", "z"}, {"red", "green", "blue"}});
+//    matrix points = data[0];
+//    matrix colours = (data[1].astype(dtype::Float) / 255.0f).pad(0, 1, -1, matrix::scalar(1.0f));
+//
+//    points.eval();
+//    auto t0 = std::chrono::steady_clock::now();
+//    matrix normals = fovea::estimate_normals(points, 0.04f);
+//    auto t1 = std::chrono::steady_clock::now();
+////    auto seg = fovea::segment_planar_surfaces(points, normals, 8, 0.02f, 20.0f, 1000);
+//    auto seg = fovea::segment_planes(points, 3, 0.02f, 1000);
+//    auto t2 = std::chrono::steady_clock::now();
+//    auto ms = [](auto a, auto b) { return std::chrono::duration_cast<std::chrono::microseconds>(b - a).count() / 1000.0; };
+//    std::cout << "estimate_normals: " << ms(t0, t1) << " ms, segment_planar_surfaces: " << ms(t1, t2) << " ms\n";
+//    std::cout << "segment_planar_surfaces: found " << seg.plane_count() << " planes\n";
+//
+//    for (size_t k = 0; k < seg.plane_count(); ++k) {
+//        std::cout << "  plane " << k << ": " << seg.inlier_counts[k] << " points\n";
+//    }
+//    seg.planes.print();
+//    colours = fovea::colour_planes(seg, colours);
+//
+//    auto viewer = std::make_shared<Viewer>();
+//    auto point_cloud_controller = std::make_shared<PointCloudController>("scene");
+//
+//    point_cloud_controller->update(points, colours);
+//    viewer->nodes.push_back(point_cloud_controller->node);
+//    pRender->viewers.push_back(viewer);
+//}
 
 -(void) plot_EDs {
     
