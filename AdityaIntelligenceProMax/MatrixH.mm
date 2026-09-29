@@ -11629,6 +11629,8 @@ struct Assets {
     // it that's on screen, with its own camera if it has one.
     const double target_w = passDescriptor.colorAttachments[0].texture.width;
     const double target_h = passDescriptor.colorAttachments[0].texture.height;
+    // Keeps what this frame's viewers bound alive until the GPU is done with it (Viewer::frame_refs).
+    auto in_flight = std::make_shared<std::vector<matrix>>();
     auto draw_viewer = [&](Viewer* v, double offset_x, bool grid) {
         double x = v->viewport.x * target_w + offset_x, y = v->viewport.y * target_h;
         double w = v->viewport.z * target_w, h = v->viewport.w * target_h;
@@ -11651,6 +11653,8 @@ struct Assets {
             active_state = -1;   // the grid's pipeline isn't one of the predefined states
         }
         v->draw(cmdEncoder, metalDevice, predefinedRenderPipelineState, c, active_state);
+        std::move(v->frame_refs.begin(), v->frame_refs.end(), std::back_inserter(*in_flight));
+        v->frame_refs.clear();
     };
 
     for (int i=0; i < viewers.size(); i++) {
@@ -11670,6 +11674,10 @@ struct Assets {
     
     [cmdEncoder endEncoding];
     [cmdBuffer presentDrawable:drawable];
+    // Released on main, where the controllers swap node data, so the refcounts are only touched there.
+    [cmdBuffer addCompletedHandler:^(id<MTLCommandBuffer>) {
+        dispatch_async(dispatch_get_main_queue(), ^{ in_flight->clear(); });
+    }];
     [cmdBuffer commit];
 //    [cmdBuffer waitUntilCompleted]; // BUGFIX: Delaying the cpu
     
