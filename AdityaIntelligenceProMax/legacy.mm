@@ -446,3 +446,62 @@
 //
 //#endif /* FaceLandmarkWrapper_h */
 //    
+
+// ==================== LEGACY JIT / GRAD ====================
+// matrix::jit_gpu and matrix::grad_gpu, moved here from Matrix.mm. Both are broken and
+// scheduled for removal: don't use them, don't fix them, don't model anything on them.
+// Use jit_graph_gpu / grad_graph_gpu (CompiledNodePrimitive) instead.
+// See .agents/MemoryManagement.md §8.4.
+#import <Metal/Metal.h>
+#include "matrix.h"
+#include "primitives.cpp"
+
+std::function<matrix(matrix&)> matrix::jit_gpu(std::function<matrix(matrix&)> func, matrix& sample) {
+    sample.begin_refcount();
+    sample.tape = new SwapLeafPrimitive(sample);
+    matrix output = func(sample);
+    output.compile_metal();
+    sample.releaseBuffer();
+    return [&sample, output](matrix& input) mutable -> matrix {
+        input.shareBuffer(sample);
+        output.execute_metal();
+        uint32_t val = output.refCount->load(std::memory_order_relaxed);
+
+        printf("%u\n", val);
+        matrix returnable_output(output.dims, output.type);
+        returnable_output.set_array_desc(output.array_desc);
+        output.shareBuffer(returnable_output);
+        output.releaseBuffer();
+        output.tape->out_buffer = nullptr;
+        output.tape->out_refcount = nullptr;
+        output.tape->out_metal_buffer = nullptr;
+        output.clear_trace_checks();
+        returnable_output.tape = nullptr;
+        return returnable_output;
+    };
+}
+
+std::function<matrix(matrix)> matrix::grad_gpu(std::function<matrix(matrix)> func, matrix sample) {
+    sample.begin_refcount();
+    sample.tape = new SwapLeafPrimitive(sample);
+    matrix output = func(sample);
+    matrix grad_output = matrix::build_grad_graph(output, sample);
+    grad_output.compile_metal();
+    sample.releaseBuffer();
+    
+    return [sample, grad_output](matrix input) mutable -> matrix {
+        input.shareBuffer(sample); // Swaps the buffer in SwapLeafPrimitive
+        
+        grad_output.execute_metal();
+        matrix returnable_output(grad_output.dims, grad_output.type);
+        returnable_output.set_array_desc(grad_output.array_desc);
+        returnable_output.shareBuffer(grad_output);
+        grad_output.releaseBuffer();
+        grad_output.tape->update_cache(nullptr, nil, nullptr);
+        returnable_output.tape = nullptr;
+        
+        grad_output.clear_trace_checks();
+        
+        return returnable_output;
+    };
+}
