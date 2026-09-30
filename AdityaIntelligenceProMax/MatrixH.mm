@@ -15577,8 +15577,7 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
     th_cpu.eval_cpu();
     printf("tanh CPU (expect [-1 -0.761594 0 0.462117 1]):\n");
     th_cpu.print();
-    matrix f_th = matrix::tanh(th_x).sum();
-    matrix g_th = matrix::build_grad_graph(f_th, th_x);
+    matrix g_th = matrix::grad([](matrix x) { return matrix::tanh(x).sum(); })(th_x);
     g_th.eval_metal();
     printf("grad sum(tanh(x)) Metal (expect [0 0.419974 1 0.786448 0]):\n");
     g_th.print();
