@@ -12756,6 +12756,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 #include "FoveaMap/FoveaColorFromImage.h"
 #include "AI/Kitti.h"
 #include "AI/FoveatedGrid.h"
+#include "AI/Optimizers.h"
 #include "AI/RangeProjection.h"   // SalsaNext (MLX), macOS only
 
 @interface Intelligence : NSObject
@@ -12818,6 +12819,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 -(void) inverse_finder;
 -(void) particle_render_graph;
 -(void) plot_EDs;
+-(void) sine_fit;
 -(void) depth_streamer;
 #if !TARGET_OS_IPHONE
 -(void) kitti_replay;
@@ -13350,6 +13352,97 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
     pRender->viewers.push_back(graph_viewer);
     graph_viewer->render_graph(x, x + matrix::perlin({1000}), {1.0f, 0.0f, 0.0f, 1.0f}, 0.001);
     
+}
+
+// A small network (1 -> 32 -> 32 -> 1, tanh) learning a noisy sin
+-(void) sine_fit {
+    const size_m N = 256, H = 32;
+    const float scale = 1.0f / std::sqrt((float)H);
+
+    // Data: y = sin(2 pi x) + noise, x in [-1, 1]
+    matrix X = matrix::linespace(-1.0f, 1.0f, N);
+    matrix Y = matrix::sin(X * (2.0f * (float)M_PI)) + matrix::randn({N}) * 0.15f;
+
+    // The model: params = {W1 [1,H], b1 [H], W2 [H,H], b2 [H], W3 [H,1], b3 [1]}
+    // x [N] -> y [N]
+    auto forward = [](std::vector<matrix> params, matrix x) {
+        matrix h = x.unsqueeze(-1);                               // [N, 1]
+        h = matrix::tanh(h.dot(params[0]) + params[1]);           // [N, H]
+        h = matrix::tanh(h.dot(params[2]) + params[3]);           // [N, H]
+        return (h.dot(params[4]) + params[5]).squeeze(-1);        // [N]
+    };
+    auto loss_fn = [forward, X, Y](std::vector<matrix> params) {
+        matrix d = forward(params, X) - Y;
+        return (d * d).mean();
+    };
+    auto loss_and_grad_fn = matrix::value_and_grad(loss_fn);
+
+    __block std::vector<matrix> params;
+    __block optim::Adam optimizer(0.01f);
+    __block std::vector<float> loss_log;
+    void (^reset)(void) = ^{
+        params = {matrix::randn({1, H}) * 3.0f, matrix::zeros({H}), matrix::randn({H, H}) * scale, matrix::zeros({H}), matrix::randn({H, 1}) * scale, matrix::zeros({1})};
+        optimizer = optim::Adam(0.01f);
+        loss_log.clear();
+    };
+    reset();
+
+    auto graph = std::make_shared<GraphViewer>(Bounds2D{-1.1f, 1.1f, -2.0f, 2.0f}, Bounds2D{-1.0f, 1.0f, -0.35f, 0.65f});
+    auto loss_graph = std::make_shared<GraphViewer>(Bounds2D{0.0f, 600.0f, -4.0f, 1.0f}, Bounds2D{-1.0f, 1.0f, -0.95f, -0.45f});
+    auto samples = std::make_shared<PointCloudController>("Samples");
+    auto truth = std::make_shared<LineController>("Truth", 0.002f);
+    auto loss_line = std::make_shared<LineController>("Loss", 0.0025f);
+    
+    truth->node->material.colors = matrix::of<float>({0.2f, 0.9f, 0.3f, 1.0f});
+    loss_line->node->material.colors = matrix::of<float>({1.0f, 0.75f, 0.2f, 1.0f});
+    graph->add_child(samples->node, simd_make_float3(0, 0, 0));
+    graph->add_child(truth->node, simd_make_float3(0, 0, 0));
+    loss_graph->add_child(loss_line->node, simd_make_float3(0, 0, 0));
+    pRender->viewers.push_back(graph);
+    pRender->viewers.push_back(loss_graph);
+
+    matrix points = matrix::stack({X, Y, X * 0.0f}, -1);
+    matrix grey = matrix::ones({N, 4}) * 0.75f;
+    matrix truth_y = matrix::sin(X * (2.0f * (float)M_PI));
+    matrix::eval(points, grey, truth_y);
+    matrix::detach(points, grey, truth_y);
+    samples->update(points, grey);
+    truth->update(X, truth_y);
+
+    dispatch_queue_t queue = dispatch_queue_create("com.engine.sine_fit", DISPATCH_QUEUE_SERIAL);
+    SliderGroup ui(self, queue);
+    ui.button(@"Reset network", reset);
+
+    [self attachToGCDQueue:^{
+        // Two training steps per frame
+        float loss_value = 0;
+        for (int k = 0; k < 2; k++) {
+            auto [loss, grads] = loss_and_grad_fn(params);
+            optimizer.update(params, grads);
+            matrix::eval(params, optimizer.state, loss);
+            matrix::detach(params, optimizer.state, loss);
+            loss_value = loss.at<float>();
+        }
+        if (!std::isfinite(loss_value)) { reset(); return; }
+
+        // Plot the prediction (red) and the loss history
+        matrix pred = forward(params, X);
+        matrix::eval(pred);
+        graph->render_graph(X, pred, matrix::of<float>({1.0f, 0.25f, 0.25f, 1.0f}), 0.0025f);
+
+        loss_log.push_back(std::log10(loss_value));
+        if (loss_log.size() > 600) loss_log.erase(loss_log.begin());
+        
+        matrix loss_y = matrix::withShape({(size_m)loss_log.size()}, dtype::Float);
+        loss_y.begin_refcount();
+        memcpy(loss_y.buffer, loss_log.data(), loss_log.size() * sizeof(float));
+        matrix loss_x = matrix::linespace(0.0f, (float)loss_log.size() - 1, (size_m)loss_log.size());
+        
+        matrix::eval(loss_x);
+        if (loss_log.size() >= 2) loss_line->update(loss_x, loss_y);
+
+        if (optimizer.step % 240 == 0) NSLog(@"sine_fit: step %d  loss %.4f", optimizer.step, loss_value);
+    } withFPS:60 onQueue:queue];
 }
 #if TARGET_OS_IPHONE
 -(void) depth_inplace {
@@ -15453,6 +15546,42 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
     g_cap.eval_metal();
     printf("grad sum(min(x, 1)) Metal (expect [1 1 1 0 0]):\n");
     g_cap.print();
+
+    // Matmul with a transposed left operand (what dot's own VJP computes) and the transpose VJP
+    printf("\n--- TRANSPOSED MATMUL + TRANSPOSE GRADIENT TEST (verified against MLX) ---\n");
+    matrix tm_a = matrix::of<float>({{1, 2}, {3, 4}, {5, 6}});
+    matrix tm_b = matrix::of<float>({{-1, 0}, {1, -1}, {0, 1}});
+    matrix tm_ab = tm_a.T().dot(tm_b);
+    tm_ab.eval_metal();
+    printf("a.T().dot(b) Metal (expect [[2 2][2 2]]):\n");
+    tm_ab.print();
+    matrix f_tm = tm_a.T().dot(tm_b).sum();
+    matrix g_tm = matrix::build_grad_graph(f_tm, tm_a);
+    g_tm.eval_cpu();
+    printf("grad sum(a.T().dot(b)) w.r.t. a, CPU (expect [[-1 -1][0 0][1 1]]):\n");
+    g_tm.print();
+    matrix tr_w = matrix::of<float>({{1, 2, 3}, {4, 5, 6}});
+    matrix f_tr = (tr_w.T() * matrix::of<float>({{1, 10}, {100, 1000}, {0, 0}})).sum();
+    matrix g_tr = matrix::build_grad_graph(f_tr, tr_w);
+    g_tr.eval_metal();
+    printf("grad sum(w.T() * c) Metal (expect [[1 100 0][10 1000 0]]):\n");
+    g_tr.print();
+
+    printf("\n--- TANH TEST (verified against MLX mx.tanh / mx.grad) ---\n");
+    matrix th_x = matrix::of<float>({-100.0f, -1.0f, 0.0f, 0.5f, 100.0f});
+    matrix th_gpu = matrix::tanh(th_x);
+    th_gpu.eval_metal();
+    printf("tanh Metal (expect [-1 -0.761594 0 0.462117 1]):\n");
+    th_gpu.print();
+    matrix th_cpu = matrix::tanh(th_x);
+    th_cpu.eval_cpu();
+    printf("tanh CPU (expect [-1 -0.761594 0 0.462117 1]):\n");
+    th_cpu.print();
+    matrix f_th = matrix::tanh(th_x).sum();
+    matrix g_th = matrix::build_grad_graph(f_th, th_x);
+    g_th.eval_metal();
+    printf("grad sum(tanh(x)) Metal (expect [0 0.419974 1 0.786448 0]):\n");
+    g_th.print();
 }
 
 - (void) EXR {
