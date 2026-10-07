@@ -15581,6 +15581,22 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
     g_th.eval_metal();
     printf("grad sum(tanh(x)) Metal (expect [0 0.419974 1 0.786448 0]):\n");
     g_th.print();
+
+    printf("\n--- C (nCr) TEST (verified against Python math.comb; MLX has no comb) ---\n");
+    matrix c_n = matrix::linespace(0.0f, 5.0f, 6).reshape(6, 1);
+    matrix c_r = matrix::linespace(0.0f, 5.0f, 6).reshape(1, 6);
+    matrix c_gpu = matrix::C(c_n, c_r);
+    c_gpu.eval_metal();
+    printf("C(n [6,1], r [1,6]) Metal, Pascal's triangle (expect rows [1 0 0 0 0 0] [1 1 0 0 0 0] [1 2 1 0 0 0] [1 3 3 1 0 0] [1 4 6 4 1 0] [1 5 10 10 5 1]):\n");
+    c_gpu.print();
+    matrix c_cpu = matrix::C(matrix::of<int>({67, 30, 10, 5, -1}), matrix::of<int>({33, 15, 3, 7, 2}));
+    c_cpu.eval_cpu();
+    printf("C Int32 CPU (expect [2147483647 155117520 120 0 0], first saturates):\n");
+    c_cpu.print();
+    std::vector<matrix> g_c = matrix::grad([](std::vector<matrix> p) { return matrix::C(p[0], p[1]).sum(); })({matrix::of<float>({5, 6}), matrix::of<float>({2, 3})});
+    g_c[0].eval_cpu();
+    printf("grad sum(C(n, r)) w.r.t. n, CPU (expect [0 0]):\n");
+    g_c[0].print();
 }
 
 - (void) EXR {
