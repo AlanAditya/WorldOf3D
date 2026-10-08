@@ -87,6 +87,26 @@ inline std::vector<int32_t> labels_for_points(const mx::array& probs, const Rang
     return out;
 }
 
+// probs: [1, H, W, classes]. Per point, the probability of class `cls` at its pixel (0 if no pixel).
+inline std::vector<float> class_probability_for_points(const mx::array& probs, const RangeImage& ri, int cls) {
+    mx::array p = mx::slice(probs, {0, 0, 0, cls}, {1, ri.height, ri.width, cls + 1});
+    p = mx::flatten(mx::contiguous(p));   // the slice is a strided view: copy before reading it flat
+    mx::eval(p);
+    const float* pix = p.data<float>();
+    std::vector<float> out(ri.px.size(), 0.0f);
+    for (size_t i = 0; i < out.size(); ++i) {
+        if (ri.px[i] >= 0) out[i] = pix[(size_t)ri.py[i] * ri.width + ri.px[i]];
+    }
+    return out;
+}
+
+// Whether point i is the one its pixel shows. Points that lost their pixel to a closer point only
+// inherit that point's class (e.g. the wall behind a car becomes "car"), so per-object work such as
+// bounding boxes should use pixel owners only. SalsaNext's optional KNN step fixes those labels.
+inline bool owns_pixel(const RangeImage& ri, size_t i) {
+    return ri.px[i] >= 0 && ri.pixel_point[(size_t)ri.py[i] * ri.width + ri.px[i]] == (int32_t)i;
+}
+
 } // namespace ai
 
 #endif // !TARGET_OS_IPHONE

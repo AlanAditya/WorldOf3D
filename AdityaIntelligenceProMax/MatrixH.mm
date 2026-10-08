@@ -12784,6 +12784,8 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 #include "FoveaMap/FoveaColorFromImage.h"
 #include "AI/Kitti.h"
 #include "AI/FoveatedGrid.h"
+#include "AI/BoundingBoxes.h"
+#include "AI/Tracking.h"
 #include "AI/Optimizers.h"
 #include "AI/RangeProjection.h"   // SalsaNext (MLX), macOS only
 
@@ -13861,6 +13863,20 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
 }
 
 #if !TARGET_OS_IPHONE
+// Unit cube -> `b` in the viewer, for WireBoxController / BoxModelController. KITTI is x forward,
+// y left, z up; the viewer is y up, looking down -z: (x, y, z) -> (-y, z, -x). Column-vector
+// convention: columns 0-2 are the box's length, height and width axes, column 3 its centre.
+static simd_float4x4 kitti_box_to_view(const bbox::Box& b) {
+    auto v = [](float x, float y, float z) { return simd_make_float3(-y, z, -x); };
+    float c = std::cos(b.yaw), s = std::sin(b.yaw);
+    simd_float4x4 m;
+    m.columns[0] = simd_make_float4(v(c * b.length, s * b.length, 0), 0);
+    m.columns[1] = simd_make_float4(v(0, 0, b.height), 0);
+    m.columns[2] = simd_make_float4(v(-s * b.width, c * b.width, 0), 0);
+    m.columns[3] = simd_make_float4(v(b.cx, b.cy, b.cz), 1);
+    return m;
+}
+
 // Replays a SemanticKITTI sequence through SalsaNext (MLX, AI/SalsaNext.h): each scan -> range image
 // -> network -> one class per point -> the foveated 2.5D grid (AI/FoveatedGrid.h: 5 cm cells near,
 // 40 cm far, each with min/max height and the most important class). Draws the grid as one tile per
@@ -13899,6 +13915,42 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
     matrix playing = ui.toggle(@"Play", true);
     matrix frame   = ui.slider_int(@"Frame", 0, (int)seq->size() - 1, 0);
     matrix fps     = ui.slider(@"Frames per second", 1.0f, 20.0f, 10.0f);
+
+    // Metrics panel (PS 26053's dashboard numbers), right under the playback controls: the map's
+    // memory against uniform 5 cm maps of the same 200 m x 200 m, and the 3-group accuracy per
+    // resolution ring. The memory figures are the grid's own sizes; the live rows update once per scan.
+    AppletPanel* panel = self.appletPanel;
+    NSString* const kScanTitle = @"Raw scan (x, y, z, remission)";
+    NSString* const kOccupiedTitle = @"Occupied cells";
+    NSString* const kIoUTitle = @"IoU terrain / static / dynamic";
+    NSString* const kScoredTitle = @"Scans scored";
+    NSMutableArray<NSString*>* ring_titles = [NSMutableArray array];
+    {
+        foveated::Grid g;
+        const double fov_mb = g.bytes() / 1e6;
+        const double uni25_mb = g.uniform_cell_count() * sizeof(foveated::Cell) / 1e6;
+        const double uni3d_gb = g.uniform_cell_count() * (10.0 / g.rings().front().cell) / 1e9;   // 10 m tall, 1 byte per voxel
+        [panel addSectionWithTitle:@"Memory: this map vs uniform 5 cm maps (200 m x 200 m)"];
+        [panel addReadoutWithTitle:@"Foveated 2.5D grid (this map)" value:[NSString stringWithFormat:@"%.2f MB", fov_mb]];
+        [panel addReadoutWithTitle:@"Uniform 2.5D grid"
+                             value:[NSString stringWithFormat:@"%.0f MB · %.0fx", uni25_mb, uni25_mb / fov_mb]];
+        [panel addReadoutWithTitle:@"Uniform 3D voxels (10 m tall)"
+                             value:[NSString stringWithFormat:@"%.2f GB · %.0fx", uni3d_gb, uni3d_gb * 1e3 / fov_mb]];
+        [panel addReadoutWithTitle:kOccupiedTitle value:[NSString stringWithFormat:@"– / %zu", g.cell_count()]];
+        [panel addReadoutWithTitle:kScanTitle value:@"–"];
+
+        [panel addSectionWithTitle:@"Accuracy (terrain / static / dynamic) per ring"];
+        float inner = 0;
+        for (const auto& r : g.rings()) {
+            NSString* t = [NSString stringWithFormat:@"%.0f-%.0f m · %.0f cm cells", inner, r.half, r.cell * 100];
+            [ring_titles addObject:t];
+            [panel addReadoutWithTitle:t value:@"–"];
+            inner = r.half;
+        }
+        [panel addReadoutWithTitle:kIoUTitle value:@"–"];
+        [panel addReadoutWithTitle:kScoredTitle value:@"0"];
+    }
+    NSArray<NSString*>* const kRingTitles = [ring_titles copy];
     ui.section(@"Colours");
     matrix by_class = ui.toggle(@"By class (off: terrain / static / dynamic)", false);
     matrix truth    = ui.toggle(@"Show ground truth", false);
@@ -13906,16 +13958,162 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
     matrix show_grid   = ui.toggle(@"2.5D grid (5 cm near, 40 cm far)", true);
     matrix show_points = ui.toggle(@"Points", false);
 
+    // Objects boxed (AI/BoundingBoxes.h), labelled and tracked for speed (AI/Tracking.h), one
+    // detector per SalsaNext class, each with its own toggle. While a toggle is off nothing of that
+    // detector runs (no inputs, fitting, tracking or renderer updates) and its nodes aren't in the
+    // viewer, so the renderer doesn't walk them either.
+    struct Detector {
+        std::string name;                     // label prefix, e.g. "CAR"
+        int cls;                              // SalsaNext class
+        bbox::Params params;
+        float still_speed;                    // m/s; slower reads as `still_text`
+        std::string still_text;
+        simd_float4 text_rgba;
+        std::shared_ptr<WireBoxController> boxes;
+        std::shared_ptr<LabelController> labels;
+        matrix toggle;
+        float shown = -1;                     // toggle value last pass
+        int inputs_frame = -1;                // scan `prob` belongs to
+        std::vector<float> prob;              // SalsaNext's probability of `cls` per point
+        track::Tracker tracker = track::Tracker();   // over consecutive scans only
+        int tracked_frame = -1;               // last scan fed to the tracker
+        float tracked_truth = -1;             // the boxes' source (prediction / truth) it saw
+        std::vector<std::string> texts;       // label per box of the last tracked scan
+    };
+    // Cars: bbox::Params' defaults (tuned on cars). Parked cars read up to ~1 m/s from box-centre
+    // jitter, so under 1.5 m/s (~5 km/h) is "stopped". People: small and often side by side, so
+    // finer clusters, fewer points, no minimum width (on ground-truth labels these find every
+    // person with >= 10 points; on SalsaNext's: ~75% precision, ~54% recall, the network being the
+    // limit). Standing people jitter far less (90% under 0.35 m/s) and walk slowly, so 0.4 m/s.
+    bbox::Params person_params;
+    person_params.cell = 0.2f;
+    person_params.min_points = 8;
+    person_params.min_width = 0.0f;
+    std::vector<std::shared_ptr<Detector>> detectors = {
+        std::make_shared<Detector>(Detector{"CAR", 1, bbox::Params{}, 1.5f, "STOPPED", {0.72f, 0.93f, 1.0f, 1.0f},
+            std::make_shared<WireBoxController>("Car boxes"),
+            std::make_shared<LabelController>("Car labels"),
+            ui.toggle(@"Car boxes", true)}),
+        std::make_shared<Detector>(Detector{"PERSON", 6, person_params, 0.4f, "STANDING", {1.0f, 0.86f, 0.55f, 1.0f},
+            std::make_shared<WireBoxController>("Person boxes", simd_float4{1.0f, 0.86f, 0.55f, 1.0f}, simd_float4{1.0f, 0.55f, 0.15f, 0.28f}),
+            std::make_shared<LabelController>("Person labels"),
+            ui.toggle(@"Pedestrian boxes", true)}),
+    };
+    // viewer->nodes is read on main, so edit it there; the controllers' update()/clear() go
+    // through the main queue too, which keeps them in order (attached before the first update,
+    // detached after the last clear).
+    auto show_in_viewer = [viewer](std::vector<GeoNodeImpl> nodes, bool on) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            auto& v = viewer->nodes;
+            for (const GeoNodeImpl& nd : nodes) {
+                auto it = std::find(v.begin(), v.end(), nd);
+                if (on && it == v.end()) v.push_back(nd);
+                if (!on && it != v.end()) v.erase(it);
+            }
+        });
+    };
+    auto show_nodes = [show_in_viewer](const Detector& d, bool on) { show_in_viewer({d.boxes->node, d.labels->node}, on); };
+
+    // Our car (the one carrying the LiDAR), in the hole the scan leaves around the sensor: a
+    // low-poly box model, built once. KITTI's car is a VW Passat wagon, ~4.8 x 1.8 x 1.5 m, with the
+    // HDL-64 1.73 m above the road on a roof rack about 2 m behind the front bumper (so the car's
+    // centre is ~0.4 m behind the sensor; approximate, from KITTI's sensor setup).
+    matrix show_ego = ui.toggle(@"Our car", true);
+    auto ego = std::make_shared<BoxModelController>("Our car");
+    {
+        const float ground = -1.73f, cx = -0.4f;
+        // centre x, y, z; length, width, height; RGBA
+        struct Part { float x, y, z, l, w, h; simd_float4 rgba; };
+        const simd_float4 body = {0.10f, 0.13f, 0.17f, 1}, glass = {0.16f, 0.24f, 0.31f, 1};
+        const simd_float4 tyre = {0.04f, 0.04f, 0.05f, 1}, sensor = {0.72f, 0.93f, 1.0f, 1};
+        const std::vector<Part> parts = {
+            {cx,          0,     ground + 0.65f, 4.8f, 1.8f,  0.70f, body},    // body, 0.3 m clearance
+            {cx - 0.25f,  0,     ground + 1.25f, 2.6f, 1.6f,  0.50f, glass},   // cabin, roof at -0.23 m
+            {cx + 1.40f,  0.8f,  ground + 0.33f, 0.66f, 0.24f, 0.66f, tyre},   // wheels
+            {cx + 1.40f, -0.8f,  ground + 0.33f, 0.66f, 0.24f, 0.66f, tyre},
+            {cx - 1.40f,  0.8f,  ground + 0.33f, 0.66f, 0.24f, 0.66f, tyre},
+            {cx - 1.40f, -0.8f,  ground + 0.33f, 0.66f, 0.24f, 0.66f, tyre},
+            {0,           0,     -0.12f,         0.2f, 0.2f,  0.2f, sensor},   // the LiDAR, at the origin
+        };
+        matrix transforms = matrix::withShape({(size_m)parts.size(), 4, 4}, dtype::Float);
+        matrix colours = matrix::withShape({(size_m)parts.size(), 1, 4}, dtype::Float);
+        transforms.begin_refcount();
+        colours.begin_refcount();
+        for (size_t k = 0; k < parts.size(); ++k) {
+            const Part& p = parts[k];
+            bbox::Box b;
+            b.cx = p.x; b.cy = p.y; b.cz = p.z; b.length = p.l; b.width = p.w; b.height = p.h;
+            transforms.SIMD_MAT((int)k) = kitti_box_to_view(b);
+            std::memcpy((float*)colours.buffer + k * 4, &p.rgba, sizeof(float) * 4);
+        }
+        ego->set(transforms, colours);
+    }
+    auto ego_shown = std::make_shared<float>(-1.0f);
+
+    // Group colours for the tiles and points (unknown, terrain, static, dynamic); the legend reads
+    // them too, so it can't disagree with the scene.
+    static const float kGroupRGB[4][3] = {{0.35f, 0.35f, 0.35f}, {0.30f, 0.75f, 0.35f}, {0.40f, 0.55f, 0.95f}, {1.0f, 0.30f, 0.20f}};
+
+    // The colour legend over the renderer (above the toolbar capsule): what's on screen right now.
+    // Rebuilt only when By class or a box / car toggle changes.
+    AppletToolbar* toolbar = self.appletToolbar;
+    auto legend_key = std::make_shared<int>(-1);
+    auto update_legend = [toolbar, net, detectors](bool by_class, bool ego_on) {
+        NSMutableArray<AppletLegendEntry*>* e = [NSMutableArray array];
+        if (by_class) {
+            [e addObject:[AppletLegendEntry sectionWithTitle:@"Map and points: SemanticKITTI class"]];
+            for (int c = 0; c < net->classes && c < (int)net->class_names.size(); ++c) {
+                const float* rgb = &net->class_colors[c * 3];
+                [e addObject:[AppletLegendEntry fillWithLabel:[NSString stringWithUTF8String:net->class_names[c].c_str()]
+                                                          red:rgb[0] green:rgb[1] blue:rgb[2]]];
+            }
+        } else {
+            [e addObject:[AppletLegendEntry sectionWithTitle:@"Map and points"]];
+            NSString* names[4] = {@"Unlabelled", @"Terrain: road, sidewalk, grass", @"Static: building, pole, plant",
+                                  @"Dynamic: vehicle, person, rider"};
+            for (int g : {1, 2, 3, 0}) {
+                [e addObject:[AppletLegendEntry fillWithLabel:names[g] red:kGroupRGB[g][0] green:kGroupRGB[g][1] blue:kGroupRGB[g][2]]];
+            }
+        }
+        [e addObject:[AppletLegendEntry noteWithText:@"Brighter tile = taller (the cell's highest point)"]];
+
+        bool any_object = ego_on;
+        for (const auto& d : detectors) any_object |= *(float*)d->toggle.buffer > 0.5f;
+        if (any_object) [e addObject:[AppletLegendEntry sectionWithTitle:@"Objects"]];
+        for (const auto& d : detectors) {
+            if (*(float*)d->toggle.buffer <= 0.5f) continue;
+            NSString* what = d->cls == 6 ? @"Pedestrian box, with speed" : @"Car box, with speed";
+            [e addObject:[AppletLegendEntry outlineWithLabel:what red:d->text_rgba.x green:d->text_rgba.y blue:d->text_rgba.z]];
+        }
+        if (ego_on) [e addObject:[AppletLegendEntry fillWithLabel:@"Our car (the LiDAR on its roof)" red:0.16f green:0.24f blue:0.31f]];
+        [toolbar setLegend:e];
+    };
+
+    // Chase view: behind and above our car, looking down past it at the road ahead. The car drives
+    // towards -z in the viewer (KITTI's x forward), so behind is +z. No infinite grid here: the
+    // foveated grid is the ground. Through the toolbar, so its Infinite Grid button stays in step.
+    pRender->cam.lookAt(simd_make_float3(0, 6.0f, 12.0f), simd_make_float3(0, -1.73f, -8.0f));
+    for (AppletToolbarItem* item in self.appletToolbar.items) {
+        if ([item.title isEqualToString:@"Infinite Grid"]) [self.appletToolbar setItem:item on:NO];
+    }
+
     struct State {
         kitti::Scan scan;
         std::vector<int32_t> pred;                        // SalsaNext class per point, for `scan`
+        // Box-only inputs, derived from the network's output only while a detector is on (see the
+        // box section): the output is kept for the current scan so turning one on while paused
+        // doesn't need the network again.
+        ai::RangeImage ri;
+        ai::mx::array probs = ai::mx::array(0.0f);
+        int owns_pixel_frame = -1;                        // scan owns_pixel belongs to
+        std::vector<char> owns_pixel;                     // point is the one its range-image pixel shows
         int frame = -1;
         float by_class = -1, truth = -1, show_grid = -1, show_points = -1;
         foveated::Grid grid;
         double last_advance = 0;
         // Accuracy on the groups, over every frame shown since the last reset.
         uint64_t inter[4] = {}, uni[4] = {};
-        uint64_t band_ok[3] = {}, band_n[3] = {};         // 0-10 m, 10-30 m, 30 m+
+        uint64_t band_ok[4] = {}, band_n[4] = {};         // per grid ring: 0-10, 10-20, 20-40, 40-100 m
         int frames = 0;
         double proj_ms = 0, net_ms = 0;
     };
@@ -13948,7 +14146,23 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
         float bc = *(float*)by_class.buffer, gt = *(float*)truth.buffer;
         float sg = *(float*)show_grid.buffer, sp = *(float*)show_points.buffer;
         bool new_frame = f != st->frame;
-        if (!new_frame && bc == st->by_class && gt == st->truth && sg == st->show_grid && sp == st->show_points) return;
+        bool detector_toggled = false;
+        for (const auto& d : detectors) detector_toggled |= *(float*)d->toggle.buffer != d->shown;
+        const float ego_on = *(float*)show_ego.buffer;
+        if (ego_on != *ego_shown) {                   // static: only attach / detach its nodes
+            show_in_viewer({ego->node}, ego_on > 0.5f);
+            *ego_shown = ego_on;
+        }
+        {
+            int key = (bc > 0.5f) | (ego_on > 0.5f) << 1;
+            for (size_t k = 0; k < detectors.size(); ++k) key |= (*(float*)detectors[k]->toggle.buffer > 0.5f) << (2 + k);
+            if (key != *legend_key) {
+                update_legend(bc > 0.5f, ego_on > 0.5f);
+                *legend_key = key;
+            }
+        }
+        if (!new_frame && bc == st->by_class && gt == st->truth && sg == st->show_grid && sp == st->show_points &&
+            !detector_toggled) return;
 
         // --- a new scan: load -> range image -> SalsaNext -> class per point ---
         if (new_frame) {
@@ -13962,6 +14176,8 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
             ai::mx::eval(probs);
             double net_ms = ms_since(t0);
             st->pred = ai::labels_for_points(probs, ri);
+            st->ri = std::move(ri);
+            st->probs = probs;
             st->frame = f;
 
             if (!st->scan.labels.empty()) {
@@ -13973,11 +14189,15 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
                         st->inter[g] += (p == g && t == g);
                         st->uni[g] += (p == g || t == g);
                     }
-                    float x = st->scan.xyz[i * 3], y = st->scan.xyz[i * 3 + 1];
-                    float r = std::sqrt(x * x + y * y);
-                    int band = r < 10.0f ? 0 : (r < 30.0f ? 1 : 2);
-                    st->band_ok[band] += (p == t);
-                    st->band_n[band]++;
+                    // Scored per resolution ring of the grid (square rings: max(|x|, |y|)).
+                    float d = std::max(std::fabs(st->scan.xyz[i * 3]), std::fabs(st->scan.xyz[i * 3 + 1]));
+                    const auto& rings = st->grid.rings();
+                    for (int b = 0; b < (int)rings.size() && b < 4; ++b) {
+                        if (d >= rings[b].half) continue;
+                        st->band_ok[b] += (p == t);
+                        st->band_n[b]++;
+                        break;
+                    }
                 }
             }
             st->frames++;
@@ -13985,14 +14205,25 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
             st->net_ms += net_ms;
             std::cout << "kitti_replay: scan " << f << ", " << st->scan.size() << " points, projection "
                       << proj_ms << " ms, network " << net_ms << " ms\n";
-            if (st->frames % 50 == 0 && st->band_n[0] + st->band_n[1] + st->band_n[2] > 0) {
-                auto iou = [&](int g) { return st->uni[g] ? 100.0 * st->inter[g] / st->uni[g] : 0.0; };
-                auto acc = [&](int b) { return st->band_n[b] ? 100.0 * st->band_ok[b] / st->band_n[b] : 0.0; };
+            auto iou = [&](int g) { return st->uni[g] ? 100.0 * st->inter[g] / st->uni[g] : 0.0; };
+            auto acc = [&](int b) { return st->band_n[b] ? 100.0 * st->band_ok[b] / st->band_n[b] : 0.0; };
+            if (st->frames % 50 == 0 && st->band_n[0] + st->band_n[1] + st->band_n[2] + st->band_n[3] > 0) {
                 std::cout << "kitti_replay: over " << st->frames << " scans - IoU terrain " << iou(1) << "%, static "
-                          << iou(2) << "%, dynamic " << iou(3) << "% | accuracy 0-10 m " << acc(0) << "%, 10-30 m "
-                          << acc(1) << "%, 30 m+ " << acc(2) << "% | avg projection " << st->proj_ms / st->frames
-                          << " ms, network " << st->net_ms / st->frames << " ms\n";
+                          << iou(2) << "%, dynamic " << iou(3) << "% | accuracy 0-10 m " << acc(0) << "%, 10-20 m "
+                          << acc(1) << "%, 20-40 m " << acc(2) << "%, 40-100 m " << acc(3) << "% | avg projection "
+                          << st->proj_ms / st->frames << " ms, network " << st->net_ms / st->frames << " ms\n";
             }
+
+            // --- the metrics panel: live memory, and accuracy since the last reset ---
+            auto pct = [](double v, uint64_t n) { return n ? [NSString stringWithFormat:@"%.1f %%", v] : @"–"; };
+            [panel setText:[NSString stringWithFormat:@"%.2f MB", st->scan.size() * 16 / 1e6] forReadoutTitled:kScanTitle];
+            [panel setText:pct(acc(0), st->band_n[0]) forReadoutTitled:kRingTitles[0]];
+            [panel setText:pct(acc(1), st->band_n[1]) forReadoutTitled:kRingTitles[1]];
+            [panel setText:pct(acc(2), st->band_n[2]) forReadoutTitled:kRingTitles[2]];
+            [panel setText:pct(acc(3), st->band_n[3]) forReadoutTitled:kRingTitles[3]];
+            [panel setText:st->uni[1] ? [NSString stringWithFormat:@"%.0f / %.0f / %.0f %%", iou(1), iou(2), iou(3)] : @"–"
+          forReadoutTitled:kIoUTitle];
+            [panel setText:[NSString stringWithFormat:@"%d", st->frames] forReadoutTitled:kScoredTitle];
         }
         st->by_class = bc;
         st->truth = gt;
@@ -14002,13 +14233,12 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
         // --- colours: group (terrain / static / dynamic) or SemanticKITTI class ---
         const size_m n = (size_m)st->scan.size();
         const bool show_truth = gt > 0.5f && !st->scan.labels.empty();
-        static const float group_rgb[4][3] = {{0.35f, 0.35f, 0.35f}, {0.30f, 0.75f, 0.35f}, {0.40f, 0.55f, 0.95f}, {1.0f, 0.30f, 0.20f}};
         std::vector<uint8_t> cls(n), grp(n);
         for (size_m i = 0; i < n; ++i) {
             cls[i] = (uint8_t)(show_truth ? kitti::to_train_class(st->scan.labels[i]) : st->pred[i]);
             grp[i] = (uint8_t)kitti::group_of(cls[i]);
         }
-        auto rgb_of = [&](int c) { return bc > 0.5f ? &net->class_colors[c * 3] : group_rgb[(int)kitti::group_of(c)]; };
+        auto rgb_of = [&](int c) { return bc > 0.5f ? &net->class_colors[c * 3] : kGroupRGB[(int)kitti::group_of(c)]; };
 
         // KITTI is x forward / y left / z up; the viewer is y up, looking down -z.
         auto to_view = [](const float* p, float* out) { out[0] = -p[1]; out[1] = p[2]; out[2] = -p[0]; };
@@ -14038,8 +14268,12 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
                 tiles->update(verts, vcols, idx);
             }
             if (new_frame) {
-                std::cout << "kitti_replay: grid " << st->grid.occupied() << " occupied cells, binning " << bin_ms
+                const size_t occupied = v / 4;    // one tile (4 corners) per occupied cell
+                std::cout << "kitti_replay: grid " << occupied << " occupied cells, binning " << bin_ms
                           << " ms, tiles " << ms_since(t0) << " ms\n";
+                [panel setText:[NSString stringWithFormat:@"%zu / %zu (%.1f %%)", occupied, st->grid.cell_count(),
+                                   100.0 * occupied / st->grid.cell_count()]
+              forReadoutTitled:kOccupiedTitle];
             }
         } else {
             tiles->clear();
@@ -14061,6 +14295,90 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam) 
             cloud->update(points, colours);
         } else {
             cloud->clear();
+        }
+
+        // --- per detector: a wireframe box around every object (BEV clustering + L-shape fit), a
+        // label with its speed (tracked in the world frame), or nothing at all while it's off ---
+        for (const auto& dp : detectors) {
+            Detector& d = *dp;
+            const float on = *(float*)d.toggle.buffer;
+            const bool toggled = on != d.shown;
+            d.shown = on;
+            if (on <= 0.5f) {
+                if (toggled) {                    // cleared once, when it goes off
+                    d.boxes->clear();
+                    d.labels->clear();
+                    show_nodes(d, false);
+                }
+                continue;
+            }
+            if (toggled) show_nodes(d, true);
+            // Same scan, same labels: its boxes and labels on screen are still right (this pass is
+            // for another toggle), so leave them.
+            else if (!new_frame && gt == d.tracked_truth) continue;
+
+            auto t0 = clock::now();
+            // Predictions: only points that own their range-image pixel (the others inherit the
+            // label of whatever is in front of them) and clusters the network is sure about.
+            // Ground truth is per point already.
+            if (!show_truth) {
+                if (st->owns_pixel_frame != f) {
+                    st->owns_pixel.resize(n);
+                    for (size_m i = 0; i < n; ++i) st->owns_pixel[i] = ai::owns_pixel(st->ri, i);
+                    st->owns_pixel_frame = f;
+                }
+                if (d.inputs_frame != f) {
+                    d.prob = ai::class_probability_for_points(st->probs, st->ri, d.cls);
+                    d.inputs_frame = f;
+                }
+            }
+            std::vector<bbox::Box> boxes = show_truth
+                ? bbox::fit_boxes(st->scan.xyz.data(), n, [&](size_t i) { return cls[i] == d.cls; }, nullptr, d.params)
+                : bbox::fit_boxes(st->scan.xyz.data(), n, [&](size_t i) { return cls[i] == d.cls && st->owns_pixel[i]; },
+                                  d.prob.data(), d.params);
+            double box_ms = ms_since(t0);
+            if (!boxes.empty()) {
+                matrix transforms = matrix::withShape({(size_m)boxes.size(), 4, 4}, dtype::Float);
+                transforms.begin_refcount();
+                for (size_t k = 0; k < boxes.size(); ++k) transforms.SIMD_MAT((int)k) = kitti_box_to_view(boxes[k]);
+                d.boxes->update(transforms);
+            } else {
+                d.boxes->clear();
+            }
+
+            // Speed: track the box centres in the world frame (the scan's pose removes our own
+            // motion). Only consecutive scans at 10 Hz: a jump, a scrub, turning the detector back
+            // on or switching between prediction and ground truth starts the tracks over.
+            if (new_frame || toggled || gt != d.tracked_truth) {
+                if (f != d.tracked_frame + 1 || gt != d.tracked_truth) d.tracker.reset();
+                simd_float4x4 pose = seq->pose((size_t)f);
+                std::vector<float> world_xy;
+                for (const bbox::Box& b : boxes) {
+                    simd_float4 w = simd_mul(pose, simd_make_float4(b.cx, b.cy, b.cz, 1));
+                    world_xy.push_back(w.x);
+                    world_xy.push_back(w.y);
+                }
+                std::vector<int> ids = d.tracker.update(world_xy, f * 0.1);
+                d.texts.assign(boxes.size(), d.name);
+                for (size_t k = 0; k < boxes.size(); ++k) {
+                    const track::Track& tr = d.tracker.tracks()[ids[k]];
+                    if (!tr.has_velocity) continue;
+                    d.texts[k] = d.name + " " + (tr.speed() < d.still_speed
+                        ? d.still_text : std::to_string((int)std::lround(tr.speed() * 3.6f)) + " KM/H");
+                }
+                d.tracked_frame = f;
+                d.tracked_truth = gt;
+            }
+            std::vector<simd_float3> anchors;
+            for (const bbox::Box& b : boxes) {
+                float top[3] = {b.cx, b.cy, b.cz + 0.5f * b.height}, v[3];
+                to_view(top, v);
+                anchors.push_back(simd_make_float3(v[0], v[1], v[2]));
+            }
+            if (d.texts.size() == boxes.size() && !boxes.empty()) d.labels->update(anchors, d.texts, d.text_rgba);
+            else d.labels->clear();
+
+            if (new_frame) std::cout << "kitti_replay: " << boxes.size() << " " << d.name << " boxes, " << box_ms << " ms\n";
         }
     } withFPS:60 onQueue:queue];
 }
