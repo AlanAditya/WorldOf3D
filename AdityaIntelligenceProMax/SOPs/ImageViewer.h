@@ -60,7 +60,7 @@ public:
 
     void draw(id<MTLRenderCommandEncoder> cmdEncoder,
               id<MTLDevice> metalDevice,
-              id<MTLRenderPipelineState> __strong (&predefinedStates)[7],
+              id<MTLRenderPipelineState> __strong (&predefinedStates)[8],
               Camera3D* cam,
               int& active_state) override {
         id<MTLTexture> tex;

@@ -10883,7 +10883,7 @@ struct Assets {
         id<MTLRenderPipelineState> MeshPointCloudRenderPipelineState;
         id<MTLLibrary> library;
         NSMutableArray<id<MTLRenderPipelineState>>* customRenderPipelineStates;
-        id<MTLRenderPipelineState> predefinedRenderPipelineState[7];
+        id<MTLRenderPipelineState> predefinedRenderPipelineState[8];
         size_t width;
         size_t height;
         uint8_t sampleCount;
@@ -11231,6 +11231,34 @@ struct Assets {
     id<MTLRenderPipelineState> DAGEdgeRenderPipelineState = [metalDevice newRenderPipelineStateWithDescriptor:dagEdge_Desc error:&error];
     
     predefinedRenderPipelineState[6] = DAGEdgeRenderPipelineState;
+
+    // 7: text labels (LabelController), camera-facing glyph quads from an atlas, alpha blended.
+    id<MTLFunction> DAGLabelVertexFunc = [library newFunctionWithName:@"vertex_label"];
+    id<MTLFunction> DAGLabelFragmentFunc = [library newFunctionWithName:@"fragment_label"];
+    if (!DAGLabelVertexFunc) {
+        NSString* path = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"DAGShaders.metal"];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            path = @"DAGShaders.metal";
+        }
+        NSString* src = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:&error];
+        if (src) {
+            id<MTLLibrary> dynLib = [metalDevice newLibraryWithSource:src options:nil error:&error];
+            DAGLabelVertexFunc = [dynLib newFunctionWithName:@"vertex_label"];
+            DAGLabelFragmentFunc = [dynLib newFunctionWithName:@"fragment_label"];
+        }
+    }
+
+    MTLRenderPipelineDescriptor *dagLabel_Desc = [[MTLRenderPipelineDescriptor alloc] init];
+    [[dagLabel_Desc colorAttachments][0] setPixelFormat:MTLPixelFormatBGRA8Unorm_sRGB];
+    [[dagLabel_Desc colorAttachments][0] setBlendingEnabled:YES];
+    [[dagLabel_Desc colorAttachments][0] setSourceRGBBlendFactor:MTLBlendFactorSourceAlpha];
+    [[dagLabel_Desc colorAttachments][0] setDestinationRGBBlendFactor:MTLBlendFactorOneMinusSourceAlpha];
+    [dagLabel_Desc setVertexDescriptor:nil]; // pure array buffer access
+    [dagLabel_Desc setVertexFunction:DAGLabelVertexFunc];
+    [dagLabel_Desc setFragmentFunction:DAGLabelFragmentFunc];
+    [dagLabel_Desc setDepthAttachmentPixelFormat:MTLPixelFormatDepth16Unorm];
+    [dagLabel_Desc setRasterSampleCount:sampleCount];
+    predefinedRenderPipelineState[7] = [metalDevice newRenderPipelineStateWithDescriptor:dagLabel_Desc error:&error];
     
     cam = Camera3D();
     auto A = MatrixH<1, uint8_t>({1, 0, 0, 0});
