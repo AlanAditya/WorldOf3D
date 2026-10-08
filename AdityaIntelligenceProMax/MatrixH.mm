@@ -12850,6 +12850,7 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
 -(void) particle_render_graph;
 -(void) plot_EDs;
 -(void) sine_fit;
+-(void) wave_sim;
 -(void) depth_streamer;
 #if !TARGET_OS_IPHONE
 -(void) kitti_replay;
@@ -13472,6 +13473,133 @@ int hand_tracking(cv::Mat& camera_frame, cv::Mat& outMat, float* landmarks, int&
         if (loss_log.size() >= 2) loss_line->update(loss_x, loss_y);
 
         if (optimizer.step % 240 == 0) NSLog(@"sine_fit: step %d  loss %.4f", optimizer.step, loss_value);
+    } withFPS:60 onQueue:queue];
+}
+// Waves with the semi-implicit (leapfrog) stepper: a string fixed at both ends (left half) and a
+// square membrane with fixed edges (right half). Per step, with r = c dt / dx the Courant number:
+//     y  = y + dy               move with the current increment
+//     dy = dy + r^2 * lap(y)    double difference of the NEW y (slices + pad), 0 at the fixed ends
+// Started with dy = 1/2 r^2 lap(y_0) (half a step of acceleration, zero initial velocity), which
+// makes it second order. Stable for r <= 1 on the string and r <= 1/sqrt(2) on the membrane, so
+// the membrane uses min(r, 0.7). At r = 1 the string is exact (a wave moves one cell per step).
+-(void) wave_sim {
+    const size_m N = 256;   // string: N + 1 points on [0, 1]
+    const size_m M = 128;   // membrane: M x M points
+    const float amp = 0.5f; // pluck / drop height, and the heatmap's colour range (+-amp)
+
+    auto lap1 = [N](matrix y) {   // y[j+1] - 2 y[j] + y[j-1] inside, 0 at both ends
+        return (y.slice(R(2, N + 1), 0) - y.slice(R(1, N), 0) * 2.0f + y.slice(R(0, N - 1), 0)).pad(1, 1, 0, matrix::scalar(0.0f));
+    };
+    auto lap2 = [M](matrix u) {   // 5-point stencil inside, 0 on the edges
+        matrix s = u[R(2, M), R(1, M - 1)] + u[R(0, M - 2), R(1, M - 1)] + u[R(1, M - 1), R(2, M)] + u[R(1, M - 1), R(0, M - 2)]
+                 - u[R(1, M - 1), R(1, M - 1)] * 4.0f;
+        return s.pad({{1, 1}, {1, 1}}, matrix::scalar(0.0f));
+    };
+
+    // Left: the string as a curve. Right: the membrane as a heatmap. Each has its own camera, so
+    // the renderer keeps it at its viewport's aspect ratio.
+    auto string_graph = std::make_shared<GraphViewer>(Bounds2D{0.0f, 1.0f, -1.0f, 1.0f}, Bounds2D{-0.9f, 0.9f, -0.6f, 0.6f});
+    string_graph->viewport = {0.0f, 0.0f, 0.5f, 1.0f};
+    string_graph->camera = std::make_shared<Camera3D>();
+    auto membrane_view = std::make_shared<PlotterViewer>();
+    membrane_view->viewport = {0.5f, 0.0f, 0.5f, 1.0f};
+    membrane_view->camera = std::make_shared<Camera3D>();
+    pRender->viewers.push_back(string_graph);
+    pRender->viewers.push_back(membrane_view);
+
+    dispatch_queue_t queue = dispatch_queue_create("com.engine.wave_sim", DISPATCH_QUEUE_SERIAL);
+    SliderGroup ui(self, queue);
+    ui.section(@"Waves");
+    matrix courant  = ui.slider(@"Courant number r = c dt / dx", 0.05f, 1.0f, 0.5f);
+    matrix steps    = ui.slider_int(@"Steps per frame", 1, 20, 4);
+    matrix damping  = ui.slider(@"Damping per step", 0.0f, 0.01f, 0.0f);
+    matrix pluck_at = ui.slider(@"Pluck at", 0.05f, 0.95f, 0.3f);
+    NSString* const kMembraneR = @"Membrane r (max 0.7)";
+    [self.appletPanel addReadoutWithTitle:kMembraneR value:@"0.50"];
+    AppletPanel* panel = self.appletPanel;
+
+    // State: positions and increments (dy = velocity * dt). Only touched on `queue`.
+    __block matrix y, dy, u, du;
+    __block float shown_r = -1.0f;
+    auto host = [](std::initializer_list<size_m> shape) { matrix m = matrix::withShape(shape, dtype::Float); m.begin_refcount(); return m; };
+    auto r_now = [courant]() { return *(float*)courant.buffer; };
+    auto r_membrane = [r_now]() { return std::min(r_now(), 0.7f); };
+
+    void (^pluck)(void) = ^{   // a triangle with its peak at "Pluck at", released from rest
+        float at = *(float*)pluck_at.buffer, r = r_now();
+        y = host({N + 1});
+        for (size_m j = 0; j <= N; j++) {
+            float x = (float)j / N;
+            ((float*)y.buffer)[j] = amp * (x < at ? x / at : (1.0f - x) / (1.0f - at));
+        }
+        dy = lap1(y) * (0.5f * r * r);
+        matrix::eval(dy);
+        matrix::detach(dy);
+    };
+    void (^drop)(void) = ^{    // a Gaussian bump somewhere in the middle of the membrane
+        float cx = 0.2f + 0.6f * arc4random_uniform(1000) / 1000.0f, cy = 0.2f + 0.6f * arc4random_uniform(1000) / 1000.0f;
+        float r = r_membrane(), sigma = 0.04f;
+        matrix bump = host({M, M});
+        for (size_m a = 0; a < M; a++) for (size_m b = 0; b < M; b++) {
+            float dx = (float)a / (M - 1) - cy, dz = (float)b / (M - 1) - cx;
+            ((float*)bump.buffer)[a * M + b] = amp * std::exp(-(dx * dx + dz * dz) / (sigma * sigma));
+        }
+        u = u + bump;
+        du = du + lap2(bump) * (0.5f * r * r);   // half a step of the bump's own acceleration
+        matrix::eval(u, du);
+        matrix::detach(u, du);
+    };
+    void (^reset)(void) = ^{
+        pluck();
+        u = host({M, M});
+        std::fill((float*)u.buffer, (float*)u.buffer + M * M, 0.0f);
+        du = host({M, M});
+        std::fill((float*)du.buffer, (float*)du.buffer + M * M, 0.0f);
+        drop();
+    };
+    ui.button(@"Pluck string", pluck);
+    ui.button(@"Drop on membrane", drop);
+    ui.button(@"Reset", reset);
+    dispatch_async(queue, reset);
+
+    matrix X = matrix::linespace(0.0f, 1.0f, N + 1);
+    matrix::eval(X);
+    matrix::detach(X);
+    [self attachToGCDQueue:^{
+        if (y.total_size == 0) return;   // reset() hasn't run yet
+        float r = r_now(), rm = r_membrane();
+        float keep = 1.0f - *(float*)damping.buffer;
+        int n = *(int32_t*)steps.buffer;
+        for (int k = 0; k < n; k++) {
+            y = y + dy;
+            dy = (dy + lap1(y) * (r * r)) * keep;
+            u = u + du;
+            du = (du + lap2(u) * (rm * rm)) * keep;
+        }
+        matrix::eval(y, dy, u, du);
+        matrix::detach(y, dy, u, du);
+
+        string_graph->render_graph(X, y, matrix::of<float>({0.35f, 0.8f, 1.0f, 1.0f}), 0.003f);
+
+        // Heatmap: -amp..+amp through inferno, as BGRA (ToMTLTexture's layout); the texture is
+        // swapped in on main, where the renderer reads it.
+        matrix t = (u * (0.5f / amp) + 0.5f).clamp(0.0, 1.0);
+        matrix rgb = get_colormap_inferno(t);
+        matrix bgra = matrix::concat({rgb[R(), R(), R(2, 3)], rgb[R(), R(), R(1, 2)], rgb[R(), R(), R(0, 1)],
+                                      matrix::ones({M, M, 1}, dtype::Float)}, 2) * 255.0f;
+        bgra = bgra.astype(dtype::UInt8);
+        bgra.eval_metal();
+        id<MTLTexture> texture = bgra.ToMTLTexture();
+        auto plot = membrane_view;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            plot->nodes[0]->material.texture = texture;
+            plot->nodes[0]->material.has_texture = true;
+        });
+
+        if (rm != shown_r) {
+            shown_r = rm;
+            [panel setText:[NSString stringWithFormat:@"%.2f", rm] forReadoutTitled:kMembraneR];
+        }
     } withFPS:60 onQueue:queue];
 }
 #if TARGET_OS_IPHONE
