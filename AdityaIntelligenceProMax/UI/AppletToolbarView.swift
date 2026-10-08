@@ -14,14 +14,17 @@ import SwiftUI
 final class AppletToolbarModel: ObservableObject {
     let toolbar: AppletToolbar
     @Published private(set) var items: [AppletToolbarItem] = []
+    @Published private(set) var legend: [AppletLegendEntry] = []
     @Published private(set) var revision = 0   // bumps on toggle changes (same items, new state)
 
     init(toolbar: AppletToolbar) {
         self.toolbar = toolbar
         items = toolbar.items
+        legend = toolbar.legend
         toolbar.onItemsChanged = { [weak self] in
             guard let self else { return }
             self.items = self.toolbar.items
+            self.legend = self.toolbar.legend
             self.revision += 1
         }
     }
@@ -35,15 +38,21 @@ struct AppletToolbarView: View {
     }
 
     var body: some View {
-        if !model.items.isEmpty {
-            HStack(spacing: 2) {
-                ForEach(Array(model.items.enumerated()), id: \.offset) { _, item in
-                    control(for: item)
-                }
+        // The legend card sits right above the capsule, right-aligned with it.
+        VStack(alignment: .trailing, spacing: 8) {
+            if !model.legend.isEmpty {
+                LegendCard(entries: model.legend)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .modifier(CapsuleGlass())
+            if !model.items.isEmpty {
+                HStack(spacing: 2) {
+                    ForEach(Array(model.items.enumerated()), id: \.offset) { _, item in
+                        control(for: item)
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .modifier(CapsuleGlass())
+            }
         }
     }
 
@@ -114,6 +123,106 @@ private struct ToolbarIcon: View {
                 }
             }
             .contentShape(Circle())
+    }
+}
+
+// The legend (AppletToolbar's setLegend:): sections of colour swatches with a label each, on a
+// translucent card. It only informs, so it lets clicks and drags through to the renderer.
+private struct LegendCard: View {
+    let entries: [AppletLegendEntry]
+
+    // A section header and the lines under it.
+    private struct Block {
+        var title: String?
+        var lines: [AppletLegendEntry] = []
+    }
+
+    private var blocks: [Block] {
+        var out: [Block] = []
+        for e in entries {
+            if e.kind == .section || out.isEmpty { out.append(Block(title: e.kind == .section ? e.label : nil)) }
+            if e.kind != .section { out[out.count - 1].lines.append(e) }
+        }
+        return out
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                VStack(alignment: .leading, spacing: 4) {
+                    if let title = block.title {
+                        Text(title.uppercased())
+                            .font(.system(size: 9, weight: .semibold))
+                            .tracking(0.6)
+                            .foregroundStyle(.secondary)
+                    }
+                    // Long lists (e.g. all 20 classes) in two columns.
+                    if block.lines.count > 8 {
+                        LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
+                                            GridItem(.flexible(), alignment: .leading)],
+                                  alignment: .leading, spacing: 4) {
+                            ForEach(Array(block.lines.enumerated()), id: \.offset) { _, e in LegendLine(entry: e) }
+                        }
+                    } else {
+                        ForEach(Array(block.lines.enumerated()), id: \.offset) { _, e in LegendLine(entry: e) }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 300, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .modifier(CardGlass())
+        .allowsHitTesting(false)
+    }
+}
+
+private struct LegendLine: View {
+    let entry: AppletLegendEntry
+
+    // The renderer's values are linear (the sRGB drawable encodes them), so match that.
+    private var color: Color {
+        Color(.sRGBLinear, red: Double(entry.red), green: Double(entry.green), blue: Double(entry.blue))
+    }
+
+    var body: some View {
+        switch entry.kind {
+        case .note:
+            Text(entry.label)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        default:
+            HStack(spacing: 7) {
+                Group {
+                    if entry.kind == .outline {
+                        RoundedRectangle(cornerRadius: 2)
+                            .strokeBorder(color, lineWidth: 1.5)
+                            .shadow(color: color.opacity(0.8), radius: 2)
+                    } else {
+                        RoundedRectangle(cornerRadius: 3).fill(color)
+                    }
+                }
+                .frame(width: 12, height: 12)
+                Text(entry.label)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
+// Liquid Glass card on macOS 26 / iOS 26, a frosted card before.
+private struct CardGlass: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, iOS 26.0, *) {
+            content.glassEffect(.regular, in: .rect(cornerRadius: 14))
+        } else {
+            content
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.15)))
+                .shadow(color: .black.opacity(0.2), radius: 8, y: 2)
+        }
     }
 }
 

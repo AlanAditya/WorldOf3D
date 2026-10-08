@@ -57,6 +57,11 @@ NS_ASSUME_NONNULL_BEGIN
 // An on/off switch. `onChange` is called on the main thread with the new state.
 - (void)addToggleWithTitle:(NSString*)title value:(BOOL)value onChange:(void (^)(BOOL on))onChange;
 
+// A read-only line: `title` on the left, `value` on the right in monospaced digits (a live
+// metric). Change it with setText:forReadoutTitled:, from any thread; titles must be unique.
+- (void)addReadoutWithTitle:(NSString*)title value:(NSString*)value;
+- (void)setText:(NSString*)text forReadoutTitled:(NSString*)title;
+
 // Removes every section, slider and button (e.g. before starting another applet).
 - (void)removeAll;
 

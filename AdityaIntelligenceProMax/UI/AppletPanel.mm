@@ -108,6 +108,13 @@ static float APClamp(float v, float min, float max, BOOL integer) {
 - (void)toggled:(NSSwitch*)sender { if (self.onChange) self.onChange(sender.state == NSControlStateValueOn); }
 @end
 
+@interface APReadoutRow : NSObject
+@property (nonatomic, copy) NSString* title;
+@property (nonatomic, strong) NSTextField* valueField;
+@end
+@implementation APReadoutRow
+@end
+
 @implementation AppletPanel {
     NSVisualEffectView* _root;
     NSStackView* _stack;
@@ -365,6 +372,50 @@ static float APClamp(float v, float min, float max, BOOL integer) {
     });
 }
 
+- (void)addReadoutWithTitle:(NSString*)title value:(NSString*)value {
+    APOnMain(^{
+        APReadoutRow* model = [[APReadoutRow alloc] init];
+        model.title = title;
+        [self->_rows addObject:model];
+
+        NSTextField* label = [NSTextField labelWithString:title];
+        label.font = [NSFont systemFontOfSize:13];
+        label.lineBreakMode = NSLineBreakByTruncatingTail;
+        [label setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
+                                        forOrientation:NSLayoutConstraintOrientationHorizontal];
+        NSTextField* field = [NSTextField labelWithString:value];
+        field.font = [NSFont monospacedDigitSystemFontOfSize:12 weight:NSFontWeightMedium];
+        field.textColor = NSColor.secondaryLabelColor;
+        field.alignment = NSTextAlignmentRight;
+        model.valueField = field;
+
+        NSView* row = [[NSView alloc] init];
+        for (NSView* v in @[label, field]) {
+            v.translatesAutoresizingMaskIntoConstraints = NO;
+            [row addSubview:v];
+        }
+        [NSLayoutConstraint activateConstraints:@[
+            [label.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:12],
+            [label.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+            [label.trailingAnchor constraintLessThanOrEqualToAnchor:field.leadingAnchor constant:-8],
+            [field.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-12],
+            [field.topAnchor constraintEqualToAnchor:row.topAnchor constant:8],
+            [field.bottomAnchor constraintEqualToAnchor:row.bottomAnchor constant:-8],
+        ]];
+        [self addRow:row toCard:[self cardForNewRow]];
+    });
+}
+
+- (void)setText:(NSString*)text forReadoutTitled:(NSString*)title {
+    APOnMain(^{
+        for (id row in self->_rows) {
+            if ([row isKindOfClass:[APReadoutRow class]] && [((APReadoutRow*)row).title isEqualToString:title]) {
+                ((APReadoutRow*)row).valueField.stringValue = text;
+            }
+        }
+    });
+}
+
 - (void)removeAll {
     APOnMain(^{
         for (NSView* v in [self->_stack.arrangedSubviews copy]) {
@@ -413,6 +464,13 @@ static float APClamp(float v, float min, float max, BOOL integer) {
     self.valueLabel.text = APFormat(v, self.min, self.max, self.integer);
     self.last = v;
 }
+@end
+
+@interface APReadoutRow : NSObject
+@property (nonatomic, copy) NSString* title;
+@property (nonatomic, strong) UILabel* valueLabel;
+@end
+@implementation APReadoutRow
 @end
 
 @interface AppletPanel () <UIGestureRecognizerDelegate>
@@ -724,6 +782,50 @@ static float APClamp(float v, float min, float max, BOOL integer) {
         for (id row in self->_rows) {
             if ([row isKindOfClass:[APSliderRow class]] && [((APSliderRow*)row).title isEqualToString:title]) {
                 [(APSliderRow*)row show:value];
+            }
+        }
+    });
+}
+
+- (void)addReadoutWithTitle:(NSString*)title value:(NSString*)value {
+    APOnMain(^{
+        APReadoutRow* model = [[APReadoutRow alloc] init];
+        model.title = title;
+        [self->_rows addObject:model];
+
+        UILabel* label = [[UILabel alloc] init];
+        label.text = title;
+        label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+        label.adjustsFontForContentSizeCategory = YES;
+        UILabel* valueLabel = [[UILabel alloc] init];
+        valueLabel.text = value;
+        valueLabel.font = [UIFont monospacedDigitSystemFontOfSize:15 weight:UIFontWeightMedium];
+        valueLabel.textColor = UIColor.secondaryLabelColor;
+        valueLabel.textAlignment = NSTextAlignmentRight;
+        model.valueLabel = valueLabel;
+
+        UIView* row = [[UIView alloc] init];
+        for (UIView* v in @[label, valueLabel]) {
+            v.translatesAutoresizingMaskIntoConstraints = NO;
+            [row addSubview:v];
+        }
+        [NSLayoutConstraint activateConstraints:@[
+            [label.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:16],
+            [label.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+            [label.trailingAnchor constraintLessThanOrEqualToAnchor:valueLabel.leadingAnchor constant:-8],
+            [valueLabel.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-16],
+            [valueLabel.topAnchor constraintEqualToAnchor:row.topAnchor constant:12],
+            [valueLabel.bottomAnchor constraintEqualToAnchor:row.bottomAnchor constant:-12],
+        ]];
+        [[self cardForNewRow] addArrangedSubview:row];
+    });
+}
+
+- (void)setText:(NSString*)text forReadoutTitled:(NSString*)title {
+    APOnMain(^{
+        for (id row in self->_rows) {
+            if ([row isKindOfClass:[APReadoutRow class]] && [((APReadoutRow*)row).title isEqualToString:title]) {
+                ((APReadoutRow*)row).valueLabel.text = text;
             }
         }
     });

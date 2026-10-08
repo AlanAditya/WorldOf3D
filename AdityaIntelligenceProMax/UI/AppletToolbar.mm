@@ -28,17 +28,52 @@ static void ATOnMain(dispatch_block_t block) {
 @implementation AppletToolbarItem
 @end
 
+@interface AppletLegendEntry ()
+@property (nonatomic) AppletLegendKind kind;
+@property (nonatomic, copy) NSString* label;
+@property (nonatomic) float red, green, blue;
+@end
+
+@implementation AppletLegendEntry
++ (instancetype)entry:(AppletLegendKind)kind label:(NSString*)label red:(float)r green:(float)g blue:(float)b {
+    AppletLegendEntry* e = [self new];
+    e.kind = kind;
+    e.label = label;
+    e.red = r; e.green = g; e.blue = b;
+    return e;
+}
++ (instancetype)sectionWithTitle:(NSString*)title { return [self entry:AppletLegendKindSection label:title red:0 green:0 blue:0]; }
++ (instancetype)fillWithLabel:(NSString*)label red:(float)red green:(float)green blue:(float)blue {
+    return [self entry:AppletLegendKindFill label:label red:red green:green blue:blue];
+}
++ (instancetype)outlineWithLabel:(NSString*)label red:(float)red green:(float)green blue:(float)blue {
+    return [self entry:AppletLegendKindOutline label:label red:red green:green blue:blue];
+}
++ (instancetype)noteWithText:(NSString*)text { return [self entry:AppletLegendKindNote label:text red:0 green:0 blue:0]; }
+@end
+
 @implementation AppletToolbar {
     NSMutableArray<AppletToolbarItem*>* _list;   // main thread only
+    NSArray<AppletLegendEntry*>* _legend;        // main thread only
 }
 
 - (instancetype)init {
     self = [super init];
     _list = [NSMutableArray array];
+    _legend = @[];
     return self;
 }
 
 - (NSArray<AppletToolbarItem*>*)items { return [_list copy]; }
+- (NSArray<AppletLegendEntry*>*)legend { return _legend; }
+
+- (void)setLegend:(NSArray<AppletLegendEntry*>*)entries {
+    NSArray<AppletLegendEntry*>* copy = entries ? [entries copy] : @[];
+    ATOnMain(^{
+        self->_legend = copy;
+        [self changed];
+    });
+}
 
 - (void)changed {
     if (self.onItemsChanged) self.onItemsChanged();
@@ -95,6 +130,7 @@ static void ATOnMain(dispatch_block_t block) {
 - (void)removeAll {
     ATOnMain(^{
         [self->_list removeAllObjects];
+        self->_legend = @[];
         [self changed];
     });
 }

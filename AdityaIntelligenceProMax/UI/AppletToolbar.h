@@ -35,7 +35,32 @@ typedef NS_ENUM(NSInteger, AppletToolbarItemKind) {
 @property (nonatomic, readonly, copy) NSArray<NSString*>* menuIcons;   // same count as menuTitles, "" = no icon
 @end
 
+// ---- Legend: a small translucent card just above the capsule saying what each colour means ----
+
+typedef NS_ENUM(NSInteger, AppletLegendKind) {
+    AppletLegendKindSection,   // a small header; only `label` is used
+    AppletLegendKindFill,      // a filled swatch (a surface / point colour)
+    AppletLegendKindOutline,   // an outlined swatch (a wireframe box colour)
+    AppletLegendKindNote,      // a line of secondary text (e.g. "brighter = taller")
+};
+
+// One line of the legend. Colours are the renderer's own linear values (what a shader writes to
+// the sRGB drawable), so the swatch shows the same colour as the scene.
+@interface AppletLegendEntry : NSObject
+@property (nonatomic, readonly) AppletLegendKind kind;
+@property (nonatomic, readonly, copy) NSString* label;
+@property (nonatomic, readonly) float red, green, blue;
++ (instancetype)sectionWithTitle:(NSString*)title;
++ (instancetype)fillWithLabel:(NSString*)label red:(float)red green:(float)green blue:(float)blue;
++ (instancetype)outlineWithLabel:(NSString*)label red:(float)red green:(float)green blue:(float)blue;
++ (instancetype)noteWithText:(NSString*)text;
+@end
+
 @interface AppletToolbar : NSObject
+
+// Replaces the whole legend in one go (so it never shows half-built); empty or nil hides it.
+// Safe from any thread.
+- (void)setLegend:(nullable NSArray<AppletLegendEntry*>*)entries;
 
 // A button showing an SF Symbol. `onPress` is called on the main thread.
 - (void)addButtonWithIcon:(NSString*)icon title:(NSString*)title onPress:(void (^)(void))onPress;
@@ -54,12 +79,13 @@ typedef NS_ENUM(NSInteger, AppletToolbarItemKind) {
               itemIcons:(nullable NSArray<NSString*>*)itemIcons
                onSelect:(void (^)(NSInteger index))onSelect;
 
-// Removes every item (e.g. before starting another applet).
+// Removes every item and the legend (e.g. before starting another applet).
 - (void)removeAll;
 
 // ---- For the SwiftUI view (main thread) ----
 @property (nonatomic, readonly, copy) NSArray<AppletToolbarItem*>* items;
-// Called on main whenever `items` or a toggle's state changes.
+@property (nonatomic, readonly, copy) NSArray<AppletLegendEntry*>* legend;
+// Called on main whenever `items`, a toggle's state or the legend changes.
 @property (nonatomic, copy, nullable) void (^onItemsChanged)(void);
 - (void)pressItem:(AppletToolbarItem*)item NS_SWIFT_NAME(press(_:));
 - (void)setItem:(AppletToolbarItem*)item on:(BOOL)on NS_SWIFT_NAME(set(_:on:));
