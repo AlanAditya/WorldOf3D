@@ -80,7 +80,6 @@ typedef uint16_t uint16;
 #include <atomic>
 #include "cpu_rasteriser.hpp"
 #include "SOPs/Viewer.cpp"
-#include "SOPs/ImageViewer.h"
 #include "SOPs/Controllers.cpp"
 #include "SOPs/PlotterViewer.h"
 #include "SOPs/GraphViewer.cpp"
@@ -10923,8 +10922,6 @@ struct Assets {
 - (void)updateBaseImage:(MatrixH<3, uint8_t>&) layer;
 - (void)updateBaseImageV2:(matrix) layer;
 - (void)createRenderPiplineState:(NSString*)vertexFunc :(NSString*)fragmentFunc;
-// An ImageViewer drawn with this renderer's base-image pipeline (SOPs/ImageViewer.h).
-- (std::shared_ptr<ImageViewer>)makeImageViewer;
 // The camera orbit / pan / zoom should move: the current page's (nullptr if that page isn't
 // interactive), or `cam` when there are no pages. Main thread.
 - (Camera3D*)interactionCamera;
@@ -11780,10 +11777,6 @@ struct Assets {
     return mtlVertexDescriptor;
 }
 
-
-- (std::shared_ptr<ImageViewer>)makeImageViewer {
-    return std::make_shared<ImageViewer>(metalDevice, PlaneRenderPipelineState, BasicDepthStencilState);
-}
 
 - (Camera3D*)interactionCamera {
 #if TARGET_OS_IPHONE
@@ -13757,7 +13750,9 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam);
     __block int stats_tick = 0;
 
     Renderer* renderer = pRender;
-    auto image_page = [pRender makeImageViewer];
+    auto image_page = std::make_shared<Viewer>();
+    image_page->camera = std::make_shared<Camera3D>();
+    auto camera_image = std::make_shared<ImageController>(image_page->image());
     auto cloud_page = std::make_shared<Viewer>();
     cloud_page->camera = std::make_shared<Camera3D>();
     auto cloud = std::make_shared<PointCloudController>("LiDAR depth");
@@ -13838,7 +13833,7 @@ static matrix unproject_depth(const matrix& depth, const CameraIntrinsics& cam);
             matrix depth_bgra = (apply_colormap(t, colormap) * 255.0f).astype(dtype::UInt8);
             matrix both = matrix::concat({camera, depth_bgra}, 0);
             both.eval();
-            image_page->update(both);
+            camera_image->update(both, ImageController::Order::BGRA);
         }
 
         // Page 1: depth -> points with the intrinsics, one camera colour per point (as depth_reciver).
