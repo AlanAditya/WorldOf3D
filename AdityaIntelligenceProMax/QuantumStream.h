@@ -10,7 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <vector>
-#include "matrix.h"
+#include "matrix/matrix.h"
 
 #pragma pack(push, 1)
 // Leads every frame across the slipspace - single-matrix or batch alike.

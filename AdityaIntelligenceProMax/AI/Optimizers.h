@@ -10,7 +10,7 @@
 //
 // update() only builds the new parameters and state (new matrices, nothing written in place);
 // matrix::eval materialises them and drops the graph that made them.
-#include "matrix.h"
+#include "../matrix/matrix.h"
 #include <cmath>
 #include <vector>
 

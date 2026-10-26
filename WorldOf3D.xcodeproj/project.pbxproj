@@ -1324,6 +1324,7 @@
 				Algos/graph_visualiserV2.cpp,
 				Algos/linked_list_sum.cpp,
 				back.txt,
+				matrix/primitives.cpp,
 				primitives.cpp,
 				Problem.cpp,
 				SOPs/Controllers.cpp,

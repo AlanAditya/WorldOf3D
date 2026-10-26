@@ -4,7 +4,7 @@
 
 #include <random>
 
-#include "matrix.h"
+#include "matrix/matrix.h"
 
 matrix Ed(matrix x, int iter) {
     matrix y = x.zeros();

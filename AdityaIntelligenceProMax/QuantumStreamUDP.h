@@ -9,7 +9,7 @@
 #include <Network/Network.h>
 #include <mutex>
 #include <vector>
-#include "matrix.h"
+#include "matrix/matrix.h"
 
 #pragma pack(push, 1)
 struct QuantumChunkMetadata {

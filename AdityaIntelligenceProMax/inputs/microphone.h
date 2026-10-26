@@ -1,6 +1,6 @@
 #pragma once
 #import <AVFoundation/AVFoundation.h>
-#import "../matrix.h"
+#import "../matrix/matrix.h"
 
 // The shared protocol so you can easily swap between Microphone and Files later
 @protocol AudioCapture <NSObject>

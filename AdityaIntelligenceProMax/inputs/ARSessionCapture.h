@@ -3,7 +3,7 @@
 #import <ARKit/ARKit.h>
 #import <CoreVideo/CoreVideo.h>
 #import <Metal/Metal.h>
-#import "../matrix.h"
+#import "../matrix/matrix.h"
 
 @interface ARSessionCapture : NSObject <ARSessionDelegate> {
     CVMetalTextureCacheRef _textureCache;

@@ -4,8 +4,8 @@
 
 #include <fstream>
 #include <unordered_set>
-#include "../matrix.h"
-#include "../primitives.cpp"
+#include "../matrix/matrix.h"
+#include "../matrix/primitives.cpp"
 
 
 // Forward declare so Primitive can call it

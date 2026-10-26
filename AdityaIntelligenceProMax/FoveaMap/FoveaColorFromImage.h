@@ -1,5 +1,5 @@
 #pragma once
-#include "../matrix.h"
+#include "../matrix/matrix.h"
 #include "FoveaRansacGPU.h"
 
 // Colors each depth-grid point from the actual RGB video image, handling the

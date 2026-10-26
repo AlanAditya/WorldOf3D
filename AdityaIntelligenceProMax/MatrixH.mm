@@ -57,7 +57,7 @@ typedef uint16_t uint16;
 #include <chrono>
 #include <mlx/mlx.h>
 #include <span>
-#import "matrix.h"
+#import "matrix/matrix.h"
 #import "inputs/microphone.h"
 #import "inputs/ARSessionCapture.h"
 #import "inputs/GravitySensor.h"

@@ -10,8 +10,8 @@
 #include <filesystem>
 #include <cstdlib>
 
-#include "../matrix.h"
-#include "../primitives.cpp"
+#include "../matrix/matrix.h"
+#include "../matrix/primitives.cpp"
 
 struct MatrixIdentity {
     void* buffer;

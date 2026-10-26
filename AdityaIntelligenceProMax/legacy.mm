@@ -453,8 +453,8 @@
 // Use jit_graph_gpu / grad_graph_gpu (CompiledNodePrimitive) instead.
 // See .agents/MemoryManagement.md §8.4.
 #import <Metal/Metal.h>
-#include "matrix.h"
-#include "primitives.cpp"
+#include "matrix/matrix.h"
+#include "matrix/primitives.cpp"
 
 std::function<matrix(matrix&)> matrix::jit_gpu(std::function<matrix(matrix&)> func, matrix& sample) {
     sample.begin_refcount();

@@ -1,5 +1,5 @@
 #pragma once
-#include "../matrix.h"
+#include "../matrix/matrix.h"
 #include "FoveaClassify.h"
 #include "FoveaGeometry.h"
 
