@@ -15031,7 +15031,7 @@ static simd_float4x4 kitti_box_to_view(const bbox::Box& b) {
     
     auto f = [filter](matrix cam_frame) {
         cam_frame = cam_frame.astype(dtype::Float);
-        matrix output = matrix::conv2d(cam_frame.slice(R(0, 3), 2).unsqueeze(0), filter.unsqueeze(2).broadcast_toV2({3, 3, 3, 1}), 0, 0, 1, 1, 1, 1, 3).squeeze(0);
+        matrix output = matrix::conv2d(cam_frame.slice(R(0, 3), 2 ).unsqueeze(0), filter.unsqueeze(2).broadcast_toV2({3, 3, 3, 1}), 1, 1, 0, 0, 1, 1, 3).squeeze(0);
         output = matrix::concat({output, matrix::repeating({output.shape()[0], output.shape()[1], 1}, matrix::scalar(255.0f))}, 2);
         return output;
     };
@@ -15700,7 +15700,7 @@ static simd_float4x4 kitti_box_to_view(const bbox::Box& b) {
     }).reshape(4, 3, 2);
     conv_ker.eval_cpu();
     
-    matrix conv_out = matrix::conv1d(conv_in, conv_ker, 1, 1, 1, 2); // pad=1, str=1, dil=1, grp=2
+    matrix conv_out = matrix::conv1d(conv_in, conv_ker, 1, 1, 1, 2); // str=1, pad=1, dil=1, grp=2
     conv_out.eval_metal();
     
     printf("Conv1D Output:\n");
@@ -15728,7 +15728,7 @@ static simd_float4x4 kitti_box_to_view(const bbox::Box& b) {
     conv2d_ker.eval_cpu();
     
     // pad_h, pad_w, stride_h, stride_w, dil_h, dil_w, groups
-    matrix conv2d_out = matrix::conv2d(conv2d_in, conv2d_ker, 0, 0, 1, 1, 1, 1, 1);
+    matrix conv2d_out = matrix::conv2d(conv2d_in, conv2d_ker, 1, 1, 0, 0, 1, 1, 1);
     conv2d_out.eval_metal();
     
     printf("Conv2D Output:\n");
@@ -15751,8 +15751,8 @@ static simd_float4x4 kitti_box_to_view(const bbox::Box& b) {
     }).reshape(1, 2, 2, 1);
     conv_nd_ker.eval_cpu();
     
-    // Generic ND Conv: pad=[0,0], stride=[1,1], dilation=[1,1]
-    matrix conv_nd_out = matrix::conv(conv_nd_in, conv_nd_ker, {0, 0}, {1, 1}, {1, 1});
+    // Generic ND Conv: stride=[1,1], pad=[0,0], kernel_dilation=[1,1], input_dilation=[1,1]
+    matrix conv_nd_out = matrix::conv(conv_nd_in, conv_nd_ker, {1, 1}, {0, 0}, {1, 1}, {1, 1});
     conv_nd_out.eval_metal();
     
     printf("Input shape: %d dims\n", conv_nd_in.dims);
